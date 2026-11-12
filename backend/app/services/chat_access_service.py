@@ -6,6 +6,7 @@ Requires existing firebase_service.get_firestore_client().
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Any
 
 from firebase_admin import auth, firestore, messaging
@@ -14,6 +15,7 @@ from google.cloud.firestore_v1 import transactional
 from .firebase_service import get_auth_module, get_firestore_client
 
 UTC = dt.timezone.utc
+LOGGER = logging.getLogger(__name__)
 MAX_APPROVED_MINUTES = 180
 
 
@@ -206,6 +208,67 @@ def _deliver(db: Any, uid: str, *, title: str, body: str, event_id: str,
         return "unregistered"
     except Exception:
         return "failed"
+
+
+def dispatch_event(*, caller_uid: str, profile_id: str, kind: str,
+                   event_id: str) -> dict[str, str]:
+    """Send the push for one just-committed chat message or access request.
+
+    Called by the app right after its Firestore write. The same claim
+    transaction as the sweep is used (pending -> claimed), so the push is sent
+    at most once even if the app retries or the sweep runs at the same time.
+    """
+    if kind not in ("message", "request"):
+        raise ChatAccessError("Unknown event kind")
+    if not event_id or "/" in event_id:
+        raise ChatAccessError("Invalid event id")
+    db = get_firestore_client()
+    profile = _paired_profile(db, profile_id)
+    parent_uid, child_uid = profile["parentId"], profile["childAccountId"]
+    if caller_uid not in (parent_uid, child_uid):
+        raise ChatAccessError("Caller is not paired to this child profile")
+    profile_ref = db.collection("child_profiles").document(profile_id)
+    ref = profile_ref.collection(
+        "chat_messages" if kind == "message" else "access_requests").document(event_id)
+
+    @transactional
+    def claim(tx: Any) -> dict[str, Any] | None:
+        snap = ref.get(transaction=tx)
+        if not snap.exists:
+            raise ChatAccessError("Event does not exist")
+        data = snap.to_dict() or {}
+        if data.get("notificationState") != "pending":
+            return None
+        tx.update(ref, {"notificationState": "claimed",
+                        "notificationStateClaimedAt": firestore.SERVER_TIMESTAMP})
+        return data
+
+    data = claim(db.transaction())
+    if data is None:
+        return {"status": "already_handled"}
+
+    if kind == "message":
+        sender = data.get("senderId")
+        if sender != caller_uid or sender not in (parent_uid, child_uid):
+            ref.update({"notificationState": "pending"})
+            raise ChatAccessError("Only the sender can dispatch a message")
+        target = child_uid if sender == parent_uid else parent_uid
+        status = _deliver(db, target, title="New WellScreen message",
+                          body=str(data.get("body", ""))[:110],
+                          event_id=event_id, profile_id=profile_id)
+    else:
+        if data.get("childUid") != caller_uid or caller_uid != child_uid:
+            ref.update({"notificationState": "pending"})
+            raise ChatAccessError("Only the child can dispatch an access request")
+        status = _deliver(
+            db, parent_uid, title="New app access request",
+            body=f"Request: {data.get('appName', 'an app')} for "
+                 f"{data.get('requestedMinutes', '?')} minutes",
+            event_id="request_" + event_id, profile_id=profile_id)
+    # A missing token stays pending so the sweep retries once a device registers.
+    ref.update({"notificationState": "pending" if status == "no_token" else status})
+    LOGGER.info("Chat %s dispatch for %s: %s", kind, profile_id, status)
+    return {"status": status}
 
 
 def sweep_chat_notifications(*, max_profiles: int = 200) -> dict[str, int]:
