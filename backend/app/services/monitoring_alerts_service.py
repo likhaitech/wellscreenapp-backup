@@ -27,6 +27,7 @@ EVENT_TYPES = frozenset({
     "repeated_restricted_app_access", "restricted_content_attempt",
     "monitoring_permission_disabled",
     "usage_warning_threshold", "usage_high_threshold", "unhealthy_usage_pattern",
+    "app_usage_warning_threshold", "app_usage_high_threshold",
 })
 EVENT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{8,96}$")
 E164_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
@@ -222,6 +223,8 @@ def accept_child_events(*, child_uid: str, profile_id: str,
             "usage_warning_threshold": ("Screen-time warning", f"Your child's device reached {label} of use."),
             "usage_high_threshold": ("High screen-time usage", f"Your child's device reached {label} of use."),
             "unhealthy_usage_pattern": ("Unhealthy usage pattern detected", f"Usage pattern flagged: {label}."),
+            "app_usage_warning_threshold": ("App usage warning", f"Long use of one app today: {label}."),
+            "app_usage_high_threshold": ("High single-app usage", f"Very long use of one app today: {label}."),
         }
         title, body = descriptions[kind]
         # Stable client IDs are deduplicated by Firestore document creation.

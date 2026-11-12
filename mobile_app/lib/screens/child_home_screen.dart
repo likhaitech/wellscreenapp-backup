@@ -27,6 +27,7 @@ import '../services/usage_dashboard_controller_service.dart';
 import '../services/usage_tracking_service.dart';
 import '../services/temporary_app_grant_service.dart';
 import '../services/chat_notifications_service.dart';
+import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_bottom_nav.dart';
 import 'capture_debug_screen.dart';
@@ -173,6 +174,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Store this child device's FCM token so approve/decline pushes can arrive.
+    unawaited(PushNotificationService().registerDeviceToken());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ChatNotificationsService.instance.markDashboardReady();
     });

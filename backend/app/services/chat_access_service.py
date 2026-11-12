@@ -16,6 +16,7 @@ from .firebase_service import get_auth_module, get_firestore_client
 
 UTC = dt.timezone.utc
 LOGGER = logging.getLogger(__name__)
+PARENT_ALERT_CHANNEL = "wellscreen_alerts"  # created by the parent app's PushNotificationService
 MAX_APPROVED_MINUTES = 180
 
 
@@ -146,7 +147,42 @@ def respond_to_request(*, parent_uid: str, profile_id: str, request_id: str,
         return {"status": next_status, "approvedMinutes": approved_minutes if approve else None}
 
     # One transaction keeps the pending->decided transition idempotent.
-    return decide(db.transaction())
+    result = decide(db.transaction())
+    # Tell the child right away; the scheduled sweep stays as the fallback.
+    try:
+        _notify_decision(db, profile_id, profile["childAccountId"], request_id)
+    except Exception as exc:  # never fail the approval because a push failed
+        LOGGER.warning("Decision push deferred to sweep: %s", type(exc).__name__)
+    return result
+
+
+def _claim_field(db: Any, ref: Any, field: str) -> bool:
+    """pending -> claimed in one transaction, so a push is sent at most once."""
+    @transactional
+    def claim_one(tx: Any) -> bool:
+        snap = ref.get(transaction=tx)
+        if not snap.exists or (snap.to_dict() or {}).get(field) != "pending":
+            return False
+        tx.update(ref, {field: "claimed", field + "ClaimedAt": firestore.SERVER_TIMESTAMP})
+        return True
+    return claim_one(db.transaction())
+
+
+def _notify_decision(db: Any, profile_id: str, child_uid: str, request_id: str) -> None:
+    ref = db.collection("child_profiles").document(profile_id).collection(
+        "access_requests").document(request_id)
+    if not _claim_field(db, ref, "decisionNotificationState"):
+        return
+    data = ref.get().to_dict() or {}
+    approved = data.get("status") in ("approved_pending_activation", "active")
+    app_name = data.get("appName", "App")
+    status = _deliver(
+        db, child_uid,
+        title="App access approved" if approved else "App access declined",
+        body=(f"{app_name}: {data.get('approvedMinutes')} minutes approved"
+              if approved else f"{app_name} was declined"),
+        event_id="decision_" + request_id, profile_id=profile_id)
+    ref.update({"decisionNotificationState": "pending" if status == "no_token" else status})
 
 
 def activate_grant(*, child_uid: str, profile_id: str,
@@ -190,7 +226,7 @@ def activate_grant(*, child_uid: str, profile_id: str,
 
 
 def _deliver(db: Any, uid: str, *, title: str, body: str, event_id: str,
-             profile_id: str) -> str:
+             profile_id: str, channel_id: str | None = None) -> str:
     account = db.collection("users").document(uid).get().to_dict() or {}
     token = account.get("fcmToken") or account.get("limitNotificationToken")
     if not token:
@@ -201,12 +237,17 @@ def _deliver(db: Any, uid: str, *, title: str, body: str, event_id: str,
             token=token,
             data={"type": "parent_child_chat", "eventId": event_id,
                   "childProfileId": profile_id},
-            android=messaging.AndroidConfig(priority="high"),
+            android=messaging.AndroidConfig(
+                priority="high",
+                notification=(messaging.AndroidNotification(channel_id=channel_id)
+                              if channel_id else None),
+            ),
         ))
         return "sent"
     except messaging.UnregisteredError:
         return "unregistered"
-    except Exception:
+    except Exception as exc:
+        LOGGER.warning("FCM send failed for %s: %s", profile_id, type(exc).__name__)
         return "failed"
 
 
@@ -255,7 +296,8 @@ def dispatch_event(*, caller_uid: str, profile_id: str, kind: str,
         target = child_uid if sender == parent_uid else parent_uid
         status = _deliver(db, target, title="New WellScreen message",
                           body=str(data.get("body", ""))[:110],
-                          event_id=event_id, profile_id=profile_id)
+                          event_id=event_id, profile_id=profile_id,
+                          channel_id=PARENT_ALERT_CHANNEL if target == parent_uid else None)
     else:
         if data.get("childUid") != caller_uid or caller_uid != child_uid:
             ref.update({"notificationState": "pending"})
@@ -264,7 +306,8 @@ def dispatch_event(*, caller_uid: str, profile_id: str, kind: str,
             db, parent_uid, title="New app access request",
             body=f"Request: {data.get('appName', 'an app')} for "
                  f"{data.get('requestedMinutes', '?')} minutes",
-            event_id="request_" + event_id, profile_id=profile_id)
+            event_id="request_" + event_id, profile_id=profile_id,
+            channel_id=PARENT_ALERT_CHANNEL)
     # A missing token stays pending so the sweep retries once a device registers.
     ref.update({"notificationState": "pending" if status == "no_token" else status})
     LOGGER.info("Chat %s dispatch for %s: %s", kind, profile_id, status)

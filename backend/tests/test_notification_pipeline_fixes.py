@@ -128,3 +128,60 @@ def test_usage_event_types_accepted(monkeypatch, etype):
           "subject": "Device usage", "label": "3 hours today"}
     out = mas.accept_child_events(child_uid="child", profile_id="p1", events=[ev])
     assert out["acceptedEventIds"] == ["usage3h_20261113"] and created[0]["kind"] == etype
+
+
+# ---- immediate approve/decline push, per-app thresholds, parent channel ----
+
+def _decision_store():
+    return {
+        "child_profiles/p1": {"parentId": "parent", "childAccountId": "child", "pairingStatus": "connected"},
+        "child_profiles/p1/access_requests/r1": {
+            "childUid": "child", "appName": "TikTok", "status": "declined",
+            "decisionNotificationState": "pending"},
+        "users/child": {"limitNotificationToken": "tok-child-limit"},
+        "users/parent": {"fcmToken": "tok-parent"},
+    }
+
+
+def test_decision_push_goes_to_child_once(monkeypatch):
+    store = _decision_store()
+    fake = FakeDb(store)
+    monkeypatch.setattr(cas, "transactional", lambda fn: fn)
+    monkeypatch.setattr(cas.firestore, "SERVER_TIMESTAMP", "TS")
+    with mock.patch.object(cas.messaging, "send", return_value="id") as send:
+        cas._notify_decision(fake, "p1", "child", "r1")
+        cas._notify_decision(fake, "p1", "child", "r1")  # second call is a no-op
+    assert send.call_count == 1
+    msg = send.call_args.args[0]
+    assert msg.token == "tok-child-limit" and msg.notification.title == "App access declined"
+    assert store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] == "sent"
+
+
+def test_decision_push_failure_never_breaks_approval(monkeypatch):
+    store = _decision_store()
+    fake = FakeDb(store)
+    monkeypatch.setattr(cas, "transactional", lambda fn: fn)
+    monkeypatch.setattr(cas.firestore, "SERVER_TIMESTAMP", "TS")
+    with mock.patch.object(cas.messaging, "send", side_effect=RuntimeError("fcm down")):
+        cas._notify_decision(fake, "p1", "child", "r1")
+    assert store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] == "failed"
+
+
+def test_parent_push_uses_alert_channel(db):
+    with mock.patch.object(cas.messaging, "send", return_value="id") as send:
+        cas.dispatch_event(caller_uid="child", profile_id="p1", kind="message", event_id="m1")
+    assert send.call_args.args[0].android.notification.channel_id == "wellscreen_alerts"
+
+
+@pytest.mark.parametrize("etype,eid", [("app_usage_warning_threshold", "appW_com_tiktok_android_20261113"),
+                                       ("app_usage_high_threshold", "appH_com_tiktok_android_20261113")])
+def test_per_app_usage_events_accepted(monkeypatch, etype, eid):
+    store = {"child_profiles/p1": {"parentId": "parent", "childAccountId": "child", "pairingStatus": "connected"}}
+    monkeypatch.setattr(mas, "get_firestore_client", lambda: FakeDb(store))
+    created = []
+    monkeypatch.setattr(mas, "_create_and_dispatch", lambda **kw: created.append(kw) or True)
+    ev = {"type": etype, "eventId": eid, "timestampMs": int(time.time() * 1000),
+          "subject": "com.tiktok.android", "label": "TikTok (1h 31m today)"}
+    out = mas.accept_child_events(child_uid="child", profile_id="p1", events=[ev])
+    assert out["acceptedEventIds"] == [eid]
+    assert "TikTok" in created[0]["body"]
