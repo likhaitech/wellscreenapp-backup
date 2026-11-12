@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "411707909204",
+    "project_id": "wellscreen-58cb7",
+    "storage_bucket": "wellscreen-58cb7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:411707909204:android:4978e6e057232c3105f9c1",
+        "android_client_info": {
+          "package_name": "com.wellscreen.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDA_L9Za_WtvgP5AH85TP66uO9xD2r-8OQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,28 @@
+warning: in the working copy of '.firebaserc', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'backend/app/services/chat_access_service.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'firebase.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'firestore.rules', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile_app/linux/flutter/generated_plugin_registrant.cc', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile_app/linux/flutter/generated_plugin_registrant.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile_app/linux/flutter/generated_plugins.cmake', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile_app/macos/Flutter/GeneratedPluginRegistrant.swift', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile_app/windows/flutter/generated_plugin_registrant.cc', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile_app/windows/flutter/generated_plugin_registrant.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'mobile_app/windows/flutter/generated_plugins.cmake', LF will be replaced by CRLF the next time Git touches it
+ backend/app/services/chat_access_service.py        |  35 [32m+[m[31m-[m
+ firebase.json                                      |  16 [32m+[m[31m-[m
+ firestore.rules                                    | 409 [32m+++++++++++[m[31m----------[m
+ .../android/app/src/main/AndroidManifest.xml       |  52 [32m+[m[31m--[m
+ .../main/kotlin/com/wellscreen/app/MainActivity.kt |  12 [32m+[m
+ .../app/WellScreenAccessibilityService.kt          |  39 [32m+[m[31m-[m
+ mobile_app/lib/screens/all_apps_screen.dart        | 109 [32m++[m[31m----[m
+ mobile_app/lib/screens/child_home_screen.dart      | 291 [32m+++++++++++[m[31m----[m
+ .../lib/screens/profile_settings_screen.dart       |  43 [32m++[m[31m-[m
+ mobile_app/lib/services/app_rules_service.dart     |  88 [32m+++[m[31m--[m
+ .../lib/services/app_time_limit_service.dart       |  10 [32m+[m[31m-[m
+ .../linux/flutter/generated_plugin_registrant.cc   |   4 [32m+[m
+ mobile_app/linux/flutter/generated_plugins.cmake   |   1 [32m+[m
+ .../macos/Flutter/GeneratedPluginRegistrant.swift  |   4 [32m+[m
+ .../windows/flutter/generated_plugin_registrant.cc |   6 [32m+[m
+ mobile_app/windows/flutter/generated_plugins.cmake |   2 [32m+[m
+ 16 files changed, 646 insertions(+), 475 deletions(-)

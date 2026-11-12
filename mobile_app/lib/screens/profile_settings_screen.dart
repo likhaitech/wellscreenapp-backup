@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
 import 'login_screen.dart';
+import 'phone_verification_screen.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -28,7 +29,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   final fullNameController = TextEditingController();
   final profilePhotoUrlController = TextEditingController();
-  final phoneNumberController = TextEditingController();
   final extraDetailController = TextEditingController();
 
   final currentPasswordController = TextEditingController();
@@ -42,7 +42,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   void dispose() {
     fullNameController.dispose();
     profilePhotoUrlController.dispose();
-    phoneNumberController.dispose();
     extraDetailController.dispose();
     currentPasswordController.dispose();
     newPasswordController.dispose();
@@ -60,7 +59,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
     final fullName = fullNameController.text.trim();
     final photoUrl = profilePhotoUrlController.text.trim();
-    final phoneNumber = phoneNumberController.text.trim();
     final extraDetail = extraDetailController.text.trim();
 
     if (fullName.isEmpty) {
@@ -84,7 +82,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           'email': user.email,
           'fullName': fullName,
           'profilePhotoUrl': photoUrl,
-          'phoneNumber': phoneNumber,
+          // Phone verification is managed by Firebase Authentication.
+          // Do not overwrite it with an unverified Edit Profile text value.
           if (role == 'child') 'gradeSection': extraDetail,
           if (role != 'child') 'relationship': extraDetail,
           'updatedAt': FieldValue.serverTimestamp(),
@@ -379,8 +378,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 '')
             .toString();
 
-    phoneNumberController.text = (data['phoneNumber'] ?? '').toString();
-
     extraDetailController.text = role == 'child'
         ? (data['gradeSection'] ?? '').toString()
         : (data['relationship'] ?? '').toString();
@@ -445,13 +442,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     controller: profilePhotoUrlController,
                     label: 'Profile Photo URL',
                     icon: Icons.image_rounded,
-                  ),
-                  const SizedBox(height: 12),
-                  _textField(
-                    controller: phoneNumberController,
-                    label: 'Phone Number',
-                    icon: Icons.phone_rounded,
-                    keyboardType: TextInputType.phone,
                   ),
                   const SizedBox(height: 12),
                   _textField(
@@ -625,9 +615,32 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     iconColor: purple,
                     backgroundColor: softPurple,
                     title: 'Edit Profile',
-                    subtitle:
-                        'Change name, photo URL, phone number, and details.',
+                    subtitle: 'Change name, photo URL, and account details.',
                     onTap: () => showEditProfileSheet(data, role),
+                  ),
+                  _settingsTile(
+                    icon: Icons.verified_user_rounded,
+                    iconColor: teal,
+                    backgroundColor: softGreen,
+                    title: 'Mobile Number Verification',
+                    subtitle:
+                        FirebaseAuth
+                                .instance
+                                .currentUser
+                                ?.phoneNumber
+                                ?.isNotEmpty ==
+                            true
+                        ? 'Verified: ${FirebaseAuth.instance.currentUser!.phoneNumber}'
+                        : 'Verify a mobile number with an SMS code.',
+                    onTap: () async {
+                      await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PhoneVerificationScreen(),
+                        ),
+                      );
+                      if (mounted) setState(() {});
+                    },
                   ),
                 ],
               ),

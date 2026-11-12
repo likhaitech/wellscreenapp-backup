@@ -47,6 +47,18 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getInstalledApps" -> result.success(getInstalledApps())
+                "getUsageAppMetadata" -> {
+                    val packages = call.argument<List<String>>("packages") ?: emptyList()
+                    val metadata = linkedMapOf<String, Map<String, String>>()
+                    // Limit the per-call MethodChannel message size. Current usage
+                    // tracking can query additional batches if needed.
+                    for (pkg in packages.distinct().take(300)) {
+                        if (pkg.isNotBlank()) {
+                            metadata[pkg] = InstalledAppMetadata.resolve(this, pkg)
+                        }
+                    }
+                    result.success(metadata)
+                }
                 "openAccessibilitySettings" -> {
                     val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

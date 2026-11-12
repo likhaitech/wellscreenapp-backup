@@ -1,0 +1,18 @@
+--- before/mobile_app/lib/screens/parent_notifications_screen.dart
++++ after/mobile_app/lib/screens/parent_notifications_screen.dart
+@@ -2,6 +2,7 @@
+ import 'package:firebase_auth/firebase_auth.dart';
+ import 'package:flutter/material.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
++import 'chat_notifications_screen.dart';
+ 
+ /// Parent-only inbox for server-persisted monitoring events and legacy SMS logs.
+ ///
+@@ -372,6 +373,7 @@
+                 return ListView(
+                   padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+                   children: [
++                    const ChatNotificationsPanel(),
+                     const Padding(
+                       padding: EdgeInsets.only(top: 6, bottom: 6),
+                       child: Text(

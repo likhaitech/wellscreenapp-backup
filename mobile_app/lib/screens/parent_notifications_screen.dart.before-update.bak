@@ -1,0 +1,372 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Parent-only inbox for server-persisted monitoring events and legacy SMS logs.
+///
+/// Firebase push delivery is deliberately separate: this screen reads the
+/// durable alert log written by the existing FastAPI monitoring backend.
+/// SMS `accepted` means provider acceptance, NOT handset delivery.
+class ParentNotificationsScreen extends StatefulWidget {
+  const ParentNotificationsScreen({super.key});
+
+  @override
+  State<ParentNotificationsScreen> createState() =>
+      _ParentNotificationsScreenState();
+}
+
+class _ParentNotificationsScreenState extends State<ParentNotificationsScreen> {
+  static const Color _primary = Color(0xFF285DAB);
+  static const Color _pageBackground = Color(0xFFF3F7FA);
+  final Set<String> _readAlerts = <String>{};
+  String? _loadedForUid;
+
+  @override
+  void initState() {
+    super.initState();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      _loadedForUid = uid;
+      _loadReadState(uid);
+    }
+  }
+
+  Future<void> _loadReadState(String uid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('parent_notification_read_ids_$uid') ??
+          const <String>[];
+      if (!mounted || _loadedForUid != uid) return;
+      setState(() {
+        _readAlerts
+          ..clear()
+          ..addAll(saved);
+      });
+    } catch (error) {
+      debugPrint('Could not read local notification state: $error');
+    }
+  }
+
+  Future<void> _markRead(String uid, String key) async {
+    if (_readAlerts.contains(key)) return;
+    setState(() => _readAlerts.add(key));
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // Read state is local to this parent device. Notifications and SMS
+      // outcomes themselves remain in Firestore, across device installs.
+      final cacheKey = 'parent_notification_read_ids_$uid';
+      final existing = prefs.getStringList(cacheKey) ?? const <String>[];
+      await prefs.setStringList(cacheKey, <String>{...existing, key}.toList());
+    } catch (error) {
+      debugPrint('Could not save local notification read state: $error');
+    }
+  }
+
+  String _formatTime(dynamic value) {
+    DateTime? dt;
+    if (value is Timestamp) dt = value.toDate();
+    if (value is DateTime) dt = value;
+    if (value is num && value.toInt() > 0) {
+      dt = DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    }
+    if (dt == null) return 'Time unavailable';
+    final local = dt.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  IconData _iconForKind(String kind) {
+    switch (kind) {
+      case 'no_recent_connection':
+      case 'monitoring_permission_disabled':
+        return Icons.shield_outlined;
+      case 'screen_time_limit_exceeded':
+        return Icons.hourglass_bottom_rounded;
+      case 'late_night_usage':
+        return Icons.bedtime_outlined;
+      case 'repeated_restricted_app_access':
+        return Icons.block_rounded;
+      case 'restricted_content_attempt':
+        return Icons.public_off_rounded;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+
+  String _deliveryLabel(String channel, String status) {
+    if (status.isEmpty || status == 'pending') return '$channel: pending';
+    if (channel == 'SMS') {
+      switch (status) {
+        case 'accepted':
+          return 'SMS: submitted to provider (delivery unconfirmed)';
+        case 'backup_not_needed':
+          return 'SMS: backup not needed';
+        case 'not_enabled':
+          return 'SMS: disabled';
+        case 'missing_verified_consent_or_phone':
+          return 'SMS: number/consent not verified';
+        case 'provider_not_configured':
+          return 'SMS: provider not configured';
+        case 'failed':
+          return 'SMS: request failed';
+      }
+    }
+    if (channel == 'Push' && status == 'sent') {
+      return 'Push: submitted (delivery unconfirmed)';
+    }
+    return '$channel: $status';
+  }
+
+  Widget _alertTile({
+    required String parentUid,
+    required String key,
+    required String title,
+    required String body,
+    required String kind,
+    required dynamic occurredAt,
+    required String pushStatus,
+    required String smsStatus,
+    bool legacySms = false,
+  }) {
+    final read = _readAlerts.contains(key);
+    return Card(
+      color: Colors.white,
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE2EAF0)),
+      ),
+      child: ExpansionTile(
+        onExpansionChanged: (expanded) {
+          if (expanded) _markRead(parentUid, key);
+        },
+        leading: CircleAvatar(
+          backgroundColor: const Color(0xFFE9F1FD),
+          child: Icon(_iconForKind(kind), color: _primary, size: 22),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontWeight: read ? FontWeight.w700 : FontWeight.w900,
+                  color: const Color(0xFF142333),
+                ),
+              ),
+            ),
+            if (!read)
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Icon(Icons.circle, color: _primary, size: 9),
+              ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            _formatTime(occurredAt),
+            style: const TextStyle(color: Color(0xFF637386), fontSize: 12),
+          ),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(body, style: const TextStyle(height: 1.45)),
+          const SizedBox(height: 10),
+          Text(
+            legacySms ? 'Legacy child-device SMS log' :
+                _deliveryLabel('Push', pushStatus),
+            style: const TextStyle(color: Color(0xFF536579), fontSize: 12),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            legacySms ? 'SMS: $smsStatus' : _deliveryLabel('SMS', smsStatus),
+            style: const TextStyle(color: Color(0xFF536579), fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _devicePanel({
+    required String uid,
+    required String profileId,
+    required Map<String, dynamic> child,
+  }) {
+    final name = (child['deviceName'] ?? child['name'] ?? 'Child device')
+        .toString();
+    final oldSms = child['smsAlertLog'];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 20, bottom: 10),
+          child: Text(
+            name,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+          ),
+        ),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('child_profiles')
+              .doc(profileId)
+              .collection('monitoring_alerts')
+              .orderBy('createdAt', descending: true)
+              .limit(100)
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'Cannot load security history. Check the monitoring_alerts '
+                  'Firestore read rule and the signed-in parent account.',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+              );
+            }
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final alerts = snapshot.data!.docs;
+            if (alerts.isEmpty && (oldSms is! List || oldSms.isEmpty)) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Text('No saved notifications for this device yet.'),
+              );
+            }
+            final newAlerts = alerts.where((doc) =>
+                !_readAlerts.contains('$profileId:${doc.id}')).toList();
+            final historyAlerts = alerts.where((doc) =>
+                _readAlerts.contains('$profileId:${doc.id}')).toList();
+
+            Widget buildGroup(String title, List<QueryDocumentSnapshot<Map<String, dynamic>>> rows) {
+              if (rows.isEmpty) return const SizedBox.shrink();
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 10, 2, 8),
+                    child: Text(title, style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF536579),
+                    )),
+                  ),
+                  for (final doc in rows)
+                    _alertTile(
+                      parentUid: uid,
+                      key: '$profileId:${doc.id}',
+                      title: (doc.data()['title'] ?? 'WellScreen alert').toString(),
+                      body: (doc.data()['body'] ?? '').toString(),
+                      kind: (doc.data()['kind'] ?? '').toString(),
+                      occurredAt: doc.data()['createdAt'] ?? doc.data()['occurredAt'],
+                      pushStatus: (doc.data()['pushStatus'] ?? '').toString(),
+                      smsStatus: (doc.data()['smsStatus'] ?? '').toString(),
+                    ),
+                ],
+              );
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                buildGroup('New', newAlerts),
+                buildGroup('Previously viewed', historyAlerts),
+                if (oldSms is List && oldSms.isNotEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(2, 14, 2, 8),
+                    child: Text('Earlier SMS attempts (child device)',
+                        style: TextStyle(fontWeight: FontWeight.w800,
+                            color: Color(0xFF536579))),
+                  ),
+                  for (var i = oldSms.length - 1; i >= 0; i--)
+                    if (oldSms[i] is Map)
+                      _alertTile(
+                        parentUid: uid,
+                        key: '$profileId:legacy_sms:$i',
+                        title: 'SMS backup attempt',
+                        body: 'A child-device SMS alert was attempted. '
+                            'Check the delivery status below.',
+                        kind: 'sms_backup',
+                        occurredAt: (oldSms[i] as Map)['timestampMs'],
+                        pushStatus: '',
+                        smsStatus: ((oldSms[i] as Map)['outcome'] ??
+                            'unknown').toString(),
+                        legacySms: true,
+                      ),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    return Scaffold(
+      backgroundColor: _pageBackground,
+      appBar: AppBar(
+        backgroundColor: _primary,
+        foregroundColor: Colors.white,
+        title: const Text('Notifications',
+            style: TextStyle(fontWeight: FontWeight.w900)),
+      ),
+      body: user == null
+          ? const Center(child: Text('Sign in to view notifications.'))
+          : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('child_profiles')
+                  .where('parentId', isEqualTo: user.uid)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text('Could not load paired child devices.'),
+                  ));
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final children = snapshot.data!.docs;
+                if (children.isEmpty) {
+                  return const Center(child: Text(
+                    'No paired child devices. Pair a device to see its alerts.',
+                    textAlign: TextAlign.center,
+                  ));
+                }
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6, bottom: 6),
+                      child: Text(
+                        'Security, usage, and SMS alert history',
+                        style: TextStyle(color: Color(0xFF536579),
+                            fontSize: 13),
+                      ),
+                    ),
+                    for (final child in children)
+                      _devicePanel(
+                        uid: user.uid,
+                        profileId: child.id,
+                        child: child.data(),
+                      ),
+                  ],
+                );
+              },
+            ),
+    );
+  }
+}

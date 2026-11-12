@@ -85,6 +85,9 @@ class AppTimeLimitService {
 
     // STEP 2: Request a notification through Cloudflare Workers.
     // This runs only after the Firestore save succeeds.
+    //
+    // Do not assign the result to a variable because the current notifier
+    // method returns Future<void>, not Future<bool>.
     try {
       await AppTimeLimitCloudflareNotifier.notifyLimitSaved(
         childProfileId: childProfileId,
@@ -92,13 +95,12 @@ class AppTimeLimitService {
       );
 
       debugPrint(
-        'Cloudflare time-limit notification request completed for $appName',
+        'App-limit Cloudflare notification request finished for $appName. '
+        'Check notifier logs for FCM acceptance status.',
       );
     } catch (error) {
       // A notification failure must not undo or misreport a saved time limit.
-      debugPrint(
-        'App time limit saved, but notification request failed: $error',
-      );
+      debugPrint('App limit saved, but notification request failed: $error');
     }
   }
 

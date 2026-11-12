@@ -1,0 +1,44 @@
+--- a/mobile_app/lib/screens/child_home_screen.dart
++++ b/mobile_app/lib/screens/child_home_screen.dart
+@@ -1894,6 +1894,10 @@
+                 _topBar(),
+                 const SizedBox(height: 18),
+                 _studentProfileCard(data, connected),
++                if (connected) ...[
++                  const SizedBox(height: 14),
++                  _monitoringDisclosureCard(),
++                ],
+                 const SizedBox(height: 22),
+                 if (!connected)
+                   KeyedSubtree(key: _pairingSectionKey, child: _pairingCard()),
+@@ -2021,6 +2025,30 @@
+             );
+           },
+         ),
++      ),
++    );
++  }
++
++  /// Visible disclosure before a child visits system monitoring controls.
++  /// Android's actual uninstall/permission dialogs belong to Android;
++  /// WellScreen does not intercept or obstruct those system actions.
++  Widget _monitoringDisclosureCard() {
++    return _whiteCard(
++      child: Row(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          const Icon(Icons.info_outline_rounded, color: AppColors.warning, size: 26),
++          const SizedBox(width: 12),
++          const Expanded(
++            child: Text(
++              'Monitoring notice: Disabling WellScreen permissions, turning off '
++              'monitoring, or uninstalling WellScreen will interrupt screen-time '
++              'tracking and usage reports. Your parent may be notified if this '
++              'device stops reporting. Android controls the uninstall process.',
++              style: TextStyle(color: darkText, fontSize: 12, height: 1.4),
++            ),
++          ),
++        ],
+       ),
+     );
+   }

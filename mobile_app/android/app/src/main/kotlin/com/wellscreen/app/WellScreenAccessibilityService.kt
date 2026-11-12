@@ -1,3 +1,4 @@
+
 package com.wellscreen.app
 
 import android.accessibilityservice.AccessibilityService
@@ -20,6 +21,11 @@ class WellScreenAccessibilityService : AccessibilityService() {
 
     private var lastBlockedPackage: String? = null
     private var lastBlockTime: Long = 0L
+
+    // Last successfully decoded local restrictions. Do not treat a one-off
+    // SharedPreferences read/JSON failure as an explicit parental unrestrict.
+    // A valid [] immediately clears this snapshot as intended.
+    private var lastValidRestrictedPackages: Set<String> = emptySet()
 
     // Separate debounce state for the emergency-access-bypass log path
     // (see checkRestrictedApp) - a restricted app can trigger many
@@ -146,6 +152,12 @@ class WellScreenAccessibilityService : AccessibilityService() {
 
         if (permanentlyRestricted || dailyLimitReached) {
             val now = System.currentTimeMillis()
+
+            // New per-app grants are independent of the global emergency bypass.
+            // Keep permanent restrictions intact; expiration is checked natively.
+            if (TemporaryAppGrantCache.isActive(this, currentPackage, now)) {
+                return
+            }
 
             if (isEmergencyAccessActive(now)) {
                 // Parent approved a temporary bypass (EmergencyAccessService,
@@ -342,20 +354,27 @@ class WellScreenAccessibilityService : AccessibilityService() {
     private fun getRestrictedPackages(): Set<String> {
         return try {
             val prefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
-
-            // Flutter shared_preferences stores string keys with "flutter." prefix on Android.
-            val raw = prefs.getString("flutter.restricted_packages_json", "[]") ?: "[]"
-
+            // Flutter shared_preferences adds the "flutter." prefix on Android.
+            // Missing/unreadable data is not proof that the parent removed rules.
+            val raw = prefs.getString("flutter.restricted_packages_json", null)
+            if (raw == null) {
+                // An absent key (e.g. cleared on logout) is not a corrupt
+                // value. Do not retain restrictions from a previous session.
+                lastValidRestrictedPackages = emptySet()
+                return emptySet()
+            }
             val jsonArray = JSONArray(raw)
             val result = mutableSetOf<String>()
-
             for (i in 0 until jsonArray.length()) {
-                result.add(jsonArray.getString(i))
+                val pkg = jsonArray.optString(i).trim()
+                if (pkg.isNotEmpty()) result.add(pkg)
             }
-
+            // A valid "[]" from the parent intentionally clears restrictions.
+            lastValidRestrictedPackages = result
             result
-        } catch (_: Exception) {
-            emptySet()
+        } catch (error: Exception) {
+            Log.w("WellScreenLimits", "Cannot read restrictions; using last valid local set", error)
+            lastValidRestrictedPackages
         }
     }
 

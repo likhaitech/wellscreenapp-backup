@@ -1,0 +1,66 @@
+--- a/mobile_app/lib/screens/parent_dashboard_screen.dart
++++ b/mobile_app/lib/screens/parent_dashboard_screen.dart
+@@ -422,6 +422,10 @@
+                 _topBar(),
+                 const SizedBox(height: 18),
+                 _deviceProfileCard(primaryChild),
++                if (_isMonitoringSecurityAlertActive(primaryChild)) ...[
++                  const SizedBox(height: 14),
++                  _monitoringSecurityAlertCard(primaryChild!),
++                ],
+                 if (_hasPendingEmergencyAccessRequest(primaryChild)) ...[
+                   const SizedBox(height: 22),
+                   _emergencyAccessRequestCard(
+@@ -551,6 +555,52 @@
+   /// second stream - this dashboard already rebuilds on every change to
+   /// that doc, so the pending-request card appears/disappears live for
+   /// free as soon as the parent responds.
++  /// The backend creates a server-owned alert when lastSeenAt is stale.
++  /// A newer check-in dismisses this banner without claiming uninstall.
++  bool _isMonitoringSecurityAlertActive(Map<String, dynamic>? child) {
++    final raw = child?['monitoringSecurityAlert'];
++    if (raw is! Map || raw['type'] != 'no_recent_connection') return false;
++    final alertedLastSeen = raw['lastSeenAt'];
++    final nowLastSeen = child?['lastSeenAt'];
++    if (alertedLastSeen is! Timestamp) return false;
++    if (nowLastSeen is Timestamp &&
++        nowLastSeen.toDate().isAfter(alertedLastSeen.toDate())) return false;
++    return true;
++  }
++
++  Widget _monitoringSecurityAlertCard(Map<String, dynamic> child) {
++    final alert = child['monitoringSecurityAlert'] as Map;
++    final name = (alert['deviceName'] ?? child['name'] ?? 'Child device').toString();
++    final seen = alert['lastSeenAt'];
++    return _whiteCard(
++      child: Row(
++        crossAxisAlignment: CrossAxisAlignment.start,
++        children: [
++          const Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 30),
++          const SizedBox(width: 12),
++          Expanded(
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                const Text(
++                  'No Recent Connection',
++                  style: TextStyle(fontWeight: FontWeight.w900, color: darkText),
++                ),
++                const SizedBox(height: 5),
++                Text(
++                  '$name has stopped reporting. The device may be offline, '
++                  'powered off, or monitoring may be disabled or removed. '
++                  'Last seen: ${formatDate(seen)}',
++                  style: const TextStyle(color: grayText, height: 1.35),
++                ),
++              ],
++            ),
++          ),
++        ],
++      ),
++    );
++  }
++
+   bool _hasPendingEmergencyAccessRequest(Map<String, dynamic>? child) {
+     final raw = child?['emergencyAccess'];
+     if (raw is! Map) return false;

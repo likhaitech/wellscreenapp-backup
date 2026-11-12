@@ -1,0 +1,72 @@
+// INSERT THIS BLOCK INSIDE match /child_profiles/{childProfileId} {
+// immediately after its existing app_time_limits nested block.
+// Do NOT replace your existing rules or remove the deny-all rule.
+// Every chat read is restricted by the fixed enclosing profile ID.
+
+function chatProfile() {
+  return get(/databases/$(database)/documents/child_profiles/$(childProfileId)).data;
+}
+function chatParent() {
+  return request.auth != null && chatProfile().parentId == request.auth.uid;
+}
+function chatChild() {
+  return request.auth != null &&
+    ('childAccountId' in chatProfile()) &&
+    chatProfile().childAccountId == request.auth.uid;
+}
+function chatMember() {
+  return chatParent() || chatChild();
+}
+
+match /chat_messages/{messageId} {
+  allow get, list: if chatMember();
+  allow create: if chatMember() &&
+    request.resource.data.keys().hasOnly([
+      'senderId', 'body', 'createdAt', 'notificationState'
+    ]) &&
+    request.resource.data.keys().hasAll([
+      'senderId', 'body', 'createdAt', 'notificationState'
+    ]) &&
+    request.resource.data.senderId == request.auth.uid &&
+    request.resource.data.body is string &&
+    request.resource.data.body.size() >= 1 &&
+    request.resource.data.body.size() <= 2000 &&
+    request.resource.data.notificationState == 'pending' &&
+    request.resource.data.createdAt == request.time;
+  allow update, delete: if false;
+}
+
+match /access_requests/{requestId} {
+  allow get, list: if chatMember();
+  allow create: if chatChild() &&
+    request.resource.data.keys().hasOnly([
+      'childUid', 'packageName', 'appName', 'requestedMinutes',
+      'status', 'createdAt', 'notificationState'
+    ]) &&
+    request.resource.data.keys().hasAll([
+      'childUid', 'packageName', 'appName', 'requestedMinutes',
+      'status', 'createdAt', 'notificationState'
+    ]) &&
+    request.resource.data.childUid == request.auth.uid &&
+    request.resource.data.packageName is string &&
+    request.resource.data.packageName.size() >= 3 &&
+    request.resource.data.packageName.size() <= 200 &&
+    !request.resource.data.packageName.matches('.*[/].*') &&
+    request.resource.data.appName is string &&
+    request.resource.data.appName.size() >= 1 &&
+    request.resource.data.appName.size() <= 150 &&
+    request.resource.data.requestedMinutes is int &&
+    request.resource.data.requestedMinutes >= 5 &&
+    request.resource.data.requestedMinutes <= 120 &&
+    request.resource.data.status == 'pending' &&
+    request.resource.data.notificationState == 'pending' &&
+    request.resource.data.createdAt == request.time;
+  // Approval is server-only. A child cannot modify status or grant time.
+  allow update, delete: if false;
+}
+
+match /temporary_access_grants/{packageName} {
+  allow get, list: if chatMember();
+  // Written only by trusted FastAPI with Firebase Admin SDK.
+  allow create, update, delete: if false;
+}

@@ -1,0 +1,395 @@
+--- before/backend/app/services/chat_access_service.py
++++ after/backend/app/services/chat_access_service.py
+@@ -6,7 +6,10 @@
+ from __future__ import annotations
+ 
+ import datetime as dt
++import logging
+ from typing import Any
++
++from google.api_core.exceptions import AlreadyExists, Conflict
+ 
+ from firebase_admin import auth, firestore, messaging
+ from google.cloud.firestore_v1 import transactional
+@@ -15,6 +18,7 @@
+ 
+ UTC = dt.timezone.utc
+ MAX_APPROVED_MINUTES = 180
++LOGGER = logging.getLogger(__name__)
+ 
+ 
+ class ChatAccessError(ValueError):
+@@ -116,8 +120,15 @@
+             })
+         return {"status": next_status, "approvedMinutes": approved_minutes if approve else None}
+ 
+-    # One transaction keeps the pending->decided transition idempotent.
+-    return decide(db.transaction())
++    # A single transaction authorizes the transition; notifications are best effort.
++    # The persistent decisionNotificationState is also swept by cron if this
++    # immediate delivery cannot complete (e.g. no token / Render outage).
++    decision = decide(db.transaction())
++    try:
++        dispatch_decision_notification(db, profile_id, request_id, profile)
++    except Exception:
++        LOGGER.exception("Chat decision notification deferred to cron")
++    return decision
+ 
+ 
+ def activate_grant(*, child_uid: str, profile_id: str,
+@@ -160,8 +171,49 @@
+     return activate(db.transaction())
+ 
+ 
+-def _deliver(db: Any, uid: str, *, title: str, body: str, event_id: str,
+-             profile_id: str) -> str:
++
++def _display_name(db: Any, uid: str, fallback: str) -> str:
++    if not uid:
++        return fallback
++    try:
++        account = db.collection("users").document(uid).get().to_dict() or {}
++        for field in ("fullName", "displayName", "name"):
++            name = account.get(field)
++            if isinstance(name, str) and name.strip():
++                return name.strip()[:90]
++    except Exception:
++        LOGGER.exception("Could not load chat sender display name")
++    return fallback
++
++
++def _ensure_inbox(db: Any, recipient_uid: str, *, notification_id: str,
++                  title: str, body: str, profile_id: str,
++                  kind: str, sender_uid: str, request_id: str = "") -> bool:
++    """Create one durable recipient notification; never reset a read message."""
++    ref = db.collection("users").document(recipient_uid).collection(
++        "notifications").document(notification_id)
++    try:
++        ref.create({
++            "type": kind,
++            "title": title[:150],
++            "body": body[:2000],
++            "childProfileId": profile_id,
++            "senderUid": sender_uid,
++            "requestId": request_id,
++            "createdAt": firestore.SERVER_TIMESTAMP,
++            "readAt": None,
++        })
++    except (AlreadyExists, Conflict):
++        pass
++    except Exception:
++        LOGGER.exception("Cannot persist chat notification %s", notification_id)
++        return False
++    return True
++
++
++def _deliver(db: Any, uid: str, *, title: str, body: str,
++             notification_id: str, profile_id: str,
++             kind: str) -> str:
+     account = db.collection("users").document(uid).get().to_dict() or {}
+     token = account.get("fcmToken") or account.get("limitNotificationToken")
+     if not token:
+@@ -170,89 +222,231 @@
+         messaging.send(messaging.Message(
+             notification=messaging.Notification(title=title, body=body),
+             token=token,
+-            data={"type": "parent_child_chat", "eventId": event_id,
+-                  "childProfileId": profile_id},
+-            android=messaging.AndroidConfig(priority="high"),
++            data={
++                "type": "parent_child_chat",
++                "kind": kind,
++                "notificationId": notification_id,
++                "eventId": notification_id,
++                "childProfileId": profile_id,
++            },
++            android=messaging.AndroidConfig(
++                priority="high",
++                notification=messaging.AndroidNotification(
++                    channel_id="wellscreen_chat",
++                ),
++            ),
+         ))
+-        return "sent"
++        return "sent"  # FCM accepted, not proof of handset display.
+     except messaging.UnregisteredError:
++        # Clear only the token that was actually rejected.
++        token_field = ("fcmToken" if account.get("fcmToken") == token
++                       else "limitNotificationToken")
++        db.collection("users").document(uid).update({token_field: None})
+         return "unregistered"
+     except Exception:
++        LOGGER.exception("FCM chat dispatch failed")
+         return "failed"
+ 
+ 
++def _claim(db: Any, ref: Any, field: str) -> bool:
++    @transactional
++    def claim_one(tx: Any) -> bool:
++        snap = ref.get(transaction=tx)
++        if not snap.exists or (snap.to_dict() or {}).get(field) != "pending":
++            return False
++        tx.update(ref, {
++            field: "claimed",
++            field + "ClaimedAt": firestore.SERVER_TIMESTAMP,
++        })
++        return True
++    return claim_one(db.transaction())
++
++
++def _dispatch_notification(db: Any, *, event_ref: Any, field: str,
++                           recipient_uid: str, title: str, body: str,
++                           notification_id: str, profile_id: str,
++                           kind: str, sender_uid: str,
++                           request_id: str = "") -> bool:
++    if not _ensure_inbox(db, recipient_uid, notification_id=notification_id,
++                         title=title, body=body, profile_id=profile_id,
++                         kind=kind, sender_uid=sender_uid,
++                         request_id=request_id):
++        return False
++    if not _claim(db, event_ref, field):
++        return False
++    status = _deliver(db, recipient_uid, title=title, body=body,
++                      notification_id=notification_id,
++                      profile_id=profile_id, kind=kind)
++    # Once FCM was attempted, intentionally do not retry blindly: an ambiguous
++    # timeout might already have delivered it, causing duplicates. The inbox
++    # record persists regardless of push outcome. No-token is safe to retry.
++    event_ref.update({field: "pending" if status == "no_token" else status})
++    return status == "sent"
++
++
++def dispatch_message_notification(db: Any, profile_id: str, event_id: str,
++                                  profile: dict[str, Any]) -> bool:
++    ref = db.collection("child_profiles").document(profile_id).collection(
++        "chat_messages").document(event_id)
++    snapshot = ref.get()
++    if not snapshot.exists:
++        raise ChatAccessError("Message not found")
++    msg = snapshot.to_dict() or {}
++    parent, child = profile["parentId"], profile["childAccountId"]
++    sender = msg.get("senderId")
++    if sender not in (parent, child):
++        raise ChatAccessError("Invalid message sender")
++    recipient = child if sender == parent else parent
++    fallback = (profile.get("parentDisplayName") or "Parent") if sender == parent \
++        else (profile.get("name") or "Child")
++    name = _display_name(db, sender, str(fallback))
++    preview = str(msg.get("body", ""))[:110]
++    return _dispatch_notification(
++        db, event_ref=ref, field="notificationState",
++        recipient_uid=recipient, title=f"Message from {name}",
++        body=preview, notification_id=f"msg_{profile_id}_{event_id}",
++        profile_id=profile_id, kind="chat_message", sender_uid=sender,
++    )
++
++
++def dispatch_request_notification(db: Any, profile_id: str, event_id: str,
++                                  profile: dict[str, Any]) -> bool:
++    ref = db.collection("child_profiles").document(profile_id).collection(
++        "access_requests").document(event_id)
++    snap = ref.get()
++    if not snap.exists:
++        raise ChatAccessError("Request not found")
++    data = snap.to_dict() or {}
++    child_uid = profile["childAccountId"]
++    if data.get("childUid") != child_uid:
++        raise ChatAccessError("Invalid request sender")
++    name = _display_name(db, child_uid, str(profile.get("name") or "Child"))
++    app = str(data.get("appName") or data.get("packageName") or "App")
++    duration = data.get("requestedMinutes", "?")
++    return _dispatch_notification(
++        db, event_ref=ref, field="notificationState",
++        recipient_uid=profile["parentId"],
++        title=f"App request from {name}",
++        body=f"{app}: {duration} minutes requested",
++        notification_id=f"request_{profile_id}_{event_id}",
++        profile_id=profile_id, kind="access_request",
++        sender_uid=child_uid, request_id=event_id,
++    )
++
++
++def dispatch_decision_notification(db: Any, profile_id: str, event_id: str,
++                                   profile: dict[str, Any]) -> bool:
++    ref = db.collection("child_profiles").document(profile_id).collection(
++        "access_requests").document(event_id)
++    snap = ref.get()
++    if not snap.exists:
++        raise ChatAccessError("Request not found")
++    data = snap.to_dict() or {}
++    status = data.get("status")
++    if status not in ("declined", "approved_pending_activation", "active", "expired"):
++        return False
++    approved = status in ("approved_pending_activation", "active", "expired") \
++        and data.get("approvedMinutes") is not None
++    app = str(data.get("appName") or data.get("packageName") or "App")
++    parent_uid = profile["parentId"]
++    name = _display_name(db, parent_uid,
++                         str(profile.get("parentDisplayName") or "Parent"))
++    return _dispatch_notification(
++        db, event_ref=ref, field="decisionNotificationState",
++        recipient_uid=profile["childAccountId"],
++        title=f"{name} approved access" if approved else f"{name} declined access",
++        body=(f"{app}: {data.get('approvedMinutes')} minutes approved" if approved
++              else f"Access to {app} was declined"),
++        notification_id=f"decision_{profile_id}_{event_id}",
++        profile_id=profile_id, kind="access_decision", sender_uid=parent_uid,
++        request_id=event_id,
++    )
++
++
++def dispatch_chat_event(*, caller_uid: str, profile_id: str,
++                        event_id: str, kind: str) -> dict[str, str]:
++    """Prompt dispatch after server-committed Firestore write, never client-push."""
++    db = get_firestore_client()
++    profile = _paired_profile(db, profile_id)
++    if kind == "message":
++        ref = db.collection("child_profiles").document(profile_id).collection(
++            "chat_messages").document(event_id)
++        snap = ref.get()
++        if not snap.exists or (snap.to_dict() or {}).get("senderId") != caller_uid:
++            raise ChatAccessError("Only the original sender can dispatch this message")
++        if caller_uid not in (profile["parentId"], profile["childAccountId"]):
++            raise ChatAccessError("Sender is not paired")
++        delivered = dispatch_message_notification(db, profile_id, event_id, profile)
++    elif kind == "request":
++        if caller_uid != profile["childAccountId"]:
++            raise ChatAccessError("Only the paired child can submit requests")
++        ref = db.collection("child_profiles").document(profile_id).collection(
++            "access_requests").document(event_id)
++        snap = ref.get()
++        if not snap.exists or (snap.to_dict() or {}).get("childUid") != caller_uid:
++            raise ChatAccessError("Only the request owner can dispatch it")
++        delivered = dispatch_request_notification(db, profile_id, event_id, profile)
++    else:
++        raise ChatAccessError("Unsupported event kind")
++    return {"status": "submitted" if delivered else "queued_or_already_dispatched"}
++
++
+ def sweep_chat_notifications(*, max_profiles: int = 200) -> dict[str, int]:
+-    """Best-effort at-most-once dispatch. Run from trusted scheduled worker.
+-
+-    Claim on a server-authored transaction BEFORE FCM submission, so a repeated
+-    sweep doesn't intentionally deliver the same event twice. A crash after
+-    claiming can lose a push; messages/requests remain in persistent inbox.
++    """Scheduled fallback for offline writes or when the app process is gone.
++
++    For production scale use a collection-group queue or pagination; only
++    the first max_profiles profiles are scanned in this pilot implementation.
+     """
+     db = get_firestore_client()
+-    result = {"scannedProfiles": 0, "claimed": 0, "sent": 0}
+-
+-    def claim(ref: Any, field: str) -> bool:
+-        @transactional
+-        def claim_one(tx: Any) -> bool:
+-            snap = ref.get(transaction=tx)
+-            if not snap.exists or (snap.to_dict() or {}).get(field) != "pending":
+-                return False
+-            tx.update(ref, {field: "claimed", field + "ClaimedAt": firestore.SERVER_TIMESTAMP})
+-            return True
+-        return claim_one(db.transaction())
+-
++    totals = {"scannedProfiles": 0, "sent": 0, "failed": 0}
+     for profile_doc in db.collection("child_profiles").limit(max_profiles).stream():
+         profile = profile_doc.to_dict() or {}
+-        parent_uid, child_uid = profile.get("parentId"), profile.get("childAccountId")
+-        if not parent_uid or not child_uid:
++        if not profile.get("parentId") or not profile.get("childAccountId"):
+             continue
+-        result["scannedProfiles"] += 1
+-        for msg in profile_doc.reference.collection("chat_messages").where(
++        totals["scannedProfiles"] += 1
++        profile_id = profile_doc.id
++        messages = profile_doc.reference.collection("chat_messages").where(
++            "notificationState", "==", "pending").limit(50).stream()
++        for snapshot in messages:
++            try:
++                if dispatch_message_notification(db, profile_id, snapshot.id, profile):
++                    totals["sent"] += 1
++            except Exception:
++                totals["failed"] += 1
++                LOGGER.exception("Message notification sweep failed")
++        requests_ref = profile_doc.reference.collection("access_requests")
++        for snapshot in requests_ref.where(
+                 "notificationState", "==", "pending").limit(50).stream():
+-            data = msg.to_dict() or {}
+-            sender = data.get("senderId")
+-            if sender not in (parent_uid, child_uid) or not claim(msg.reference, "notificationState"):
+-                continue
+-            result["claimed"] += 1
+-            target = child_uid if sender == parent_uid else parent_uid
+-            status = _deliver(db, target, title="New WellScreen message",
+-                              body=str(data.get("body", ""))[:110],
+-                              event_id=msg.id, profile_id=profile_doc.id)
+-            # A missing token means no send was even attempted. Retry when a
+-            # device registers; other outcomes are not blindly retried.
+-            msg.reference.update({"notificationState":
+-                                  "pending" if status == "no_token" else status})
+-            if status == "sent":
+-                result["sent"] += 1
+-        for req in profile_doc.reference.collection("access_requests").limit(100).stream():
+-            data = req.to_dict() or {}
+-            expires_at = data.get("expiresAt")
+-            if (data.get("status") == "active" and isinstance(expires_at, dt.datetime)
+-                    and expires_at <= dt.datetime.now(UTC)):
+-                req.reference.update({"status": "expired"})
+-                grant_ref = profile_doc.reference.collection("temporary_access_grants").document(
+-                    str(data.get("packageName", "")))
+-                grant_snap = grant_ref.get()
+-                if grant_snap.exists and (grant_snap.to_dict() or {}).get("requestId") == req.id:
+-                    grant_ref.update({"state": "expired"})
+-            if data.get("notificationState") == "pending" and claim(req.reference, "notificationState"):
+-                result["claimed"] += 1
+-                status = _deliver(db, parent_uid, title="New app access request",
+-                                  body=f"Request: {data.get('appName', 'an app')} for {data.get('requestedMinutes', '?')} minutes",
+-                                  event_id="request_" + req.id, profile_id=profile_doc.id)
+-                req.reference.update({"notificationState":
+-                                      "pending" if status == "no_token" else status})
+-                if status == "sent":
+-                    result["sent"] += 1
+-            if data.get("decisionNotificationState") == "pending" and claim(req.reference, "decisionNotificationState"):
+-                result["claimed"] += 1
+-                status_name = data.get("status")
+-                title = "App access approved" if status_name in ("approved_pending_activation", "active") else "App access declined"
+-                body = f"{data.get('appName', 'App')}: {data.get('approvedMinutes')} minutes approved" if status_name in ("approved_pending_activation", "active") else f"{data.get('appName', 'App')} was declined"
+-                status = _deliver(db, child_uid, title=title, body=body,
+-                                  event_id="decision_" + req.id, profile_id=profile_doc.id)
+-                req.reference.update({"decisionNotificationState":
+-                                      "pending" if status == "no_token" else status})
+-                if status == "sent":
+-                    result["sent"] += 1
+-    return result
++            try:
++                if dispatch_request_notification(db, profile_id, snapshot.id, profile):
++                    totals["sent"] += 1
++            except Exception:
++                totals["failed"] += 1
++                LOGGER.exception("Request notification sweep failed")
++        for snapshot in requests_ref.where(
++                "decisionNotificationState", "==", "pending").limit(50).stream():
++            try:
++                if dispatch_decision_notification(db, profile_id, snapshot.id, profile):
++                    totals["sent"] += 1
++            except Exception:
++                totals["failed"] += 1
++                LOGGER.exception("Decision notification sweep failed")
++        for snapshot in requests_ref.where(
++                "status", "==", "active").limit(50).stream():
++            data = snapshot.to_dict() or {}
++            try:
++                expires_at = data.get("expiresAt")
++                if isinstance(expires_at, dt.datetime) and expires_at <= dt.datetime.now(UTC):
++                    snapshot.reference.update({"status": "expired"})
++                    pkg = str(data.get("packageName", ""))
++                    if not pkg or "/" in pkg:
++                        continue
++                    grant_ref = profile_doc.reference.collection(
++                        "temporary_access_grants").document(pkg)
++                    grant_snap = grant_ref.get()
++                    if grant_snap.exists and (grant_snap.to_dict() or {}).get("requestId") == snapshot.id:
++                        grant_ref.update({"state": "expired"})
++            except Exception:
++                totals["failed"] += 1
++                LOGGER.exception("Grant expiry sweep failed")
++    return totals

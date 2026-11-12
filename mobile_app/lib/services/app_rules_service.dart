@@ -28,18 +28,8 @@ class AppRulesService {
     }
   }
 
-  /// Parent side: the source of truth for loading rules to *edit*
-  /// (RulesScreen), as opposed to [getRules]'s local-only read. Firestore
-  /// is authoritative here - local storage on the parent's own device is
-  /// only ever a cache [saveRulesLocally] writes as a side effect of a
-  /// save, and it starts empty on a fresh install, a second parent device,
-  /// or after the app's data is cleared. RulesScreen used to load from
-  /// [getRules] directly: in any of those states it would show no rules
-  /// toggled, and then [saveRules] - which always overwrites Firestore's
-  /// whole `rules` array, not a per-rule merge - would silently delete
-  /// every restriction the child device was still mirroring via
-  /// [watchRulesForParent]. Falls back to the local cache only if the
-  /// Firestore read itself fails (e.g. offline), same as before.
+  /// Parent side: Firestore is authoritative for editing the complete rules
+  /// array. The local cache is a fallback only when the cloud read fails.
   Future<List<AppRule>> fetchCurrentRules() async {
     final user = FirebaseAuth.instance.currentUser;
 
@@ -56,12 +46,6 @@ class AppRulesService {
       final rawRules = snapshot.data()?['rules'];
 
       if (rawRules is! List) {
-        // No Firestore doc yet (brand-new parent, never saved) - nothing
-        // to be authoritative about, fall back to local like getRules().
-        // Awaited (not just returned) so this stays inside the try/catch:
-        // a bare `return getRules();` here would let getRules() reject
-        // outside this frame, unhandled, instead of hitting the catch
-        // block below (same reason the catch's own fallback awaits it).
         return await getRules();
       }
 
@@ -69,11 +53,7 @@ class AppRulesService {
           .map((item) => AppRule.fromMap(Map<String, dynamic>.from(item)))
           .toList();
 
-      // Keep the local cache in step with what's actually authoritative,
-      // so a later getRules() call (or this device going offline) isn't
-      // left with stale data either.
       await saveRulesLocally(rules);
-
       return rules;
     } catch (_) {
       return getRules();
@@ -97,15 +77,21 @@ class AppRulesService {
         .toSet()
         .toList();
 
-    await prefs.setString(_rulesKey, encodedRules);
-
-    // Android native AccessibilityService reads this local key.
-    // On Android, shared_preferences stores it as:
-    // flutter.restricted_packages_json
-    await prefs.setString(
+    // Write the native enforcement cache first. Android's AccessibilityService
+    // reads flutter.restricted_packages_json even while Firestore is offline.
+    // An intentionally empty, authoritative rules list still writes "[]".
+    final restrictionsSaved = await prefs.setString(
       _restrictedPackagesKey,
       jsonEncode(restrictedPackages),
     );
+    if (!restrictionsSaved) {
+      throw StateError('Failed to persist restricted packages on this device');
+    }
+
+    final rulesSaved = await prefs.setString(_rulesKey, encodedRules);
+    if (!rulesSaved) {
+      throw StateError('Failed to persist app rules on this device');
+    }
   }
 
   Future<void> syncRulesToFirestore(List<AppRule> rules) async {
@@ -129,6 +115,12 @@ class AppRulesService {
     }, SetOptions(merge: true));
   }
 
+  /// Child side: mirror *validated* parent rules into the native offline
+  /// cache. Do not erase restrictions merely because a Firestore snapshot is
+  /// temporarily missing from the local cache while the phone is offline.
+  ///
+  /// A confirmed missing server document or an explicit, valid [] does
+  /// clear restrictions. Those are the parent's authoritative removals.
   Stream<List<AppRule>> watchRulesForParent(String parentId) {
     if (parentId.trim().isEmpty) {
       return Stream.value([]);
@@ -137,37 +129,41 @@ class AppRulesService {
     return FirebaseFirestore.instance
         .collection('app_rules')
         .doc(parentId)
-        .snapshots()
+        // A metadata-only change from local cache -> confirmed server result
+        // must be observed so actual server-side deletions can take effect.
+        .snapshots(includeMetadataChanges: true)
         .asyncMap((snapshot) async {
-          final data = snapshot.data();
-
-          if (data == null) {
+          if (!snapshot.exists) {
+            if (snapshot.metadata.isFromCache) {
+              // Unknown while offline: keep the last successfully synced
+              // restrictions rather than accidentally unlocking apps.
+              return await getRules();
+            }
+            // Confirmed absent from the server: parent has no saved rules.
             await saveRulesLocally([]);
             return <AppRule>[];
           }
 
-          final rawRules = data['rules'];
-
+          final rawRules = snapshot.data()?['rules'];
           if (rawRules is! List) {
-            await saveRulesLocally([]);
-            return <AppRule>[];
+            // Absent or malformed rules field is NOT the same as an explicit
+            // empty list. Keep the last valid copy until it is corrected.
+            return await getRules();
           }
 
+          final List<AppRule> rules;
           try {
-            final rules = rawRules
+            rules = rawRules
                 .map((item) => AppRule.fromMap(Map<String, dynamic>.from(item)))
                 .toList();
-
-            // Important:
-            // This saves the Firebase rules into the CHILD PHONE local storage
-            // so WellScreenAccessibilityService can block restricted packages.
-            await saveRulesLocally(rules);
-
-            return rules;
           } catch (_) {
-            await saveRulesLocally([]);
-            return <AppRule>[];
+            // Never clear native restrictions because a transient or
+            // malformed snapshot could not be decoded.
+            return await getRules();
           }
+
+          await saveRulesLocally(rules);
+          return rules;
         });
   }
 

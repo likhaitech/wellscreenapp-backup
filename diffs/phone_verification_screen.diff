@@ -1,0 +1,79 @@
+--- current/phone_verification_screen.dart
++++ updated/phone_verification_screen.dart
+@@ -1,4 +1,5 @@
+ import 'package:firebase_auth/firebase_auth.dart';
++import 'package:flutter/foundation.dart' show kDebugMode;
+ import 'package:flutter/material.dart';
+ import 'package:flutter/services.dart';
+ 
+@@ -187,6 +188,7 @@
+         },
+         verificationFailed: (FirebaseAuthException error) {
+           if (!_isActiveRequest(generation)) return;
++          _logFirebaseFailure('verificationFailed', error);
+           setState(() {
+             _sending = false;
+             _lastRequestAt = null;
+@@ -212,17 +214,22 @@
+       );
+     } on FirebaseAuthException catch (error) {
+       if (!_isActiveRequest(generation)) return;
++      _logFirebaseFailure('requestCode', error);
+       setState(() {
+         _sending = false;
+         _lastRequestAt = null;
+         _message = _friendlyAuthError(error);
+       });
+-    } catch (_) {
++    } catch (error, stackTrace) {
+       if (!_isActiveRequest(generation)) return;
++      // Keep provider details in debug logs, rather than guessing that all
++      // unknown failures are network failures.
++      debugPrint('PhoneOTP requestCode unexpected: ${error.runtimeType}: $error');
++      debugPrintStack(stackTrace: stackTrace, label: 'PhoneOTP requestCode');
+       setState(() {
+         _sending = false;
+         _lastRequestAt = null;
+-        _message = 'Could not request an SMS code. Check your internet connection.';
++        _message = 'Could not request an SMS code. See Flutter debug logs.';
+       });
+     }
+   }
+@@ -302,6 +309,7 @@
+       });
+     } on FirebaseAuthException catch (error) {
+       if (!_isActiveRequest(generation)) return;
++      _logFirebaseFailure('linkPhoneCredential', error);
+       setState(() {
+         _message = _friendlyAuthError(error);
+       });
+@@ -317,6 +325,14 @@
+         setState(() => _applyingCredential = false);
+       }
+     }
++  }
++
++  void _logFirebaseFailure(String stage, FirebaseAuthException error) {
++    // Log only the provider's code/message: never log phone numbers entered by
++    // the user, Firebase verification IDs, or six-digit OTP values ourselves.
++    // Firebase SDK errors can still include private details: redact before
++    // sharing terminal screenshots or logs with other people.
++    debugPrint('PhoneOTP $stage: code=${error.code}; message=${error.message}');
+   }
+ 
+   String _friendlyAuthError(FirebaseAuthException error) {
+@@ -345,7 +361,13 @@
+       case 'network-request-failed':
+         return 'Network unavailable. SMS verification requires internet access.';
+       default:
+-        return 'Phone verification failed (${error.code}). Please try again.';
++        final details = error.message?.trim() ?? '';
++        // While running a debug APK, show the underlying Firebase message so
++        // "unknown" can be diagnosed without modifying unrelated features.
++        if (kDebugMode && details.isNotEmpty) {
++          return 'Phone verification failed (${error.code}): $details';
++        }
++        return 'Phone verification failed (${error.code}). Check debug logs.';
+     }
+   }
+ 

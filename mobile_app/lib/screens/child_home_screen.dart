@@ -13,6 +13,8 @@ import '../models/app_time_limit.dart';
 import '../models/app_usage_summary.dart';
 import '../models/usage_report.dart';
 import '../services/alert_notification_client.dart';
+import '../services/monitoring_usage_alert_service.dart';
+import '../services/installed_app_metadata_service.dart';
 import '../services/app_rules_service.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
@@ -23,10 +25,14 @@ import '../services/site_category_service.dart';
 import '../services/sync_status_service.dart';
 import '../services/usage_dashboard_controller_service.dart';
 import '../services/usage_tracking_service.dart';
+import '../services/temporary_app_grant_service.dart';
+import '../services/chat_notifications_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_bottom_nav.dart';
 import 'capture_debug_screen.dart';
 import 'login_screen.dart';
+import 'parent_child_chat_screen.dart';
+import 'chat_notifications_screen.dart';
 import 'profile_settings_screen.dart';
 import 'qr_scan_screen.dart';
 
@@ -82,6 +88,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   final UsageTrackingService _usageTrackingService = UsageTrackingService();
   final AlertNotificationClient _alertNotificationClient =
       AlertNotificationClient();
+  final MonitoringUsageAlertService _monitoringUsageAlerts =
+      const MonitoringUsageAlertService();
   final UsageDashboardControllerService _usageDashboardController =
       UsageDashboardControllerService();
   final SyncStatusService _syncStatusService = SyncStatusService();
@@ -92,9 +100,13 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       DailyScreenTimeLimitService();
   final EmergencyAccessService _emergencyAccessService =
       EmergencyAccessService();
+  final TemporaryAppGrantService _temporaryGrants = TemporaryAppGrantService();
   final pairingCodeController = TextEditingController();
   final emergencyReasonController = TextEditingController();
   StreamSubscription<bool>? _connectivitySubscription;
+  Timer? _presenceHeartbeatTimer;
+  DateTime? _lastPresenceWriteAttempt;
+  static const Duration _presenceHeartbeatInterval = Duration(minutes: 5);
 
   int currentIndex = 0;
   bool isPairing = false;
@@ -161,6 +173,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ChatNotificationsService.instance.markDashboardReady();
+    });
     _loadUsageDashboard();
     _refreshSmsAlertStatus();
     _refreshSyncStatus();
@@ -174,6 +189,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _usageAutoSyncTimer = Timer.periodic(
       _usageAutoSyncInterval,
       (_) => _autoSyncUsage(),
+    );
+    // A lightweight check-in is separate from the 15-minute usage recovery.
+    // The parent derives Online/Offline from this server-authored timestamp.
+    _presenceHeartbeatTimer = Timer.periodic(
+      _presenceHeartbeatInterval,
+      (_) => unawaited(_publishOnlineHeartbeat()),
     );
   }
 
@@ -208,6 +229,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         childProfileId.isEmpty) {
       return;
     }
+    // Mirror the registered child's real account name into the paired
+    // profile, since Firestore users/{uid} is private to its owner.
+    unawaited(_syncChildDisplayName(childProfileId));
+    unawaited(_temporaryGrants.startForChild(childProfileId));
     _appTimeLimitSubscription = _appTimeLimitService
         .watchForChildAndCache(childProfileId)
         .listen(
@@ -218,6 +243,26 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         );
   }
 
+  Future<void> _syncChildDisplayName(String profileId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || profileId.isEmpty) return;
+    try {
+      final ownProfile = await FirebaseFirestore.instance
+          .collection('users').doc(user.uid).get();
+      final name = (ownProfile.data()?['fullName'] ??
+          user.displayName ?? '').toString().trim();
+      if (name.isEmpty) return;
+      await FirebaseFirestore.instance.collection('child_profiles')
+          .doc(profileId).set({
+        'childDisplayName': name,
+      }, SetOptions(merge: true));
+    } catch (error) {
+      // Name is optional presentation data; never interfere with pairing,
+      // blocking, or the existing time-limit sync.
+      debugPrint('Could not synchronize child display name: $error');
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -226,8 +271,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _connectivitySubscription?.cancel();
     _timeLimitWatchGeneration++;
     _appTimeLimitSubscription?.cancel();
+    unawaited(_temporaryGrants.detach());
     _locationAutoShareTimer?.cancel();
     _usageAutoSyncTimer?.cancel();
+    _presenceHeartbeatTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -242,6 +289,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       _loadUsageDashboard();
       _refreshSmsAlertStatus();
       _refreshSyncStatus();
+      unawaited(_publishOnlineHeartbeat());
       final activeProfile = _timeLimitProfileId;
       if (activeProfile != null && activeProfile.isNotEmpty) {
         unawaited(_limitNotifications.startForChild(activeProfile));
@@ -321,47 +369,53 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     }
   }
 
-  /// Fires once per actual online<->offline transition (see
-  /// SyncStatusService.onlineStatusChanges). On regaining connectivity,
-  /// flushes whatever was cached by _queuePendingSync while offline - this
-  /// is the "automatic retry after reconnecting" half of the offline-sync
-  /// story; syncUsageReport()'s manual button press is the other half.
+  /// Updates the visible connection state. The Android scheduler, rather
+  /// than this screen, waits 15 minutes after a validated reconnect and
+  /// uploads fresh UsageStats. A manual Sync Usage remains available.
+  /// Native Android monitors connectivity while the app process is alive.
+  /// Do not immediately replay an old offline payload here: it can contain
+  /// stale usage and bypass the requested 15-minute post-reconnect delay.
+  /// JobScheduler collects a *fresh* UsageStats snapshot after that window.
   Future<void> _handleConnectivityChange(bool isOnline) async {
-    if (mounted) {
-      setState(() => _isOnline = isOnline);
+    if (!mounted) return;
+    setState(() => _isOnline = isOnline);
+    if (isOnline) {
+      // Send only a presence update now. Android's reconnect job remains
+      // responsible for uploading fresh usage after the 15-minute delay.
+      unawaited(_publishOnlineHeartbeat());
+    } else {
+      // Ensure a quick check-in when the connection next returns.
+      _lastPresenceWriteAttempt = null;
     }
+  }
 
-    if (!isOnline) return;
+  /// Best-effort server heartbeat for the parent dashboard. No offline write:
+  /// a disconnected phone cannot announce its own disconnection to Firestore.
+  /// Native ScreenTimeReportJobService checks in even while Flutter UI is closed.
+  Future<void> _publishOnlineHeartbeat() async {
+    if (!_isOnline) return;
+    final user = FirebaseAuth.instance.currentUser;
+    final data = _cachedUserData;
+    if (user == null || data == null || !isConnected(data)) return;
+    final profileId = (data['pairedChildProfileId'] ?? '').toString();
+    if (profileId.isEmpty) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    final pendingRaw = prefs.getString('pending_sync_payload_json');
-    if (pendingRaw == null) return;
-
+    final now = DateTime.now();
+    if (_lastPresenceWriteAttempt != null &&
+        now.difference(_lastPresenceWriteAttempt!) <
+            const Duration(minutes: 4)) {
+      return;
+    }
+    _lastPresenceWriteAttempt = now;
     try {
-      final pending = jsonDecode(pendingRaw);
-      if (pending is! Map) {
-        await prefs.remove('pending_sync_payload_json');
-        return;
-      }
-
-      final childProfileId = (pending['childProfileId'] ?? '').toString();
-      final payload = pending['payload'];
-      final queuedAtMs = pending['queuedAtMs'];
-
-      if (childProfileId.isEmpty || payload is! Map) {
-        await prefs.remove('pending_sync_payload_json');
-        return;
-      }
-
-      await _attemptFirestoreSync(
-        childProfileId: childProfileId,
-        payload: Map<String, dynamic>.from(payload),
-        trigger: 'auto_reconnect',
-        queuedAtMs: queuedAtMs is int ? queuedAtMs : null,
-      );
-    } catch (_) {
-      // Malformed cache entry - drop it rather than retry forever.
-      await prefs.remove('pending_sync_payload_json');
+      await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .doc(profileId)
+          .update({'lastSeenAt': FieldValue.serverTimestamp()})
+          .timeout(const Duration(seconds: 10));
+    } catch (error) {
+      _lastPresenceWriteAttempt = null;
+      debugPrint('Child presence check-in failed: $error');
     }
   }
 
@@ -421,8 +475,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   /// Single choke point for writing the usage/SMS/restriction snapshot to
   /// child_profiles/{childProfileId} - used by both syncUsageReport()'s
-  /// manual button and _handleConnectivityChange()'s automatic
-  /// reconnect flush above.
+  /// manual button and periodic foreground synchronization.
+  /// Android independently uploads fresh usage after reconnect.
   ///
   /// Always caches the payload locally BEFORE attempting the write (cleared
   /// only on confirmed success), and wraps the write in a timeout, because
@@ -460,6 +514,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             .set({
               ...payload,
               'usageReportUpdatedAt': FieldValue.serverTimestamp(),
+              'lastSeenAt': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true))
             .timeout(const Duration(seconds: 10));
 
@@ -1072,28 +1127,41 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       final allSummaries = await _usageTrackingService.getAllTodayUsage();
       final summaries = allSummaries.take(10).toList();
       final report = await _usageTrackingService.getTodayUsageReport();
+      // Ask Android for the actual installed label/icon for each PACKAGE.
+      // Do not infer names such as Orca or Trill from package suffixes.
+      final appMetadata = await const InstalledAppMetadataService().lookup(
+        allSummaries.map((app) => app.packageName),
+      );
+      // Keep image data only once in allApps to avoid duplicating icons
+      // in topApps and pushing Firestore's document size limit.
+      var remainingIconChars = 400000;
 
       final topApps = summaries
           .map(
             (AppUsageSummary app) => {
               'packageName': app.packageName,
-              'displayName': app.displayName,
+              'displayName':
+                  appMetadata[app.packageName]?['displayName'] ??
+                  app.packageName,
               'usageDurationMs': app.usageDuration.inMilliseconds,
               'lastTimeUsed': app.lastTimeUsed?.toIso8601String(),
             },
           )
           .toList();
 
-      final allApps = allSummaries
-          .map(
-            (app) => {
-              'packageName': app.packageName,
-              'displayName': app.displayName,
-              'usageDurationMs': app.usageDuration.inMilliseconds,
-              'lastTimeUsed': app.lastTimeUsed?.toIso8601String(),
-            },
-          )
-          .toList();
+      final allApps = allSummaries.map((app) {
+        final icon = appMetadata[app.packageName]?['iconBase64'];
+        final keepIcon = icon != null && icon.length <= remainingIconChars;
+        if (keepIcon) remainingIconChars -= icon.length;
+        return <String, dynamic>{
+          'packageName': app.packageName,
+          'displayName':
+              appMetadata[app.packageName]?['displayName'] ?? app.packageName,
+          'usageDurationMs': app.usageDuration.inMilliseconds,
+          'lastTimeUsed': app.lastTimeUsed?.toIso8601String(),
+          if (keepIcon) 'iconBase64': icon,
+        };
+      }).toList();
       final allAppsTotalMs = allSummaries.fold<int>(
         0,
         (runningTotal, app) => runningTotal + app.usageDuration.inMilliseconds,
@@ -1243,6 +1311,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         trigger: 'manual',
       );
 
+      if (synced) {
+        // Backend validates the paired child and de-duplicates usage events.
+        // Dispatch is independent of whether this screen is still mounted.
+        unawaited(_monitoringUsageAlerts.reportUsage(
+          childProfileId: childProfileId,
+          report: report,
+          appSummaries: allSummaries,
+        ));
+      }
+
       if (!mounted) return;
 
       if (synced) {
@@ -1251,24 +1329,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         }
         await _loadUsageDashboard();
         await _refreshSmsAlertStatus();
-      }
-
-      // Push a real notification only for the pattern that actually
-      // matters to a parent (unhealthy) rather than on every sync - a
-      // healthy-usage push every time would just be noise. Fired regardless
-      // of whether the Firestore sync above succeeded - it's an
-      // independent, best-effort channel (see AlertNotificationClient).
-      if (report.patternStatus.name == 'unhealthy') {
-        final parentId = (data['pairedParentId'] ?? '').toString();
-        unawaited(
-          _alertNotificationClient.notifyParent(
-            parentUid: parentId,
-            title: 'Unhealthy usage pattern detected',
-            body: report.recommendationMessage,
-            alertType: 'unhealthy_usage',
-            childProfileId: childProfileId,
-          ),
-        );
       }
 
       // Same reasoning as the unhealthy-pattern push above, for a harmful
@@ -1323,6 +1383,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   Future<void> _autoSyncUsage() async {
     final data = _cachedUserData;
     if (data == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    // The Kotlin JobScheduler writes this key outside Dart's pref cache.
+    await prefs.reload();
+    final dueAtMs = prefs.getInt('wellscreen_reconnect_due_ms') ?? 0;
+    if (dueAtMs > DateTime.now().millisecondsSinceEpoch) return;
     await syncUsageReport(data, silent: true);
   }
 
@@ -1335,6 +1400,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _timeLimitProfileId = null;
     await previous?.cancel();
     await _appTimeLimitService.clearCachedLimits();
+    await _temporaryGrants.stop();
     await _limitNotifications.stopForSignOut();
     await FirebaseAuth.instance.signOut();
 
@@ -1344,6 +1410,24 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,
+    );
+  }
+
+  void openFamilyChat() {
+    final childProfileId = (_cachedUserData?['pairedChildProfileId'] ?? '')
+        .toString();
+    if (childProfileId.isEmpty) {
+      showMessage('Pair with a parent to start chatting.');
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ParentChildChatScreen(
+          childProfileId: childProfileId,
+          isParent: false,
+        ),
+      ),
     );
   }
 
@@ -1838,6 +1922,13 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
             if (connected) {
               _maybeSyncParentPhoneNumber(data);
+              // First paired screen load can happen after the connectivity
+              // status check. Defer a check-in until after this build.
+              if (_lastPresenceWriteAttempt == null && _isOnline) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) unawaited(_publishOnlineHeartbeat());
+                });
+              }
             }
             _ensureAppTimeLimitSubscription(
               connected ? (data['pairedChildProfileId'] ?? '').toString() : '',
@@ -1850,6 +1941,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 _topBar(),
                 const SizedBox(height: 18),
                 _studentProfileCard(data, connected),
+                if (connected) ...[
+                  const SizedBox(height: 14),
+                  _monitoringDisclosureCard(),
+                ],
                 const SizedBox(height: 22),
                 if (!connected)
                   KeyedSubtree(key: _pairingSectionKey, child: _pairingCard()),
@@ -1936,6 +2031,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             ),
           ),
           IconButton(
+            tooltip: 'Notifications',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ChatNotificationsScreen(),
+              ),
+            ),
+            icon: const ChatUnreadBell(color: Colors.white, size: 29),
+          ),
+          IconButton(
             tooltip: 'Profile',
             onPressed: () {
               Navigator.push(
@@ -1977,6 +2082,34 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             );
           },
         ),
+      ),
+    );
+  }
+
+  /// Visible disclosure before a child visits system monitoring controls.
+  /// Android's actual uninstall/permission dialogs belong to Android;
+  /// WellScreen does not intercept or obstruct those system actions.
+  Widget _monitoringDisclosureCard() {
+    return _whiteCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            color: AppColors.warning,
+            size: 26,
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Monitoring notice: Disabling WellScreen permissions, turning off '
+              'monitoring, or uninstalling WellScreen will interrupt screen-time '
+              'tracking and usage reports. Your parent may be notified if this '
+              'device stops reporting. Android controls the uninstall process.',
+              style: TextStyle(color: darkText, fontSize: 12, height: 1.4),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2045,6 +2178,20 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 ],
               ),
               if (connected) ...[
+                const SizedBox(height: 10),
+                // Match the size of Share GPS / Profile without changing
+                // existing Pairing, Settings, or Sync Usage controls.
+                LayoutBuilder(
+                  builder: (context, available) => Center(
+                    child: SizedBox(
+                      width: (available.maxWidth - 10) / 2,
+                      child: _smallPurpleButton(
+                        label: 'Chatbox',
+                        onTap: openFamilyChat,
+                      ),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
@@ -2135,14 +2282,18 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
               width: 11,
               height: 11,
               decoration: BoxDecoration(
-                color: connected ? teal : Colors.orange,
+                color: connected
+                    ? (_isOnline ? teal : AppColors.danger)
+                    : Colors.orange,
                 borderRadius: BorderRadius.circular(20),
               ),
             ),
             const SizedBox(width: 7),
             Expanded(
               child: Text(
-                connected ? 'Online - $email' : 'Waiting for parent pairing',
+                connected
+                    ? (_isOnline ? 'Online - $email' : 'Offline - $email')
+                    : 'Waiting for parent pairing',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -2607,7 +2758,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           '${_usageAutoSyncInterval.inMinutes} min.';
     } else if (lastOutcome == 'queued_offline' ||
         lastOutcome == 'failed_timeout') {
-      label = 'Online - retrying a queued sync from earlier...';
+      label = 'Online - usage recovery will run automatically when scheduled.';
     } else if (lastOutcome != null) {
       label = 'Online - last sync failed. Tap Sync Usage to retry.';
     } else {

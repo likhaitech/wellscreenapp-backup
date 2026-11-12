@@ -34,3 +34,11 @@ firestore_rules_tests/firestore.rules
 firestore_rules_tests/firebase-debug.log
 firestore_rules_tests/firestore-debug.log
 firestore_rules_tests/ui-debug.log
+
+# Generated files and caches
+.gradle-cache-new/
+build/
+.dart_tool/
+.gradle/
+android/.gradle/
+**/Pods/

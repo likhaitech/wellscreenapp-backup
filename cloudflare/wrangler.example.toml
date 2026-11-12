@@ -1,0 +1,12 @@
+name = "wellscreen-chat-notifications"
+main = "chat-notification-cron-worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+MONITORING_API_URL = "https://wellscreen-app.onrender.com"
+
+[triggers]
+crons = ["* * * * *"]
+
+# CHAT_CRON_SECRET must be set with `wrangler secret put`.
+# Never place the secret in this file or the Flutter app.

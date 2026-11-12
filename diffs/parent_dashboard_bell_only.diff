@@ -1,0 +1,32 @@
+--- a/mobile_app/lib/screens/parent_dashboard_screen.dart
++++ b/mobile_app/lib/screens/parent_dashboard_screen.dart
+@@ -14,6 +14,7 @@
+ import 'device_pairing_screen.dart';
+ import 'gps_map_screen.dart';
+ import 'login_screen.dart';
++import 'parent_notifications_screen.dart';
+ import 'profile_settings_screen.dart';
+ import 'reports_screen.dart';
+ import 'rules/rules_screen.dart';
+@@ -497,19 +498,12 @@
+             ),
+           ),
+           IconButton(
+-            tooltip: 'Alerts',
++            tooltip: 'Notifications',
+             onPressed: () {
+-              // Bell is a shortcut into ReportsScreen's Alerts tab now,
+-              // not a separate screen - everything report-like (usage,
+-              // browsing, location, alerts) lives in one place with a
+-              // visible tab selector, reached from either entry point.
+               Navigator.push(
+                 context,
+                 MaterialPageRoute(
+-                  builder: (_) => ReportsScreen(
+-                    childProfileId: _primaryChildId ?? '',
+-                    initialTab: 3,
+-                  ),
++                  builder: (_) => const ParentNotificationsScreen(),
+                 ),
+               );
+             },

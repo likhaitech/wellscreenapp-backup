@@ -1,212 +1,235 @@
-rules_version = '2';
+  rules_version = '2';
 
-// WellScreen Firestore Security Rules
-//
-// WHY THIS FILE EXISTS: it didn't, at all, until now - checked directly
-// against the repo, there was no firestore.rules anywhere. That means
-// whatever rules are actually enforced live in the Firebase project
-// itself, edited by hand in the Console, not version-controlled or
-// reviewed. The "permission-denied" error hit during pairing testing is
-// almost certainly one of two things: (1) the project was created in
-// Firestore's default "test mode," which auto-expires 30 days after
-// creation and then denies everything, or (2) it was created in
-// production/locked mode (deny-by-default) and no rules were ever written
-// to allow the app's real reads/writes. Either way, the fix is deploying
-// real rules - this file - not just re-enabling test mode, which would
-// "fix" it today and silently break again in another 30 days.
-//
-// HOW THESE WERE WRITTEN: by reading every FirebaseFirestore.instance
-// .collection(...) call across mobile_app/lib and matching each rule to
-// what the app actually does - not copied from a generic template. See
-// the comment above each collection for the exact source file/pattern it
-// covers.
-//
-// UPDATE (2026-08-21): child_profiles and pairing_codes below were
-// originally "allow read, write: if isSignedIn()" - ANY logged-in
-// WellScreen user (parent or child, on ANY family's account) could read
-// or overwrite ANY other family's child profile or pairing code, just by
-// knowing/guessing the document id or 6-digit code. That's tightened now
-// to require the caller be the owning parent, or the specific child
-// already tied to that document, matching exactly the read/write pattern
-// each real code path in the app uses (see per-collection comments
-// below). It is verified against the actual write payloads in
-// device_pairing_screen.dart and child_home_screen.dart - not a generic
-// template.
-//
-// KNOWN LIMITATION, stated honestly, still true after this tightening:
-// WellScreen pairs a parent and child account via a 6-digit code, not a
-// prior stored relationship - so an UNPAIRED child claiming a
-// child_profiles doc for the first time still can't be checked against
-// "do you own this doc" (there's nothing to own yet). The rules below
-// instead check that the code/profile is still unclaimed and that the
-// claiming write only ever sets the caller as themselves, never someone
-// else - so the remaining exposure is scoped to "knows a valid 6-digit
-// code before it expires (15 min) or an unguessable auto-generated child
-// profile id," not "any signed-in user, indefinitely," as before. Full
-// closure would mean one-time-use code enforcement inside the rules
-// themselves (e.g. denying reuse of an already-'connected' code) or a
-// Cloud Function-mediated claim step - real follow-up work, not done
-// here, flagged rather than silently left as a gap.
-service cloud.firestore {
-  match /databases/{database}/documents {
+  service cloud.firestore {
+    match /databases/{database}/documents {
 
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isAdmin() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    // users/{uid} - written by register_screen.dart, login_screen.dart,
-    // pairing_service.dart/child_home_screen.dart's pairWithParent(),
-    // profile_settings_screen.dart, auth_service.dart. Every write in the
-    // codebase targets the caller's own uid as the doc id - no code path
-    // writes another user's doc - so this can be tightly scoped.
-    match /users/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
-      // Admin panel (admin_settings_screen.dart / admin_users route) needs
-      // to read other users' docs to manage accounts.
-      allow read: if isAdmin();
-
-      // FIX (see isAdmin() above): the original "allow read, write: if
-      // isSignedIn() && request.auth.uid == uid" let any signed-in user
-      // overwrite their OWN role field to 'admin', which isAdmin() then
-      // trusted - a client-side privilege escalation to admin-only data
-      // (system_logs, every other user's profile). register_screen.dart's
-      // own create write only ever sends role 'parent' or 'child' (see
-      // selectedRole), and real admin grants happen server-side via
-      // backend/scripts/grant_admin.py using the Admin SDK, which is not
-      // subject to these rules at all - so neither legitimate path needs
-      // a client-writable 'admin' role or the ability to change role
-      // after account creation.
-      allow create: if isSignedIn() && request.auth.uid == uid &&
-        request.resource.data.role in ['parent', 'child'];
-
-      allow update: if isSignedIn() && request.auth.uid == uid &&
-        request.resource.data.role == resource.data.role;
-    }
-    // Verified against every client write site to users/{uid}
-    // (register_screen.dart's create, child_home_screen.dart's pairing
-    // claim and location share, push_notification_service.dart's FCM
-    // token save): every one of them either creates the doc with role
-    // 'parent'/'child' or merges in fields that leave role untouched, so
-    // request.resource.data.role == resource.data.role always holds for
-    // real app traffic. KNOWN EDGE CASE, stated honestly: this update
-    // rule assumes resource.data.role already exists - a users/{uid} doc
-    // that somehow has no role field (none should, but if one ever does)
-    // would fail closed here rather than silently allowing the write.
-
-    // child_profiles/{id} - created by device_pairing_screen.dart
-    // (parentId = parent's own uid). Claimed once by the child during
-    // pairWithParent(), which sets childAccountId = the child's own uid
-    // (see KNOWN LIMITATION above) and never touches parentId. From then
-    // on, synced by syncUsageReport()/shareCurrentLocation()/
-    // AlertNotificationClient - all merge-only writes to the same doc by
-    // that same childAccountId. Read by parent_dashboard_screen.dart,
-    // usage_summary_screen.dart, reports_screen.dart, alerts_reports_screen.dart
-    // (the owning parent) and by the paired child's own device.
-    match /child_profiles/{childProfileId} {
-      function isOwningParent() {
-        return isSignedIn() && resource.data.parentId == request.auth.uid;
+      function isSignedIn() {
+        return request.auth != null;
       }
 
-      function isClaimedByCaller() {
+      function isAdmin() {
         return isSignedIn() &&
-          ('childAccountId' in resource.data) &&
-          resource.data.childAccountId == request.auth.uid;
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
       }
 
-      function isUnclaimed() {
-        return !('childAccountId' in resource.data);
+      // Users may edit their own profile, but cannot promote themselves to admin.
+      // Admin role assignment must happen through trusted server-side code.
+      match /users/{uid} {
+        allow read: if isSignedIn() && request.auth.uid == uid;
+        allow read: if isAdmin();
+
+        allow create: if isSignedIn() &&
+          request.auth.uid == uid &&
+          request.resource.data.role in ['parent', 'child'];
+
+        allow update: if isSignedIn() &&
+          request.auth.uid == uid &&
+          request.resource.data.role == resource.data.role;
+
+        allow delete: if false;
+
+        // Durable chat notifications for this account only. Clients cannot
+        // forge inbox records or change server-issued notification content.
+        match /notifications/{notificationId} {
+          allow get, list: if isSignedIn() && request.auth.uid == uid;
+          allow create, delete: if false;
+          allow update: if isSignedIn() && request.auth.uid == uid &&
+            resource.data.readAt == null &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']) &&
+            request.resource.data.readAt == request.time;
+        }
       }
 
-      allow read: if isOwningParent() || isClaimedByCaller();
+      match /child_profiles/{childProfileId} {
+        function isOwningParent() {
+          return isSignedIn() && resource.data.parentId == request.auth.uid;
+        }
 
-      allow create: if isSignedIn() &&
-        request.resource.data.parentId == request.auth.uid;
+        function isClaimedByCaller() {
+          return isSignedIn() &&
+            ('childAccountId' in resource.data) &&
+            resource.data.childAccountId == request.auth.uid;
+        }
 
-      // Parent keeps full write access to their own child's profile.
-      // Otherwise: the caller may only ever be writing itself in as the
-      // child (childAccountId == request.auth.uid) and may never change
-      // which parent owns the doc - covers both the one-time pairing
-      // claim (isUnclaimed()) and every later sync from an
-      // already-paired child (isClaimedByCaller()).
-      allow update: if isOwningParent() ||
-        (isSignedIn() &&
+        function isUnclaimed() {
+          return !('childAccountId' in resource.data);
+        }
+
+        allow read: if isOwningParent() || isClaimedByCaller();
+
+        allow create: if isSignedIn() &&
+          request.resource.data.parentId == request.auth.uid;
+
+        allow update: if isOwningParent() ||
+          (isSignedIn() &&
+            request.resource.data.parentId == resource.data.parentId &&
+            request.resource.data.childAccountId == request.auth.uid &&
+            // Only the owning parent may change the linked parent's identity.
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'parentDisplayName', 'parentEmail'
+            ]) &&
+            (isUnclaimed() || isClaimedByCaller()));
+
+        allow delete: if false;
+
+  match /monitoring_alerts/{alertId} {
+    // Only the owning parent can view security alerts.
+    allow get, list: if request.auth != null &&
+      get(
+        /databases/$(database)/documents/child_profiles/$(childProfileId)
+      ).data.parentId == request.auth.uid;
+
+    // Monitoring alerts are written by the trusted backend.
+    allow create, update, delete: if false;
+  }
+
+        // Per-app daily limits are a subcollection. Parent-document rules do
+        // not automatically apply to subcollections in Firestore.
+        match /app_time_limits/{appPackage} {
+          function childProfile() {
+            return get(/databases/$(database)/documents/child_profiles/$(childProfileId));
+          }
+
+          function isOwningLimitParent() {
+            return isSignedIn() &&
+              childProfile().data.parentId == request.auth.uid;
+          }
+
+          function isPairedLimitChild() {
+            return isSignedIn() &&
+              ('childAccountId' in childProfile().data) &&
+              childProfile().data.childAccountId == request.auth.uid;
+          }
+
+          // Matches AppTimeLimitService.saveLimit() payload.
+          function isValidLimit() {
+            return request.resource.data.keys().hasOnly([
+                    'packageName', 'appName', 'limitMinutes', 'updatedAt'
+                  ]) &&
+                  request.resource.data.keys().hasAll([
+                    'packageName', 'appName', 'limitMinutes', 'updatedAt'
+                  ]) &&
+                  request.resource.data.packageName == appPackage &&
+                  request.resource.data.appName is string &&
+                  request.resource.data.appName.size() > 0 &&
+                  request.resource.data.appName.size() <= 150 &&
+                  request.resource.data.limitMinutes is int &&
+                  request.resource.data.limitMinutes >= 1 &&
+                  request.resource.data.limitMinutes <= 1440 &&
+                  request.resource.data.updatedAt == request.time;
+          }
+
+          // The guardian configures limits; the paired child only receives them.
+          allow get, list: if isOwningLimitParent() || isPairedLimitChild();
+          allow create, update: if isOwningLimitParent() && isValidLimit();
+          allow delete: if isOwningLimitParent();
+        }
+
+        function chatProfile() {
+          return get(/databases/$(database)/documents/child_profiles/$(childProfileId)).data;
+        }
+        function chatParent() {
+          return request.auth != null && chatProfile().parentId == request.auth.uid;
+        }
+        function chatChild() {
+          return request.auth != null &&
+            ('childAccountId' in chatProfile()) &&
+            chatProfile().childAccountId == request.auth.uid;
+        }
+        function chatMember() {
+          return chatParent() || chatChild();
+        }
+
+        match /chat_messages/{messageId} {
+          allow get, list: if chatMember();
+          allow create: if chatMember() &&
+            request.resource.data.keys().hasOnly([
+              'senderId', 'body', 'createdAt', 'notificationState'
+            ]) &&
+            request.resource.data.keys().hasAll([
+              'senderId', 'body', 'createdAt', 'notificationState'
+            ]) &&
+            request.resource.data.senderId == request.auth.uid &&
+            request.resource.data.body is string &&
+            request.resource.data.body.size() >= 1 &&
+            request.resource.data.body.size() <= 2000 &&
+            request.resource.data.notificationState == 'pending' &&
+            request.resource.data.createdAt == request.time;
+          allow update, delete: if false;
+        }
+
+        match /access_requests/{requestId} {
+          allow get, list: if chatMember();
+          allow create: if chatChild() &&
+            request.resource.data.keys().hasOnly([
+              'childUid', 'packageName', 'appName', 'requestedMinutes',
+              'status', 'createdAt', 'notificationState'
+            ]) &&
+            request.resource.data.keys().hasAll([
+              'childUid', 'packageName', 'appName', 'requestedMinutes',
+              'status', 'createdAt', 'notificationState'
+            ]) &&
+            request.resource.data.childUid == request.auth.uid &&
+            request.resource.data.packageName is string &&
+            request.resource.data.packageName.size() >= 3 &&
+            request.resource.data.packageName.size() <= 200 &&
+            !request.resource.data.packageName.matches('.*[/].*') &&
+            request.resource.data.appName is string &&
+            request.resource.data.appName.size() >= 1 &&
+            request.resource.data.appName.size() <= 150 &&
+            request.resource.data.requestedMinutes is int &&
+            request.resource.data.requestedMinutes >= 5 &&
+            request.resource.data.requestedMinutes <= 120 &&
+            request.resource.data.status == 'pending' &&
+            request.resource.data.notificationState == 'pending' &&
+            request.resource.data.createdAt == request.time;
+          // Approval is server-only. A child cannot modify status or grant time.
+          allow update, delete: if false;
+        }
+
+        match /temporary_access_grants/{packageName} {
+          allow get, list: if chatMember();
+          // Written only by trusted FastAPI with Firebase Admin SDK.
+          allow create, update, delete: if false;
+        }
+      }
+
+      match /pairing_codes/{code} {
+        allow read: if isSignedIn();
+
+        allow create: if isSignedIn() &&
+          request.resource.data.parentId == request.auth.uid;
+
+        allow update: if isSignedIn() &&
+          resource.data.status == 'active' &&
+          request.resource.data.status == 'connected' &&
           request.resource.data.parentId == resource.data.parentId &&
-          request.resource.data.childAccountId == request.auth.uid &&
-          (isUnclaimed() || isClaimedByCaller()));
+          request.resource.data.childId == resource.data.childId &&
+          request.resource.data.childAccountId == request.auth.uid;
 
-      allow delete: if false;
-    }
+        allow delete: if false;
+      }
 
-    // pairing_codes/{code} - created by device_pairing_screen.dart
-    // (parentId = parent's own uid). Read broadly, per KNOWN LIMITATION
-    // above: an unpaired child looks this doc up by the 6-digit code
-    // alone, with no prior relationship to check read access against.
-    // Writes are tightened to the two real transitions the app makes:
-    // the owning parent creating it, and a single active -> connected
-    // claim by the child that ends up owning it - never an arbitrary
-    // overwrite/delete by any other signed-in user.
-    match /pairing_codes/{code} {
-      allow read: if isSignedIn();
+      match /app_rules/{parentId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && request.auth.uid == parentId;
+      }
 
-      allow create: if isSignedIn() &&
-        request.resource.data.parentId == request.auth.uid;
+      match /restriction_settings/{docId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          request.resource.data.parentId == request.auth.uid;
+        allow update, delete: if false;
+      }
 
-      allow update: if isSignedIn() &&
-        resource.data.status == 'active' &&
-        request.resource.data.status == 'connected' &&
-        request.resource.data.parentId == resource.data.parentId &&
-        request.resource.data.childId == resource.data.childId &&
-        request.resource.data.childAccountId == request.auth.uid;
+      match /system_logs/{logId} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
 
-      allow delete: if false;
-    }
-
-    // app_rules/{parentId} - written only by app_rules_service.dart's
-    // saveRules(), always to the caller's own uid. Read cross-account by
-    // the paired CHILD via watchRulesForParent(parentId) - see
-    // child_home_screen.dart line ~1991 - so read must allow any signed-in
-    // user, but write stays locked to the owning parent.
-    match /app_rules/{parentId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == parentId;
-    }
-
-    // restriction_settings/{autoId} - created (add()) by
-    // rule_settings_screen.dart with parentId = caller's own uid. No
-    // update/delete path exists in the app today.
-    match /restriction_settings/{docId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.parentId == request.auth.uid;
-      allow update, delete: if false;
-    }
-
-    // system_logs/{id} - read-only from the client (admin_logs_screen.dart).
-    // No client write path exists; if logs are ever written from the
-    // client instead of the backend's Admin SDK, this will need revisiting.
-    match /system_logs/{logId} {
-      allow read: if isAdmin();
-      allow write: if false;
-    }
-
-    // pairingCodes/{code} (camelCase - note this is a DIFFERENT collection
-    // name from pairing_codes above) - written by
-    // mobile_app/lib/services/pairing_service.dart, which does not appear
-    // to be called from any screen currently in use (device_pairing_screen.dart
-    // and child_home_screen.dart both use the snake_case "pairing_codes"
-    // collection instead). Flagged as likely-dead duplicate code, not
-    // fixed here. Deny by default via the fallback rule below rather than
-    // guessing at intended access.
-
-    // Everything else: deny by default. Safer than an open catch-all -
-    // a missing rule here should mean "this needs a decision," not "let
-    // it through."
-    match /{document=**} {
-      allow read, write: if false;
+      // Deny all other paths by default.
+      match /{document=**} {
+        allow read, write: if false;
+      }
     }
   }
-}

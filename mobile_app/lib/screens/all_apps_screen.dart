@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/app_time_limit.dart';
 import '../services/app_time_limit_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_usage_icon.dart';
 import '../widgets/wellscreen_bottom_nav.dart';
 import 'device_pairing_screen.dart';
 import 'profile_settings_screen.dart';
@@ -12,9 +13,9 @@ import 'set_app_time_limit_dialog.dart';
 
 /// Guardian-only screen, opened from the Parent Dashboard's "View All" action.
 ///
-/// Data source: child_profiles/{childProfileId}.latestUsageReport.topApps
-/// (populated by ChildHomeScreen.syncUsageReport). No additional tracking,
-/// Firestore writes, or new packages are needed.
+/// Data source: child_profiles/{childProfileId}.latestUsageReport.allApps
+/// (falls back to topApps for older reports). The child's usage sync supplies
+/// real installed application labels and icons, keyed by Android package name.
 class AllAppsScreen extends StatefulWidget {
   const AllAppsScreen({super.key, required this.childProfileId});
 
@@ -518,87 +519,14 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
     );
   }
 
-  /// Current Firestore records contain package names but not icon image bytes.
-  /// Render locally available Material icon approximations; no remote icon
-  /// download, new dependency, or invented image URL is introduced.
+  /// The child's sync uploads the actual installed Android app icon as
+  /// iconBase64. For older reports, show a neutral fallback without guessing
+  /// the app identity from a package name or brand-specific asset.
   Widget _appIcon(_AppUsage app) {
-    final p = app.packageName.toLowerCase();
-    final n = app.displayName.toLowerCase();
-    final youtube = p.contains('youtube') || n.contains('youtube');
-    final tiktok = p.contains('musically') || n.contains('tiktok');
-    final insta = p.contains('instagram') || n.contains('instagram');
-    final discord = p.contains('discord') || n.contains('discord');
-    final roblox = p.contains('roblox') || n.contains('roblox');
-    final chrome = p.contains('chrome') || n == 'chrome';
-    final messages = p.contains('messag') || n.contains('messages');
-    final bg = youtube
-        ? Colors.white
-        : tiktok
-        ? const Color(0xFF170D1D)
-        : insta
-        ? const Color(0xFFD63485)
-        : discord
-        ? const Color(0xFF5865F2)
-        : roblox
-        ? const Color(0xFF222934)
-        : chrome
-        ? const Color(0xFFF9F9FA)
-        : messages
-        ? const Color(0xFF168CF4)
-        : const Color(0xFFE0EBFA);
-    final icon = youtube
-        ? Icons.smart_display_rounded
-        : tiktok
-        ? Icons.music_note_rounded
-        : insta
-        ? Icons.camera_alt_rounded
-        : discord
-        ? Icons.sports_esports_rounded
-        : roblox
-        ? Icons.crop_rotate_rounded
-        : chrome
-        ? Icons.public_rounded
-        : messages
-        ? Icons.message_rounded
-        : Icons.apps_rounded;
-    final fg = youtube
-        ? const Color(0xFFFF0033)
-        : chrome
-        ? const Color(0xFF24A65B)
-        : bg == const Color(0xFFE0EBFA)
-        ? AppColors.primary
-        : Colors.white;
-    final assetName = tiktok
-        ? 'tiktok'
-        : youtube
-        ? 'youtube'
-        : discord
-        ? 'discord'
-        : insta
-        ? 'instagram'
-        : roblox
-        ? 'roblox'
-        : chrome
-        ? 'chrome'
-        : messages
-        ? 'messages'
-        : null;
-    return Container(
-      width: 48,
-      height: 48,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(13),
-        color: bg,
-        border: Border.all(color: const Color(0xFFF0F0F4)),
-      ),
-      child: assetName != null
-          ? Image.asset(
-              'assets/icons/$assetName.png',
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Icon(icon, color: fg, size: 29),
-            )
-          : Icon(icon, color: fg, size: 29),
+    return AppUsageIcon(
+      encoded: app.iconBase64,
+      fallback: Icons.apps_rounded,
+      fallbackColor: AppColors.primary,
     );
   }
 
@@ -764,6 +692,7 @@ class _AppUsage {
     required this.packageName,
     required this.displayName,
     required this.usageMs,
+    this.iconBase64,
     this.openCount,
     this.averageDailyMs,
     this.lastUsed,
@@ -772,6 +701,7 @@ class _AppUsage {
   final String packageName;
   final String displayName;
   final int usageMs;
+  final String? iconBase64;
   final int? openCount;
   final int? averageDailyMs;
   final DateTime? lastUsed;
@@ -781,10 +711,17 @@ class _AppUsage {
     final rawName = (raw['displayName'] ?? '').toString().trim();
     return _AppUsage(
       packageName: pkg,
+      // A full package identifier is safer than a misleading last segment
+      // (e.g. `orca` or `trill`) when an older usage report lacks a label.
       displayName: rawName.isNotEmpty
           ? rawName
-          : (pkg.isNotEmpty ? pkg.split('.').last : 'Unknown App'),
+          : (pkg.isNotEmpty ? pkg : 'Unknown App'),
       usageMs: _nonnegativeInt(raw['usageDurationMs']) ?? 0,
+      iconBase64:
+          raw['iconBase64'] is String &&
+              (raw['iconBase64'] as String).isNotEmpty
+          ? raw['iconBase64'] as String
+          : null,
       // Optional forward-compatible fields. Current sync DOES NOT send them.
       openCount: _nonnegativeInt(raw['openCount']),
       averageDailyMs: _nonnegativeInt(raw['averageDailyUsageMs']),
@@ -795,7 +732,9 @@ class _AppUsage {
 
 List<_AppUsage> _appsFromReport(Map<String, dynamic> report) {
   // Prefer the uncapped synced list; older child clients supply topApps only.
-  final rawList = report['allApps'] ?? report['topApps'];
+  final rawList = report['allApps'] is List
+      ? report['allApps']
+      : report['topApps'];
   if (rawList is! List) return <_AppUsage>[];
   final unique = <String, _AppUsage>{};
   for (final raw in rawList) {

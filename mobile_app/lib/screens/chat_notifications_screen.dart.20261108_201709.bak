@@ -1,0 +1,187 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import '../services/chat_notifications_service.dart';
+import '../theme/app_theme.dart';
+
+/// Shared, durable chat & access-request inbox for parent and child accounts.
+/// It is also embedded above the parent's existing security-alert history.
+class ChatNotificationsPanel extends StatelessWidget {
+  const ChatNotificationsPanel({super.key});
+
+  String _timestamp(dynamic value) {
+    if (value is! Timestamp) return 'Synchronizing...';
+    final date = value.toDate().toLocal();
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    return '${date.month}/${date.day}/${date.year} '
+        '$hour:${date.minute.toString().padLeft(2, '0')} '
+        '${date.hour < 12 ? 'AM' : 'PM'}';
+  }
+
+  IconData _iconFor(String type) {
+    switch (type) {
+      case 'chat_message':
+        return Icons.chat_bubble_outline_rounded;
+      case 'access_request':
+        return Icons.lock_clock_rounded;
+      case 'access_decision':
+        return Icons.verified_user_outlined;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text('Sign in to view chat notifications.'),
+      );
+    }
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: ChatNotificationsService.instance.inboxStream(uid),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text('Could not load chat notifications: ${snapshot.error}'),
+          );
+        }
+        final docs = snapshot.data?.docs ?? [];
+        final unseen = docs
+            .where((doc) => doc.data()['readAt'] == null)
+            .toList();
+        final seen = docs.where((doc) => doc.data()['readAt'] != null).toList();
+        Widget entries(
+          String title,
+          List<QueryDocumentSnapshot<Map<String, dynamic>>> rows,
+        ) {
+          if (rows.isEmpty) return const SizedBox.shrink();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 11, bottom: 7),
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              for (final doc in rows)
+                Card(
+                  color: Colors.white,
+                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: const BorderSide(color: Color(0xFFE2EAF0)),
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: const Color(0xFFE9F1FD),
+                      child: Icon(
+                        _iconFor((doc.data()['type'] ?? '').toString()),
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            (doc.data()['title'] ?? 'Family chat').toString(),
+                            style: TextStyle(
+                              fontWeight: doc.data()['readAt'] == null
+                                  ? FontWeight.w900
+                                  : FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (doc.data()['readAt'] == null)
+                          const Icon(
+                            Icons.circle,
+                            color: AppColors.primary,
+                            size: 9,
+                          ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      '${doc.data()['body'] ?? ''}\n'
+                      '${_timestamp(doc.data()['createdAt'])}',
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    isThreeLine: true,
+                    onTap: () => unawaited(
+                      ChatNotificationsService.instance.openNotification(
+                        context,
+                        doc.data(),
+                        doc.id,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Family messages and app requests',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            if (!snapshot.hasData)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (docs.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Text('No chat notifications yet.'),
+              )
+            else ...[
+              entries('New (${unseen.length})', unseen),
+              entries('Previously viewed', seen),
+            ],
+            const SizedBox(height: 8),
+            const Divider(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class ChatNotificationsScreen extends StatelessWidget {
+  const ChatNotificationsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: const Color(0xFFF3F7FA),
+    appBar: AppBar(
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+      title: const Text(
+        'Notifications',
+        style: TextStyle(fontWeight: FontWeight.w900),
+      ),
+    ),
+    body: const ListView(
+      padding: EdgeInsets.all(18),
+      children: [ChatNotificationsPanel()],
+    ),
+  );
+}

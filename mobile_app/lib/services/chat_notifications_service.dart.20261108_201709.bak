@@ -1,0 +1,326 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import '../screens/parent_child_chat_screen.dart';
+
+/// ONE app-wide handler for chat FCM. Existing app-limit and monitoring
+/// notification handlers continue to handle their own event types.
+class ChatNotificationsService {
+  ChatNotificationsService._();
+  static final ChatNotificationsService instance = ChatNotificationsService._();
+
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
+  static const _channelId = 'wellscreen_chat';
+  final _notifications = FlutterLocalNotificationsPlugin();
+  StreamSubscription<RemoteMessage>? _foreground;
+  StreamSubscription<RemoteMessage>? _opened;
+  StreamSubscription<User?>? _authChanges;
+  Map<String, String>? _pendingTap;
+  bool _initialized = false;
+  bool _dashboardReady = false;
+
+  CollectionReference<Map<String, dynamic>> inboxFor(String uid) =>
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('notifications');
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> inboxStream(String uid) =>
+      inboxFor(
+        uid,
+      ).orderBy('createdAt', descending: true).limit(200).snapshots();
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> unreadStream(String uid) =>
+      inboxFor(uid).where('readAt', isNull: true).snapshots();
+
+  Future<void> initialize() async {
+    if (_initialized) return;
+    _initialized = true;
+
+    await _notifications.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+      onDidReceiveNotificationResponse: (response) {
+        final payload = response.payload;
+        if (payload == null || payload.isEmpty) return;
+        try {
+          final obj = jsonDecode(payload);
+          if (obj is Map) {
+            _queueTap({
+              'childProfileId': (obj['childProfileId'] ?? '').toString(),
+              'notificationId': (obj['notificationId'] ?? '').toString(),
+            });
+          }
+        } catch (_) {
+          // Malformed/legacy notification; ignore navigation only.
+        }
+      },
+    );
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _channelId,
+            'Family Chat',
+            description: 'Parent and child messages and access decisions',
+            importance: Importance.high,
+          ),
+        );
+
+    _foreground = FirebaseMessaging.onMessage.listen((message) {
+      if (message.data['type'] == 'parent_child_chat') {
+        unawaited(_showForeground(message));
+      }
+    });
+    _opened = FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      if (message.data['type'] == 'parent_child_chat') {
+        _queueTap(message.data);
+      }
+    });
+    _authChanges = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user == null) {
+        _dashboardReady = false;
+      } else {
+        _drainPendingTap();
+      }
+    });
+    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    if (initial?.data['type'] == 'parent_child_chat') {
+      _queueTap(initial!.data);
+    }
+  }
+
+  int _notificationId(String raw) {
+    // Stable positive 31-bit FNV hash, rather than a process-random hashCode.
+    var value = 0x811C9DC5;
+    for (final ch in raw.codeUnits) {
+      value = ((value ^ ch) * 0x01000193) & 0x7FFFFFFF;
+    }
+    return value;
+  }
+
+  Future<void> _showForeground(RemoteMessage message) async {
+    final id = message.data['notificationId'] ?? message.messageId ?? '';
+    final profileId = message.data['childProfileId'] ?? '';
+    if (profileId.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    var unread = 1;
+    if (uid != null) {
+      try {
+        final snapshot = await inboxFor(uid)
+            .where('readAt', isNull: true)
+            .get(const GetOptions(source: Source.server));
+        unread = snapshot.docs.length;
+      } catch (_) {
+        // Don't suppress an actual push because the unread count is offline.
+      }
+    }
+    await _notifications.show(
+      id: _notificationId(id.isEmpty ? profileId : id),
+      title: message.notification?.title ?? 'New WellScreen message',
+      body: message.notification?.body ?? 'Open your family chat',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          'Family Chat',
+          channelDescription: 'Parent and child messages and requests',
+          importance: Importance.high,
+          priority: Priority.high,
+          number: unread,
+        ),
+      ),
+      payload: jsonEncode({'childProfileId': profileId, 'notificationId': id}),
+    );
+  }
+
+  void _queueTap(Map<String, dynamic> raw) {
+    final id = raw['childProfileId'];
+    if (id is! String || id.isEmpty) return;
+    _pendingTap = {
+      'childProfileId': id,
+      'notificationId': (raw['notificationId'] ?? '').toString(),
+    };
+    _drainPendingTap();
+  }
+
+  void markDashboardReady() {
+    // Both dashboard screens call this after their initial frame. It prevents
+    // a cold-start FCM tap from being pushed over SplashScreen and then
+    // overwritten by SplashScreen's own navigation.
+    _dashboardReady = true;
+    _drainPendingTap();
+  }
+
+  void _drainPendingTap() {
+    // A cold start can deliver FCM before SplashScreen finishes routing.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_tryOpenTap());
+    });
+  }
+
+  Future<void> _tryOpenTap() async {
+    final data = _pendingTap;
+    final user = FirebaseAuth.instance.currentUser;
+    if (data == null || user == null || !_dashboardReady) return;
+    final profileId = data['childProfileId'] ?? '';
+    if (profileId.isEmpty) return;
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .doc(profileId)
+          .get();
+      final profile = snapshot.data();
+      if (profile == null) return;
+      final isParent = profile['parentId'] == user.uid;
+      final isChild = profile['childAccountId'] == user.uid;
+      if (!isParent && !isChild) return;
+      final navigator = navigatorKey.currentState;
+      if (navigator == null) return;
+      _pendingTap = null;
+      final notificationId = data['notificationId'] ?? '';
+      if (notificationId.isNotEmpty) {
+        unawaited(markRead(notificationId));
+      }
+      // FCM tap passes through the same paired-account authorization as chat.
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) => ParentChildChatScreen(
+            childProfileId: profileId,
+            isParent: isParent,
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Chat notification navigation deferred: $error');
+    }
+  }
+
+  Future<void> openNotification(
+    BuildContext context,
+    Map<String, dynamic> item,
+    String notificationId,
+  ) async {
+    final profileId = (item['childProfileId'] ?? '').toString();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (profileId.isEmpty || uid == null) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .doc(profileId)
+          .get();
+      if (!context.mounted) return;
+      final profile = snap.data() ?? <String, dynamic>{};
+      final parent = profile['parentId'] == uid;
+      final child = profile['childAccountId'] == uid;
+      if (!parent && !child) return;
+      unawaited(markRead(notificationId));
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ParentChildChatScreen(
+            childProfileId: profileId,
+            isParent: parent,
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Could not open chat notification: $error');
+    }
+  }
+
+  Future<void> markRead(String notificationId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || notificationId.isEmpty) return;
+    try {
+      await inboxFor(
+        uid,
+      ).doc(notificationId).update({'readAt': FieldValue.serverTimestamp()});
+    } catch (error) {
+      debugPrint('Notification read synchronization deferred: $error');
+    }
+  }
+
+  Future<void> markProfileRead(String childProfileId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || childProfileId.isEmpty) return;
+    try {
+      final docs = await inboxFor(
+        uid,
+      ).where('childProfileId', isEqualTo: childProfileId).limit(200).get();
+      final unread = docs.docs
+          .where((d) => d.data()['readAt'] == null)
+          .toList();
+      for (var i = 0; i < unread.length; i += 400) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final doc in unread.skip(i).take(400)) {
+          batch.update(doc.reference, {'readAt': FieldValue.serverTimestamp()});
+        }
+        await batch.commit();
+      }
+    } catch (error) {
+      debugPrint('Chat read-state sync deferred: $error');
+    }
+  }
+}
+
+/// A live unread counter for the dashboard bell. Launcher icon badges are
+/// Android/OEM controlled; this in-app counter works on any Flutter device.
+class ChatUnreadBell extends StatelessWidget {
+  const ChatUnreadBell({super.key, this.color = Colors.white, this.size = 29});
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null)
+      return Icon(Icons.notifications_none_rounded, color: color, size: size);
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: ChatNotificationsService.instance.unreadStream(uid),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.docs.length ?? 0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(Icons.notifications_none_rounded, color: color, size: size),
+            if (count > 0)
+              Positioned(
+                right: -8,
+                top: -6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 2,
+                  ),
+                  constraints: const BoxConstraints(minWidth: 18),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    count > 99 ? '99+' : '$count',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}

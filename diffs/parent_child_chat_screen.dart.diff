@@ -1,0 +1,190 @@
+--- before/mobile_app/lib/screens/parent_child_chat_screen.dart
++++ after/mobile_app/lib/screens/parent_child_chat_screen.dart
+@@ -6,6 +6,7 @@
+ import 'package:flutter/material.dart';
+ 
+ import '../config/app_config.dart';
++import '../services/chat_notifications_service.dart';
+ import '../theme/app_theme.dart';
+ import '../widgets/app_usage_icon.dart';
+ 
+@@ -37,6 +38,7 @@
+   int _requestedMinutes = 60;
+   final Set<String> _locallyRequestedPackages = <String>{};
+   String? _decidingRequest;
++  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _inboxReadSubscription;
+ 
+   static const Color _chatBlue = AppColors.primary;
+   static const Color _chatDarkBlue = AppColors.primaryDark;
+@@ -49,7 +51,30 @@
+       .doc(widget.childProfileId);
+ 
+   @override
++  void initState() {
++    super.initState();
++    // A conversation view acknowledges its own unread notification history.
++    // Firestore queues this change while offline and synchronizes on return.
++    unawaited(ChatNotificationsService.instance.markProfileRead(widget.childProfileId));
++    final uid = FirebaseAuth.instance.currentUser?.uid;
++    if (uid != null) {
++      _inboxReadSubscription = ChatNotificationsService.instance
++          .inboxFor(uid)
++          .where('childProfileId', isEqualTo: widget.childProfileId)
++          .snapshots()
++          .listen((snapshot) {
++        if (!snapshot.metadata.hasPendingWrites &&
++            snapshot.docs.any((doc) => doc.data()['readAt'] == null)) {
++          unawaited(ChatNotificationsService.instance
++              .markProfileRead(widget.childProfileId));
++        }
++      });
++    }
++  }
++
++  @override
+   void dispose() {
++    unawaited(_inboxReadSubscription?.cancel());
+     _message.dispose();
+     super.dispose();
+   }
+@@ -59,6 +84,25 @@
+     ScaffoldMessenger.of(context).showSnackBar(
+       SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+     );
++  }
++
++  Future<void> _dispatchCommittedEvent(String kind, String eventId) async {
++    final user = FirebaseAuth.instance.currentUser;
++    if (user == null) return;
++    try {
++      await Dio().post<Object?>(
++        '${AppConfig.backendBaseUrl}/chat/events/${widget.childProfileId}/$kind/$eventId/dispatch',
++        options: Options(
++          headers: {'Authorization': 'Bearer ${await user.getIdToken()}'},
++          sendTimeout: const Duration(seconds: 15),
++          receiveTimeout: const Duration(seconds: 35),
++        ),
++      );
++    } catch (error) {
++      // Firestore message/request was already committed. The cron fallback
++      // picks up its pending notification if Render is sleeping or offline.
++      debugPrint('Chat notification dispatch queued for retry: $error');
++    }
+   }
+ 
+   void _sendText(String uid) {
+@@ -73,7 +117,8 @@
+       'body': text,
+       'createdAt': FieldValue.serverTimestamp(),
+       'notificationState': 'pending',
+-    }).catchError((Object error) {
++    }).then((_) => _dispatchCommittedEvent('message', doc.id))
++        .catchError((Object error) {
+       _showError(error);
+     }));
+     if (mounted) setState(() => _sendingMessage = false);
+@@ -112,7 +157,8 @@
+       'status': 'pending',
+       'createdAt': FieldValue.serverTimestamp(),
+       'notificationState': 'pending',
+-    }).catchError((Object error) {
++    }).then((_) => _dispatchCommittedEvent('request', doc.id))
++        .catchError((Object error) {
+       _locallyRequestedPackages.remove(packageName);
+       _showError(error);
+     }));
+@@ -142,6 +188,16 @@
+         options: Options(headers: {'Authorization': 'Bearer $token'}),
+       );
+       // Do not update approval status on the client. The backend owns it.
++    } on DioException catch (error) {
++      if (error.response?.statusCode == 404) {
++        _showError(
++          'Approval API not found on ${AppConfig.backendBaseUrl}. '
++          'Deploy the latest FastAPI backend and verify /chat/health. '
++          'Your request is still pending.',
++        );
++      } else {
++        _showError(error.response?.data ?? error.message ?? error);
++      }
+     } catch (error) {
+       _showError(error);
+     } finally {
+@@ -927,38 +983,45 @@
+             ),
+           ),
+         ),
+-        title: Row(
+-          children: [
+-            const CircleAvatar(
+-              radius: 20,
+-              backgroundColor: Color(0xFFD7E9FF),
+-              child: Icon(Icons.person_rounded, color: _chatDarkBlue, size: 24),
+-            ),
+-            const SizedBox(width: 10),
+-            Expanded(
+-              child: Column(
+-                crossAxisAlignment: CrossAxisAlignment.start,
+-                mainAxisSize: MainAxisSize.min,
+-                children: [
+-                  Text(
+-                    widget.isParent ? 'Chat with Child' : 'Chat with Parent',
+-                    maxLines: 1,
+-                    overflow: TextOverflow.ellipsis,
+-                    style: const TextStyle(
+-                      color: Colors.white,
+-                      fontSize: 17,
+-                      fontWeight: FontWeight.w800,
+-                    ),
+-                  ),
+-                  const SizedBox(height: 2),
+-                  const Text(
+-                    'Paired conversation',
+-                    style: TextStyle(color: Colors.white70, fontSize: 11),
+-                  ),
+-                ],
+-              ),
+-            ),
+-          ],
++        title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
++          stream: _profile.snapshots(),
++          builder: (context, snapshot) {
++            final data = snapshot.data?.data() ?? <String, dynamic>{};
++            String name;
++            if (widget.isParent) {
++              name = (data['childDisplayName'] ?? data['name'] ??
++                  data['childEmail'] ?? 'Child').toString().trim();
++            } else {
++              name = (data['parentDisplayName'] ?? data['parentName'] ??
++                  data['parentEmail'] ?? 'Parent').toString().trim();
++            }
++            if (name.isEmpty) name = widget.isParent ? 'Child' : 'Parent';
++            return Row(
++              children: [
++                const CircleAvatar(
++                  radius: 20,
++                  backgroundColor: Color(0xFFD7E9FF),
++                  child: Icon(Icons.person_rounded,
++                    color: _chatDarkBlue, size: 24),
++                ),
++                const SizedBox(width: 10),
++                Expanded(
++                  child: Column(
++                    crossAxisAlignment: CrossAxisAlignment.start,
++                    mainAxisSize: MainAxisSize.min,
++                    children: [
++                      Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
++                        style: const TextStyle(color: Colors.white,
++                          fontSize: 17, fontWeight: FontWeight.w800)),
++                      const SizedBox(height: 2),
++                      const Text('Private family conversation',
++                        style: TextStyle(color: Colors.white70, fontSize: 11)),
++                    ],
++                  ),
++                ),
++              ],
++            );
++          },
+         ),
+       ),
+       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(

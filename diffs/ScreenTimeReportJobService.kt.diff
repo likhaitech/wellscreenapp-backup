@@ -1,0 +1,91 @@
+--- a/mobile_app/android/app/src/main/kotlin/com/wellscreen/app/ScreenTimeReportJobService.kt
++++ b/mobile_app/android/app/src/main/kotlin/com/wellscreen/app/ScreenTimeReportJobService.kt
+@@ -6,6 +6,7 @@
+ import android.app.usage.UsageStatsManager
+ import android.content.Context
+ import android.os.Process
++import android.provider.Settings
+ import android.util.Log
+ import com.google.firebase.auth.FirebaseAuth
+ import com.google.firebase.firestore.FieldValue
+@@ -100,7 +101,25 @@
+                                 dueAt > System.currentTimeMillis()
+                             // Do not send a premature usage snapshot while a reconnection
+                             // 15-minute window is still counting down.
+-                            val report = if (!pendingWait && hasUsageAccess()) readUsageReport() else null
++                            val accessibilityEnabled = isAccessibilityEnabled()
++                            if (accessibilityEnabled) {
++                                prefs.edit().putBoolean("wellscreen_accessibility_was_enabled", true).apply()
++                            } else if (prefs.getBoolean("wellscreen_accessibility_was_enabled", false)) {
++                                CriticalEventJournal.record(
++                                    this, "monitoring_permission_disabled", "accessibility",
++                                    "Accessibility monitoring", cooldownMs = 20L * 60 * 60_000L,
++                                )
++                            }
++                            val usageAllowed = hasUsageAccess()
++                            if (usageAllowed) {
++                                prefs.edit().putBoolean("wellscreen_usage_access_was_enabled", true).apply()
++                            } else if (prefs.getBoolean("wellscreen_usage_access_was_enabled", false)) {
++                                CriticalEventJournal.record(
++                                    this, "monitoring_permission_disabled", "usage_access",
++                                    "Usage Access", cooldownMs = 20L * 60 * 60_000L,
++                                )
++                            }
++                            val report = if (!pendingWait && usageAllowed) readUsageReport() else null
+                             if (report != null) {
+                                 updates["latestUsageReport.allApps"] = report.apps
+                                 updates["latestUsageReport.topApps"] = report.apps.take(20).map { row ->
+@@ -120,18 +139,24 @@
+                                     return@addOnCompleteListener
+                                 }
+                                 Log.i(tag, "Native limits and usage sync completed")
+-                                if (params.jobId == ScreenTimeReportScheduler.RECONNECT_JOB_ID &&
+-                                    report != null
+-                                ) {
+-                                    prefs.edit().remove("wellscreen_reconnect_due_ms").apply()
+-                                }
+-                                if (params.jobId == ScreenTimeReportScheduler.RECONNECT_JOB_ID &&
+-                                    report != null && !parentId.isNullOrBlank()
+-                                ) {
+-                                    // Only notify AFTER the usage data was accepted by Firestore.
+-                                    notifyParentOnSuccess(params, uid, parentId, profileId, report.capturedAt)
+-                                } else {
+-                                    jobFinished(params, false)
++                                // Durable critical events are independent from the
++                                // ordinary cumulative usage snapshot.
++                                executor.execute {
++                                    try {
++                                        CriticalEventJournal.flushPending(this, profileId, uid)
++                                    } catch (error: Exception) {
++                                        Log.w(tag, "Critical event upload deferred", error)
++                                    }
++                                    if (params.jobId == ScreenTimeReportScheduler.RECONNECT_JOB_ID &&
++                                        report != null) {
++                                        prefs.edit().remove("wellscreen_reconnect_due_ms").apply()
++                                    }
++                                    if (params.jobId == ScreenTimeReportScheduler.RECONNECT_JOB_ID &&
++                                        report != null && !parentId.isNullOrBlank()) {
++                                        notifyParentOnSuccess(params, uid, parentId, profileId, report.capturedAt)
++                                    } else {
++                                        jobFinished(params, false)
++                                    }
+                                 }
+                             }
+                         } catch (error: Exception) {
+@@ -223,6 +248,16 @@
+         super.onDestroy()
+     }
+ 
++    private fun isAccessibilityEnabled(): Boolean {
++        val enabled = Settings.Secure.getString(
++            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
++        ) ?: return false
++        return enabled.split(':').any { component ->
++            component.startsWith("$packageName/") &&
++                component.substringAfter('/').endsWith("WellScreenAccessibilityService")
++        }
++    }
++
+     private fun hasUsageAccess(): Boolean {
+         val ops = getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
+         return ops.checkOpNoThrow(

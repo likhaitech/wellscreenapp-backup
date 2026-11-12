@@ -1,0 +1,20 @@
+--- original/ScreenTimeReportJobService.kt
++++ updated/ScreenTimeReportJobService.kt
+@@ -142,6 +142,17 @@
+                                 // Durable critical events are independent from the
+                                 // ordinary cumulative usage snapshot.
+                                 executor.execute {
++                                    // Chat approvals are package-specific and use their own
++                                    // cache. This does not alter permanent restriction rules,
++                                    // the emergency bypass, or the 15-minute usage delay.
++                                    // A failed network read keeps the last valid grant cache.
++                                    try {
++                                        TemporaryAppGrantBackgroundSync.synchronize(
++                                            applicationContext, profileId, uid,
++                                        )
++                                    } catch (error: Exception) {
++                                        Log.w(tag, "Temporary grant background sync deferred", error)
++                                    }
+                                     try {
+                                         CriticalEventJournal.flushPending(this, profileId, uid)
+                                     } catch (error: Exception) {
