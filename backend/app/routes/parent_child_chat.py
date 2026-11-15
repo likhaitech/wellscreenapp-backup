@@ -7,7 +7,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from ..services.chat_access_service import (
-    ChatAccessError, activate_grant, authenticated_uid,
+    ChatAccessError, activate_grant, authenticated_uid, dispatch_event,
     respond_to_request, sweep_chat_notifications,
 )
 
@@ -32,6 +32,19 @@ def decide(profile_id: str, request_id: str, body: DecisionBody,
             "WellScreen approval rejected: reason=%s",
             str(error),
         )
+        raise HTTPException(status_code=403, detail=str(error)) from error
+
+
+@router.post("/chat/events/{profile_id}/{kind}/{event_id}/dispatch")
+def dispatch(profile_id: str, kind: str, event_id: str,
+             authorization: str | None = Header(default=None)):
+    try:
+        uid = authenticated_uid(authorization)
+        return dispatch_event(caller_uid=uid, profile_id=profile_id,
+                              kind=kind, event_id=event_id)
+    except ChatAccessError as error:
+        logging.getLogger(__name__).warning(
+            "WellScreen chat dispatch rejected: reason=%s", str(error))
         raise HTTPException(status_code=403, detail=str(error)) from error
 
 

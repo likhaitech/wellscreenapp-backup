@@ -42,7 +42,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
   String? _decidingRequest;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _inboxReadSubscription;
 
-  static const Color _chatBlue = AppColors.primary;
+  static const Color _chatBlue = Color(0xFF254EDB);
   static const Color _chatDarkBlue = AppColors.primaryDark;
   static const Color _softBlue = Color(0xFFEDF3FF);
   static const Color _chatLine = Color(0xFFDCE5F5);
@@ -360,24 +360,17 @@ Future<void> _decide(
           maxWidth: MediaQuery.sizeOf(context).width * 0.79,
         ),
         child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 5),
-          padding: const EdgeInsets.fromLTRB(12, 9, 12, 7),
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.fromLTRB(14, 9, 14, 7),
           decoration: BoxDecoration(
             color: own ? _chatBlue : Colors.white,
+            border: own ? null : Border.all(color: const Color(0xFFE2E8F0)),
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(17),
-              topRight: const Radius.circular(17),
-              bottomLeft: Radius.circular(own ? 17 : 5),
-              bottomRight: Radius.circular(own ? 5 : 17),
+              topLeft: const Radius.circular(20),
+              topRight: const Radius.circular(20),
+              bottomLeft: Radius.circular(own ? 20 : 6),
+              bottomRight: Radius.circular(own ? 6 : 20),
             ),
-            border: own ? null : Border.all(color: _chatLine),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x08000000),
-                blurRadius: 7,
-                offset: Offset(0, 2),
-              ),
-            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -388,8 +381,8 @@ Future<void> _decide(
                 child: Text(
                   (item['body'] ?? '').toString(),
                   style: TextStyle(
-                    fontSize: 13,
-                    height: 1.32,
+                    fontSize: 15,
+                    height: 1.3,
                     color: own ? Colors.white : AppColors.textPrimary,
                   ),
                 ),
@@ -399,7 +392,7 @@ Future<void> _decide(
                 _time(item['createdAt']),
                 style: TextStyle(
                   fontSize: 10,
-                  color: own ? Colors.white70 : AppColors.textSecondary,
+                  color: own ? Colors.white70 : const Color(0xFF8A8D91),
                 ),
               ),
             ],
@@ -750,10 +743,7 @@ Future<void> _decide(
       top: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: _chatLine)),
-        ),
+        decoration: const BoxDecoration(color: Colors.white),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -775,22 +765,25 @@ Future<void> _decide(
                 textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   counterText: '',
-                  hintText: 'Type a message...',
-                  hintStyle: const TextStyle(fontSize: 13),
+                  hintText: 'Aa',
+                  hintStyle: const TextStyle(
+                    fontSize: 15,
+                    color: Color(0xFF8A8D91),
+                  ),
                   isDense: true,
                   filled: true,
-                  fillColor: const Color(0xFFF6F8FC),
+                  fillColor: const Color(0xFFF0F2F5),
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
+                    horizontal: 16,
                     vertical: 12,
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
-                    borderSide: const BorderSide(color: _chatLine),
+                    borderSide: BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
-                    borderSide: const BorderSide(color: _chatBlue),
+                    borderSide: BorderSide.none,
                   ),
                 ),
                 onSubmitted: (_) => _sendText(uid),
@@ -800,10 +793,10 @@ Future<void> _decide(
             SizedBox(
               width: 41,
               height: 41,
-              child: IconButton.filled(
+              child: IconButton(
                 onPressed: _sendingMessage ? null : () => _sendText(uid),
-                icon: const Icon(Icons.send_rounded, size: 19),
-                style: IconButton.styleFrom(backgroundColor: _chatBlue),
+                icon: const Icon(Icons.send_rounded, size: 24),
+                color: _chatBlue,
                 tooltip: 'Send message',
               ),
             ),
@@ -1028,23 +1021,16 @@ Future<void> _decide(
       );
     }
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F6FC),
+      backgroundColor: const Color(0xFFF8F9FC),
       appBar: AppBar(
-        toolbarHeight: 74,
-        backgroundColor: _chatBlue,
-        foregroundColor: Colors.white,
-        iconTheme: const IconThemeData(color: Colors.white),
+        toolbarHeight: 66,
+        backgroundColor: const Color(0xFFF8F9FC),
+        foregroundColor: AppColors.textPrimary,
+        surfaceTintColor: const Color(0xFFF8F9FC),
+        iconTheme: const IconThemeData(color: _chatBlue),
         titleSpacing: 0,
-        elevation: 0,
-        flexibleSpace: const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [_chatBlue, _chatDarkBlue],
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-            ),
-          ),
-        ),
+        elevation: 0.5,
+        shadowColor: const Color(0x33000000),
         title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _profile.snapshots(),
           builder: (context, snapshot) {
@@ -1061,8 +1047,8 @@ Future<void> _decide(
             return Row(
               children: [
                 const CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Color(0xFFD7E9FF),
+                  radius: 19,
+                  backgroundColor: Color(0xFFE3EEFF),
                   child: Icon(Icons.person_rounded,
                     color: _chatDarkBlue, size: 24),
                 ),
@@ -1073,11 +1059,11 @@ Future<void> _decide(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white,
+                        style: const TextStyle(color: AppColors.textPrimary,
                           fontSize: 17, fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       const Text('Private family conversation',
-                        style: TextStyle(color: Colors.white70, fontSize: 11)),
+                        style: TextStyle(color: Color(0xFF8A8D91), fontSize: 11)),
                     ],
                   ),
                 ),

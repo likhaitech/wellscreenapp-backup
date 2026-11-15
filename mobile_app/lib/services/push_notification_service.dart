@@ -118,8 +118,28 @@ class PushNotificationService {
         'fcmToken': token,
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-    } catch (_) {
-      // Existing best-effort parent token registration.
+    } catch (error) {
+      // Best effort, but never silent: a missing token is the #1 reason a
+      // push is never delivered, so make the failure visible in the logs.
+      debugPrint('WellScreen FCM token registration failed: $error');
+    }
+  }
+
+  /// Child devices only need their token stored (to receive approve/decline
+  /// pushes). No foreground listener or channel, so nothing is shown twice.
+  Future<void> registerDeviceToken() async {
+    try {
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      await _saveTokenToFirestore();
+      FirebaseMessaging.instance.onTokenRefresh.listen(
+        (_) => _saveTokenToFirestore(),
+      );
+    } catch (error) {
+      debugPrint('WellScreen FCM device registration failed: $error');
     }
   }
 

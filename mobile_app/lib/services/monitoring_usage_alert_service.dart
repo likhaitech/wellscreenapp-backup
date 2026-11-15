@@ -67,6 +67,30 @@ class MonitoringUsageAlertService {
       add('late_night_usage', 'lateusage_$day', '10 PM–5 AM');
     }
 
+    // Single-app thresholds (1h30 warning, 3h high). One incident per app per
+    // day via a stable ID; capped so one request stays well under the
+    // backend's 50-event limit.
+    final longApps = appSummaries
+        .where((app) => app.usageDuration >=
+            PatternDetectionService.warningSingleAppLimit)
+        .toList()
+      ..sort((a, b) => b.usageDuration.compareTo(a.usageDuration));
+    for (final app in longApps.take(10)) {
+      final high = app.usageDuration >=
+          PatternDetectionService.unhealthySingleAppLimit;
+      final safe = app.packageName
+          .replaceAll(RegExp(r'[^A-Za-z0-9]'), '_')
+          .padRight(3, '_');
+      final trimmed = safe.length > 60 ? safe.substring(0, 60) : safe;
+      events.add({
+        'type': high ? 'app_usage_high_threshold' : 'app_usage_warning_threshold',
+        'eventId': '${high ? 'appH' : 'appW'}_${trimmed}_$day',
+        'timestampMs': timestampMs,
+        'subject': app.packageName,
+        'label': '${app.displayName} (${app.usageLabel} today)',
+      });
+    }
+
     // Only use the catch-all unhealthy signal if none of the specific causes
     // above is available; otherwise it would duplicate an alert on the same
     // sync. PatternDetectionService also detects high-risk app patterns.

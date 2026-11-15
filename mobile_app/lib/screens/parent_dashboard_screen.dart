@@ -29,16 +29,16 @@ class ParentDashboardScreen extends StatefulWidget {
 }
 
 class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   // Aliased onto the shared AppColors palette (theme/app_theme.dart) rather
   // than the ad hoc literals this screen used to declare on its own - same
   // names so the body below didn't need a line-by-line rewrite, but now
   // every value traces back to the one shared source of truth.
   static const Color purple = AppColors.primary;
-  static const Color deepPurple = AppColors.primaryDark;
   static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
-  static const Color pageBg = AppColors.background;
+  static const Color pageBg = Color(0xFFF0F2F5);
   static const Color softGreen = AppColors.successBg;
   static const Color softBlue = AppColors.infoBg;
 
@@ -347,11 +347,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     }
 
     if (index == 1) {
+      openFamilyChat();
+    } else if (index == 2) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const DevicePairingScreen()),
       );
-    } else if (index == 2) {
+    } else if (index == 3) {
       // Was UsageSummaryScreen - a screen that showed usage data but not
       // the browsing-activity/category-detection data a parent actually
       // needs to review, which lived on a completely different screen
@@ -363,7 +365,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           builder: (_) => ReportsScreen(childProfileId: _primaryChildId ?? ''),
         ),
       );
-    } else if (index == 3) {
+    } else if (index == 4) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
@@ -406,6 +408,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     }
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: _menuDrawer(),
       backgroundColor: pageBg,
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -442,29 +446,29 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             _primaryChildId = primaryChildDoc?.id;
 
             return ListView(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+              padding: const EdgeInsets.fromLTRB(14, 24, 14, 28),
               children: [
                 _topBar(),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
                 _deviceProfileCard(primaryChild),
                 if (_isMonitoringSecurityAlertActive(primaryChild)) ...[
                   const SizedBox(height: 14),
                   _monitoringSecurityAlertCard(primaryChild!),
                 ],
                 if (_hasPendingEmergencyAccessRequest(primaryChild)) ...[
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 14),
                   _emergencyAccessRequestCard(
                     _primaryChildId ?? '',
                     primaryChild!,
                   ),
                 ],
-                const SizedBox(height: 22),
+                const SizedBox(height: 14),
                 _screenTimeAndRiskSection(primaryChild),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
                 _gpsMapCard(primaryChild),
-                const SizedBox(height: 22),
+                const SizedBox(height: 14),
                 _topAppsSection(primaryChild),
-                const SizedBox(height: 22),
+                const SizedBox(height: 14),
                 _weeklyTrendSection(),
               ],
             );
@@ -475,6 +479,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         currentIndex: currentIndex,
         items: const [
           WellScreenNavItem(icon: Icons.home_rounded, label: 'Home'),
+          WellScreenNavItem(icon: Icons.chat_bubble_rounded, label: 'Chat'),
           WellScreenNavItem(
             icon: Icons.phone_android_rounded,
             label: 'Devices',
@@ -488,42 +493,29 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _topBar() {
-    return Container(
-      height: 88,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [purple, deepPurple],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 14,
-            offset: Offset(0, 7),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
       child: Row(
         children: [
-          _logoBox(),
-          const SizedBox(width: 14),
+          _roundIconButton(
+            tooltip: 'Menu',
+            onTap: () => _scaffoldKey.currentState?.openDrawer(),
+            icon: const Icon(Icons.menu_rounded, color: darkText, size: 22),
+          ),
+          const SizedBox(width: 12),
           const Expanded(
             child: Text(
               'WellScreen',
-              textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white,
-                fontSize: 27,
+                color: purple,
+                fontSize: 26,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
-          IconButton(
+          _roundIconButton(
             tooltip: 'Notifications',
-            onPressed: () {
+            onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -531,33 +523,118 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 ),
               );
             },
-            icon: const ChatUnreadBell(color: Colors.white, size: 33),
+            icon: const ChatUnreadBell(color: darkText, size: 22),
           ),
         ],
       ),
     );
   }
 
-  Widget _logoBox() {
+  Widget _roundIconButton({
+    required Widget icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
     return Container(
-      width: 62,
-      height: 62,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(31),
+      width: 40,
+      height: 40,
+      decoration: const BoxDecoration(
+        color: Color(0xFFE4E6EB),
+        shape: BoxShape.circle,
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(31),
-        child: Image.asset(
-          'assets/icons/wellscreen_icon.png',
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return const Icon(
-              Icons.health_and_safety_rounded,
-              color: purple,
-              size: 38,
-            );
-          },
+      child: IconButton(
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        onPressed: onTap,
+        icon: icon,
+      ),
+    );
+  }
+
+  Widget _menuDrawer() {
+    void closeAnd(VoidCallback action) {
+      Navigator.pop(context);
+      action();
+    }
+
+    return Drawer(
+      backgroundColor: pageBg,
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(4, 8, 4, 16),
+              child: Text(
+                'Menu',
+                style: TextStyle(
+                  color: darkText,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.45,
+              children: [
+                _menuTile(
+                  Icons.chat_bubble_rounded,
+                  'Chat',
+                  () => closeAnd(openFamilyChat),
+                ),
+                _menuTile(
+                  Icons.notifications_rounded,
+                  'Notifications',
+                  () => closeAnd(() {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ParentNotificationsScreen(),
+                      ),
+                    );
+                  }),
+                ),
+              ],
+            ),
+
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _menuTile(IconData icon, String label, VoidCallback? onTap) {
+    return Opacity(
+      opacity: onTap == null ? 0.5 : 1,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, color: purple, size: 26),
+                const Spacer(),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: darkText,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1507,6 +1584,20 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     required Widget child,
     EdgeInsets padding = const EdgeInsets.all(18),
   }) {
-    return AppCard(padding: padding, child: child);
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F000000),
+            blurRadius: 6,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: child,
+    );
   }
 }

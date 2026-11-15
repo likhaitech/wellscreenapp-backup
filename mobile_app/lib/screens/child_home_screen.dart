@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,14 +8,17 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:usage_stats/usage_stats.dart';
 
 import '../models/app_rule.dart';
 import '../models/app_time_limit.dart';
 import '../models/app_usage_summary.dart';
 import '../models/usage_report.dart';
 import '../services/alert_notification_client.dart';
+import '../services/android_app_service.dart';
 import '../services/monitoring_usage_alert_service.dart';
 import '../services/installed_app_metadata_service.dart';
+import '../services/location_geocoding_service.dart';
 import '../services/app_rules_service.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
@@ -27,6 +31,7 @@ import '../services/usage_dashboard_controller_service.dart';
 import '../services/usage_tracking_service.dart';
 import '../services/temporary_app_grant_service.dart';
 import '../services/chat_notifications_service.dart';
+import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_bottom_nav.dart';
 import 'capture_debug_screen.dart';
@@ -64,11 +69,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   // local literal for now (used in exactly one place - the SMS failure
   // banner below).
   static const Color purple = AppColors.primary;
-  static const Color deepPurple = AppColors.primaryDark;
   static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
-  static const Color pageBg = AppColors.background;
+  static const Color pageBg = Color(0xFFF8F9FC);
   static const Color softGreen = AppColors.successBg;
   static const Color softBlue = AppColors.infoBg;
   static const Color softRed = Color(0xFFFFEFEF);
@@ -169,14 +173,59 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   // background timer popping an interruptive dialog with no warning.
   bool _locationServicesDisabled = false;
 
+  // ---------------------------------------------------------------------
+  // Presentation-only tokens and state for the redesigned child UI.
+  // Nothing below changes what is written to Firestore, SharedPreferences,
+  // or the native layer - it only decides how existing data is drawn.
+  // ---------------------------------------------------------------------
+  static const Color _brandIndigo = Color(0xFF254EDB);
+  static const Color _brandViolet = Color(0xFF4C2A9B);
+  static const Color _ink = Color(0xFF0F172A);
+  static const Color _slate = Color(0xFF64748B);
+  static const Color _hairline = Color(0xFFE2E8F0);
+  static const Color _emerald = Color(0xFF10B981);
+  static const Color _emeraldTint = Color(0xFFECFDF5);
+  static const Color _amber = Color(0xFFF59E0B);
+  static const Color _amberTint = Color(0xFFFFFBEB);
+  static const Color _coral = Color(0xFFEF4444);
+  static const Color _coralTint = Color(0xFFFEE2E2);
+  static const List<FontFeature> _tabular = [FontFeature.tabularFigures()];
+
+  final LocationGeocodingService _geocodingService = LocationGeocodingService();
+  final AndroidAppService _androidAppService = AndroidAppService();
+
+  // Reverse-geocoded address for the Safety tab's GPS card (read-side only;
+  // the shared location document is untouched).
+  String? _geocodeKey;
+  String? _geocodedAddress;
+
+  // Real installed-app labels/icons (InstalledAppMetadataService), cached so
+  // chips and rows do not re-decode icons on every rebuild.
+  final Map<String, String> _appLabelCache = <String, String>{};
+  final Map<String, Uint8List> _appIconCache = <String, Uint8List>{};
+  final Set<String> _appMetadataRequested = <String>{};
+
+  // Mon-Sun screen time for the current week, read from Android's own usage
+  // history. null = no reading for that day (future day or not available).
+  List<Duration?> _weeklyUsage = List<Duration?>.filled(7, null);
+  bool _weeklyUsageLoaded = false;
+
+  // Last values seen from the rules / time-limit streams, so the chip row
+  // keeps its content while a stream re-subscribes after a rebuild.
+  List<AppRule>? _lastRules;
+  List<AppTimeLimit>? _lastTimeLimits;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Store this child device's FCM token so approve/decline pushes can arrive.
+    unawaited(PushNotificationService().registerDeviceToken());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ChatNotificationsService.instance.markDashboardReady();
     });
     _loadUsageDashboard();
+    _loadWeeklyUsage();
     _refreshSmsAlertStatus();
     _refreshSyncStatus();
     _connectivitySubscription = _syncStatusService.onlineStatusChanges.listen(
@@ -287,6 +336,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     // instead of requiring a manual refresh every time.
     if (state == AppLifecycleState.resumed) {
       _loadUsageDashboard();
+      _loadWeeklyUsage();
       _refreshSmsAlertStatus();
       _refreshSyncStatus();
       unawaited(_publishOnlineHeartbeat());
@@ -1432,27 +1482,18 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   }
 
   void handleBottomNavTap(int index) {
-    if (index == 0) {
-      setState(() => currentIndex = 0);
+    // Chat is the existing full-screen Parent-Child Chatbox, pushed on top
+    // of the tabs so its own app bar, input field and keyboard handling
+    // stay exactly as they were.
+    if (index == 1) {
+      openFamilyChat();
       return;
     }
 
-    if (index == 1) {
-      final data = _cachedUserData;
-      if (data != null && isConnected(data)) {
-        // Already paired - there's no separate "pairing" destination once
-        // connected, so surface the same connection-status dialog shown
-        // right after pairing succeeds rather than a dead-end message.
-        showConnectedSuccessDialog();
-      } else {
-        _scrollToSection(_pairingSectionKey);
-      }
-    } else if (index == 2) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
-      );
-    }
+    if (index == currentIndex) return;
+
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    setState(() => currentIndex = index);
   }
 
   /// Shows the actual pairing and identity-verification state. Missing
@@ -1879,9 +1920,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       );
     }
 
+    // System gesture/3-button inset, read above the Scaffold so the floating
+    // navigation pill never covers the last card of a tab.
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+
     return Scaffold(
       backgroundColor: pageBg,
+      extendBody: true,
       body: SafeArea(
+        bottom: false,
         child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance
               .collection('users')
@@ -1917,7 +1964,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             // Timer.periodic with no widget context of its own) always has
             // the latest pairedParentId/pairedChildProfileId without
             // depending on this StreamBuilder being on-screen at the exact
-            // moment the timer fires.
+            // moment the timer fires. This builder stays mounted on every
+            // tab (Home / Safety / Settings) for the same reason.
             _cachedUserData = data;
 
             if (connected) {
@@ -1934,403 +1982,38 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
               connected ? (data['pairedChildProfileId'] ?? '').toString() : '',
             );
 
-            return ListView(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-              children: [
-                _topBar(),
-                const SizedBox(height: 18),
-                _studentProfileCard(data, connected),
-                if (connected) ...[
-                  const SizedBox(height: 14),
-                  _monitoringDisclosureCard(),
-                ],
-                const SizedBox(height: 22),
-                if (!connected)
-                  KeyedSubtree(key: _pairingSectionKey, child: _pairingCard()),
-                if (!connected) const SizedBox(height: 22),
-                _screenTimeAndRiskSection(),
-                const SizedBox(height: 18),
-                _gpsCard(data, connected),
-                if (connected) const SizedBox(height: 22),
-                if (connected) _smsAlertsCard(),
-                if (connected) const SizedBox(height: 22),
-                if (connected) _activeRulesCard(data),
-                if (connected) const SizedBox(height: 22),
-                if (connected) _emergencyAccessCard(data),
-                const SizedBox(height: 22),
-                _topAppsSection(),
-                const SizedBox(height: 22),
-                _weeklyTrendSection(),
-              ],
-            );
-          },
-        ),
-      ),
-      bottomNavigationBar: WellScreenBottomNav(
-        currentIndex: currentIndex,
-        items: const [
-          WellScreenNavItem(icon: Icons.home_rounded, label: 'Home'),
-          WellScreenNavItem(icon: Icons.link_rounded, label: 'Pairing'),
-          WellScreenNavItem(icon: Icons.settings_rounded, label: 'Settings'),
-        ],
-        onTap: handleBottomNavTap,
-      ),
-    );
-  }
+            final List<Widget> tabChildren;
+            switch (currentIndex) {
+              case 2:
+                tabChildren = _safetyTab(data, connected);
+                break;
+              case 3:
+                tabChildren = _settingsTab(data, connected);
+                break;
+              default:
+                tabChildren = _homeTab(data, connected);
+            }
 
-  Widget _topBar() {
-    return Container(
-      height: 88,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [purple, deepPurple],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 14,
-            offset: Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Long-press (not a visible button) opens the raw capture debug
-          // log - this screen is rendered on the CHILD's device, and that
-          // log is the child's own monitored browsing/usage data, so it
-          // must not be one visible tap away from the child themselves.
-          // Kept reachable at all (rather than deleted outright) only
-          // because a researcher/parent doing hands-on troubleshooting may
-          // still need it; a plain button here previously made it visible
-          // to the monitored child during ordinary use, which defeats the
-          // point of parental monitoring.
-          GestureDetector(
-            onLongPress: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CaptureDebugScreen()),
-              );
-            },
-            child: _logoBox(),
-          ),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Text(
-              'WellScreen',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 27,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Notifications',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const ChatNotificationsScreen(),
-              ),
-            ),
-            icon: const ChatUnreadBell(color: Colors.white, size: 29),
-          ),
-          IconButton(
-            tooltip: 'Profile',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ProfileSettingsScreen(),
-                ),
-              );
-            },
-            icon: const Icon(
-              Icons.account_circle_rounded,
-              color: Colors.white,
-              size: 34,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _logoBox() {
-    return Container(
-      width: 62,
-      height: 62,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(31),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(31),
-        child: Image.asset(
-          'assets/icons/wellscreen_icon.png',
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return const Icon(
-              Icons.health_and_safety_rounded,
-              color: purple,
-              size: 38,
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  /// Visible disclosure before a child visits system monitoring controls.
-  /// Android's actual uninstall/permission dialogs belong to Android;
-  /// WellScreen does not intercept or obstruct those system actions.
-  Widget _monitoringDisclosureCard() {
-    return _whiteCard(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(
-            Icons.info_outline_rounded,
-            color: AppColors.warning,
-            size: 26,
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'Monitoring notice: Disabling WellScreen permissions, turning off '
-              'monitoring, or uninstalling WellScreen will interrupt screen-time '
-              'tracking and usage reports. Your parent may be notified if this '
-              'device stops reporting. Android controls the uninstall process.',
-              style: TextStyle(color: darkText, fontSize: 12, height: 1.4),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _studentProfileCard(Map<String, dynamic> data, bool connected) {
-    final user = FirebaseAuth.instance.currentUser;
-
-    final fullName = (data['fullName'] ?? user?.displayName ?? 'Student User')
-        .toString();
-
-    final email = (data['email'] ?? user?.email ?? '').toString();
-
-    final photoUrl = (data['profilePhotoUrl'] ?? user?.photoURL ?? '')
-        .toString();
-
-    return _whiteCard(
-      padding: const EdgeInsets.all(18),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 430;
-
-          final profileRow = Row(
-            children: [
-              _profileAvatar(photoUrl, connected),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _profileInfo(
-                  fullName: fullName,
-                  email: email,
-                  connected: connected,
-                ),
-              ),
-            ],
-          );
-
-          final buttons = Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _smallPurpleButton(
-                      label: connected ? 'Share GPS' : 'Pair Device',
-                      onTap: () {
-                        if (connected) {
-                          shareCurrentLocation(data);
-                        } else {
-                          showMessage('Enter the pairing code below.');
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _smallPurpleButton(
-                      label: 'Profile',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const ProfileSettingsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              if (connected) ...[
-                const SizedBox(height: 10),
-                // Match the size of Share GPS / Profile without changing
-                // existing Pairing, Settings, or Sync Usage controls.
-                LayoutBuilder(
-                  builder: (context, available) => Center(
-                    child: SizedBox(
-                      width: (available.maxWidth - 10) / 2,
-                      child: _smallPurpleButton(
-                        label: 'Chatbox',
-                        onTap: openFamilyChat,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: _smallPurpleButton(
-                    label: isSyncingUsage ? 'Syncing...' : 'Sync Usage',
-                    onTap: isSyncingUsage ? null : () => syncUsageReport(data),
-                  ),
-                ),
-                _syncStatusIndicator(),
-              ],
-            ],
-          );
-
-          if (compact) {
             return Column(
-              children: [profileRow, const SizedBox(height: 14), buttons],
-            );
-          }
-
-          return Row(
-            children: [
-              Expanded(child: profileRow),
-              const SizedBox(width: 14),
-              SizedBox(width: 250, child: buttons),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _profileAvatar(String photoUrl, bool connected) {
-    if (photoUrl.isNotEmpty) {
-      return CircleAvatar(
-        radius: 40,
-        backgroundColor: connected ? softGreen : softBlue,
-        child: ClipOval(
-          child: Image.network(
-            photoUrl,
-            width: 76,
-            height: 76,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(
-                connected ? Icons.person_rounded : Icons.person_add_alt_rounded,
-                color: connected ? teal : purple,
-                size: 45,
-              );
-            },
-          ),
-        ),
-      );
-    }
-
-    return CircleAvatar(
-      radius: 40,
-      backgroundColor: connected ? softGreen : softBlue,
-      child: Icon(
-        connected ? Icons.person_rounded : Icons.person_add_alt_rounded,
-        color: connected ? teal : purple,
-        size: 45,
-      ),
-    );
-  }
-
-  Widget _profileInfo({
-    required String fullName,
-    required String email,
-    required bool connected,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "$fullName's Phone",
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: darkText,
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            Container(
-              width: 11,
-              height: 11,
-              decoration: BoxDecoration(
-                color: connected
-                    ? (_isOnline ? teal : AppColors.danger)
-                    : Colors.orange,
-                borderRadius: BorderRadius.circular(20),
-              ),
-            ),
-            const SizedBox(width: 7),
-            Expanded(
-              child: Text(
-                connected
-                    ? (_isOnline ? 'Online - $email' : 'Offline - $email')
-                    : 'Waiting for parent pairing',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: grayText,
-                  fontWeight: FontWeight.w700,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                  child: _topBar(data),
                 ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _smallPurpleButton({
-    required String label,
-    required VoidCallback? onTap,
-  }) {
-    return SizedBox(
-      height: 40,
-      child: FilledButton(
-        onPressed: onTap,
-        style: FilledButton.styleFrom(
-          backgroundColor: purple,
-          padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
-          ),
+                Expanded(
+                  child: ListView(
+                    key: ValueKey<int>(currentIndex),
+                    controller: _scrollController,
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 112 + bottomInset),
+                    children: tabChildren,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
+      bottomNavigationBar: _bottomNav(user.uid),
     );
   }
 
@@ -2437,30 +2120,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     return '${duration.inSeconds}s';
   }
 
-  Widget _screenTimeAndRiskSection() {
-    if (_loadingUsageDashboard) {
-      return const SizedBox(
-        height: 170,
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    final state = _usageDashboardState;
-
-    if (state == null || !state.viewModel.hasUsagePermission) {
-      return _usageAccessPrompt(state);
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: _screenTimeCard(state)),
-        const SizedBox(width: 14),
-        Expanded(child: _riskCard(state)),
-      ],
-    );
-  }
-
   /// Shown when Android's "Usage Access" permission (a special permission
   /// only grantable from system Settings, not a normal runtime dialog)
   /// hasn't been granted yet - real device usage stats can't be read
@@ -2469,269 +2128,58 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   /// no cache either, this prompts the child to grant access.
   Widget _usageAccessPrompt(UsageDashboardControllerState? state) {
     return _whiteCard(
-      child: Column(
+      padding: const EdgeInsets.all(14),
+      child: Row(
         children: [
-          const Icon(Icons.bar_chart_rounded, color: purple, size: 42),
-          const SizedBox(height: 10),
-          Text(
-            state?.viewModel.errorMessage ??
-                'Usage access permission is required to show real screen '
-                    'time data.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: grayText,
-              fontWeight: FontWeight.w600,
+          const CircleAvatar(
+            radius: 22,
+            backgroundColor: Color(0xFFE7F0FF),
+            child: Icon(Icons.bar_chart_rounded, color: purple, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Screen time needs access',
+                  style: TextStyle(
+                    color: darkText,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  state?.viewModel.errorMessage ??
+                      'Allow usage access to show real screen time.',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: grayText, fontSize: 12),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          _smallPurpleButton(
-            label: 'Grant Usage Access',
-            onTap: () async {
-              await _usageTrackingService.openUsageAccessSettings();
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _screenTimeCard(UsageDashboardControllerState state) {
-    final goal = state.screenTimeGoalResult;
-    final totalLabel = state.viewModel.totalUsageLabel;
-    final limitLabel = _durationLabel(state.dailyScreenTimeLimit);
-    final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0);
-
-    return _whiteCard(
-      child: SizedBox(
-        height: 170,
-        child: Column(
-          children: [
-            const Text(
-              'Screen Time\nToday',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: darkText,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                height: 1.25,
-              ),
-            ),
-            const Spacer(),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                totalLabel,
-                style: const TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Daily Limit: $limitLabel',
-              style: const TextStyle(
-                color: grayText,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 7,
-                color: purple,
-                backgroundColor: AppColors.track,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _riskCard(UsageDashboardControllerState state) {
-    final status = state.viewModel.statusLabel;
-
-    Color statusColor;
-    IconData statusIcon;
-
-    switch (status) {
-      case 'Unhealthy':
-        statusColor = AppColors.danger;
-        statusIcon = Icons.warning_rounded;
-        break;
-      case 'Warning':
-        statusColor = AppColors.warning;
-        statusIcon = Icons.shield_moon_rounded;
-        break;
-      default:
-        statusColor = teal;
-        statusIcon = Icons.shield_rounded;
-    }
-
-    return _whiteCard(
-      child: SizedBox(
-        height: 170,
-        child: Column(
-          children: [
-            const Text(
-              'Usage Pattern',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: darkText,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const Spacer(),
-            Icon(statusIcon, color: statusColor, size: 62),
-            const SizedBox(height: 6),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                status,
-                style: TextStyle(
-                  color: statusColor,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                state.viewModel.unhealthyAppCountLabel,
-                style: const TextStyle(
-                  color: darkText,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _gpsCard(Map<String, dynamic> data, bool connected) {
-    final location = locationText(data);
-    final updated = locationUpdatedText(data);
-
-    return _whiteCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: connected ? softGreen : softRed,
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 36,
+            child: FilledButton(
+              onPressed: () async {
+                await _usageTrackingService.openUsageAccessSettings();
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: purple,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: Icon(
-                  connected
-                      ? Icons.location_on_rounded
-                      : Icons.location_off_rounded,
-                  color: connected ? teal : Colors.redAccent,
-                  size: 34,
-                ),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'GPS Location',
-                      style: TextStyle(
-                        color: darkText,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      connected ? location : 'Pair device first',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: grayText,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      connected
-                          ? 'Updated: $updated'
-                          : 'Location sharing becomes available after pairing.',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: grayText, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: connected && !isSharingLocation
-                    ? () => shareCurrentLocation(data)
-                    : null,
-                icon: Icon(
-                  isSharingLocation
-                      ? Icons.sync_rounded
-                      : Icons.my_location_rounded,
-                  color: connected ? purple : grayText,
-                  size: 30,
-                ),
-              ),
-            ],
-          ),
-          // Passive nudge set by either the manual "Share GPS" button or
-          // the periodic background auto-share timer detecting Android's
-          // location services are off device-wide - see
-          // _autoShareLocation()'s doc comment for why the background path
-          // never pops an interruptive dialog on its own and relies on this
-          // banner being visible whenever the user next opens the app.
-          if (connected && _locationServicesDisabled) ...[
-            const SizedBox(height: 12),
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: _showEnableLocationServicesDialog,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.warningBg,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.warning_amber_rounded,
-                      color: AppColors.warning,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        'Location services are off - tap to enable GPS.',
-                        style: TextStyle(
-                          color: darkText,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              child: const Text(
+                'Allow',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -2749,26 +2197,20 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
     String label;
     if (!_isOnline) {
-      label =
-          'Offline - usage data will sync automatically once '
-          'reconnected.';
+      label = 'Offline - will sync when reconnected';
     } else if (lastOutcome == 'synced') {
-      label =
-          'Online - last sync succeeded. Also auto-syncs every '
-          '${_usageAutoSyncInterval.inMinutes} min.';
+      label = 'Synced - auto-syncs every ${_usageAutoSyncInterval.inMinutes} min';
     } else if (lastOutcome == 'queued_offline' ||
         lastOutcome == 'failed_timeout') {
       label = 'Online - usage recovery will run automatically when scheduled.';
     } else if (lastOutcome != null) {
       label = 'Online - last sync failed. Tap Sync Usage to retry.';
     } else {
-      label =
-          'Online - auto-syncs every '
-          '${_usageAutoSyncInterval.inMinutes} min, or tap Sync Usage now.';
+      label = 'Auto-syncs every ${_usageAutoSyncInterval.inMinutes} min';
     }
 
     return Padding(
-      padding: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.only(top: 10),
       child: Row(
         children: [
           Icon(
@@ -2786,314 +2228,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           ),
         ],
       ),
-    );
-  }
-
-  /// Backup SMS alert status. The actual send happens natively (see
-  /// SmsAlertSender.kt, triggered from WellScreenAccessibilityService when
-  /// a restricted app is blocked) so it keeps working even if this Flutter
-  /// screen isn't open - this card only shows whether it's actually able to
-  /// fire (permission + a cached parent phone number) and a running tally
-  /// from the real local delivery log.
-  Widget _smsAlertsCard() {
-    final hasPhoneNumber = _cachedParentPhoneNumber != null;
-    final sentCount = _smsAlertLog
-        .where(
-          (entry) =>
-              entry['outcome'] == 'sent' || entry['outcome'] == 'delivered',
-        )
-        .length;
-    final failedCount = _smsAlertLog
-        .where(
-          (entry) => (entry['outcome'] as String? ?? '').startsWith('failed'),
-        )
-        .length;
-
-    return _whiteCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.sms_rounded, color: purple, size: 26),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'SMS Backup Alerts',
-                  style: TextStyle(
-                    color: darkText,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            !_smsPermissionGranted
-                ? 'Off. Grant SMS permission so a backup text alert can '
-                      'reach your parent even without internet, when a '
-                      'restricted app is opened.'
-                : hasPhoneNumber
-                ? 'Enabled. Blocked-app alerts will text '
-                      '${_maskPhoneNumber(_cachedParentPhoneNumber!)}.'
-                : 'Permission granted, but your parent hasn\'t added a '
-                      'phone number yet in their Profile Settings.',
-            style: const TextStyle(
-              color: grayText,
-              fontWeight: FontWeight.w600,
-              height: 1.35,
-            ),
-          ),
-          if (!_smsPermissionGranted) ...[
-            const SizedBox(height: 12),
-            _smallPurpleButton(
-              label: 'Enable SMS Alerts',
-              onTap: _requestSmsPermission,
-            ),
-          ],
-          if (_smsAlertLog.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Recent attempts: $sentCount sent, $failedCount failed',
-              style: const TextStyle(
-                color: darkText,
-                fontWeight: FontWeight.w800,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// Child-requests-temporary-bypass card (EmergencyAccessService). Only
-  /// shown once paired - a request needs a parent to notify and a
-  /// child_profiles doc to write the status onto, same precondition as
-  /// _activeRulesCard right below.
-  Widget _emergencyAccessCard(Map<String, dynamic> data) {
-    final parentId = (data['pairedParentId'] ?? '').toString();
-    final childProfileId = (data['pairedChildProfileId'] ?? '').toString();
-
-    if (parentId.isEmpty || childProfileId.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return StreamBuilder<Map<String, dynamic>>(
-      stream: _emergencyAccessService.watchStatus(childProfileId),
-      builder: (context, snapshot) {
-        final status = (snapshot.data?['status'] ?? 'none').toString();
-
-        return _whiteCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: softRed,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: const Icon(
-                      Icons.lock_open_rounded,
-                      color: AppColors.danger,
-                      size: 29,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Text(
-                      'Emergency Access',
-                      style: TextStyle(
-                        color: darkText,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 17,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              _emergencyAccessBody(
-                status,
-                snapshot.data ?? const {},
-                childProfileId,
-                parentId,
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _emergencyAccessBody(
-    String status,
-    Map<String, dynamic> statusData,
-    String childProfileId,
-    String parentId,
-  ) {
-    switch (status) {
-      case 'requested':
-        return const Row(
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2.5, color: purple),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Waiting for your parent to respond to your request...',
-                style: TextStyle(
-                  color: grayText,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          ],
-        );
-      case 'approved':
-        final grantedUntil = statusData['grantedUntil'];
-        final until = grantedUntil is Timestamp ? grantedUntil.toDate() : null;
-        final stillActive = until != null && until.isAfter(DateTime.now());
-
-        if (stillActive) {
-          final hh = until.hour.toString().padLeft(2, '0');
-          final mm = until.minute.toString().padLeft(2, '0');
-          return Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: softGreen,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: AppColors.success,
-                  size: 22,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Approved - restrictions are lifted until $hh:$mm.',
-                    style: const TextStyle(
-                      color: darkText,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return _emergencyAccessRequestForm(childProfileId, parentId);
-      case 'denied':
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: softRed,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.cancel_rounded, color: AppColors.danger, size: 22),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Your parent denied your last request.',
-                      style: TextStyle(
-                        color: darkText,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            _emergencyAccessRequestForm(childProfileId, parentId),
-          ],
-        );
-      case 'none':
-      default:
-        return _emergencyAccessRequestForm(childProfileId, parentId);
-    }
-  }
-
-  Widget _emergencyAccessRequestForm(String childProfileId, String parentId) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Need a restricted app for something urgent? Ask your parent to '
-          'temporarily lift restrictions.',
-          style: TextStyle(
-            color: grayText,
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: emergencyReasonController,
-          maxLength: 140,
-          decoration: InputDecoration(
-            hintText: 'Reason (optional) - e.g. "need calculator app"',
-            isDense: true,
-            filled: true,
-            fillColor: pageBg,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            counterText: '',
-          ),
-        ),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: isRequestingEmergencyAccess
-                ? null
-                : () => requestEmergencyAccess(childProfileId, parentId),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.danger,
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            icon: isRequestingEmergencyAccess
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.lock_open_rounded, size: 19),
-            label: Text(
-              isRequestingEmergencyAccess ? 'Sending...' : 'Request Access',
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -3477,208 +2611,2569 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     );
   }
 
-  /// Was explicitly labeled "Demo Data" with four hardcoded rows - honest
-  /// about being fake, but still fake. Now reads
-  /// UsageDashboardControllerState.appUsageList, the real top-10
-  /// UsageStats-backed list loaded in _loadUsageDashboard().
-  Widget _topAppsSection() {
-    final apps = (_usageDashboardState?.appUsageList ?? []).take(4).toList();
-    final maxDurationMs = apps
-        .map((app) => app.usageDuration.inMilliseconds)
-        .fold<int>(0, (highest, value) => value > highest ? value : highest);
+  // =====================================================================
+  // Redesigned presentation layer (Home / Safety / Settings tabs).
+  // Every value shown here is read from the same state, streams and
+  // services the previous layout used.
+  // =====================================================================
 
-    return _whiteCard(
-      child: Column(
-        children: [
-          const Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Top Apps Today',
-                  style: TextStyle(
-                    color: darkText,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_loadingUsageDashboard)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (apps.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                'No app usage recorded yet today.',
-                style: TextStyle(color: grayText, fontWeight: FontWeight.w600),
-              ),
-            )
-          else
-            ...apps.map((app) {
-              final ratio = maxDurationMs > 0
-                  ? app.usageDuration.inMilliseconds / maxDurationMs
-                  : 0.0;
+  // ------------------------------ helpers ------------------------------
 
-              return _appUsageRow(
-                icon: _iconForAppName(app.displayName),
-                iconColor: purple,
-                appName: app.displayName,
-                time: app.usageLabel,
-                value: ratio.clamp(0.0, 1.0),
-              );
-            }),
-        ],
-      ),
+  /// Mon-Sun totals for the current week from Android's own usage history
+  /// (the same UsageStats source and top-app summary used for today's
+  /// total), so the Weekly Summary chart shows real readings only.
+  Future<void> _loadWeeklyUsage() async {
+    try {
+      if (!await _usageTrackingService.hasUsagePermission()) return;
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final monday = today.subtract(Duration(days: today.weekday - 1));
+      final week = List<Duration?>.filled(7, null);
+
+      for (var i = 0; i < 7; i++) {
+        final start = DateTime(monday.year, monday.month, monday.day + i);
+        if (start.isAfter(today)) break;
+        final end = start.isAtSameMomentAs(today)
+            ? now
+            : DateTime(monday.year, monday.month, monday.day + i + 1);
+
+        final usage = await UsageStats.queryAndAggregateUsageStats(start, end);
+        final milliseconds = <String, int>{
+          for (final entry in usage.entries)
+            entry.key:
+                int.tryParse(entry.value.totalTimeInForeground ?? '0') ?? 0,
+        };
+        week[i] = _usageTrackingService
+            .summarizeUsage(milliseconds)
+            .fold<Duration>(
+              Duration.zero,
+              (total, app) => total + app.usageDuration,
+            );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _weeklyUsage = week;
+        _weeklyUsageLoaded = true;
+      });
+    } catch (error) {
+      debugPrint('Could not load weekly usage: $error');
+      if (!mounted) return;
+      setState(() => _weeklyUsageLoaded = true);
+    }
+  }
+
+  /// Looks up real app labels/icons once per package for display.
+  void _ensureAppMetadata(Iterable<String> packageNames) {
+    final missing = <String>[];
+    for (final packageName in packageNames) {
+      if (packageName.isEmpty) continue;
+      if (_appMetadataRequested.add(packageName)) missing.add(packageName);
+    }
+    if (missing.isEmpty) return;
+    unawaited(_fetchAppMetadata(missing));
+  }
+
+  Future<void> _fetchAppMetadata(List<String> packageNames) async {
+    final metadata = await const InstalledAppMetadataService().lookup(
+      packageNames,
     );
+    if (!mounted || metadata.isEmpty) return;
+
+    final labels = <String, String>{};
+    final icons = <String, Uint8List>{};
+    for (final entry in metadata.entries) {
+      final label = entry.value['displayName'];
+      if (label != null && label.isNotEmpty && label != entry.key) {
+        labels[entry.key] = label;
+      }
+      final icon = entry.value['iconBase64'];
+      if (icon != null && icon.isNotEmpty) {
+        try {
+          icons[entry.key] = base64Decode(icon);
+        } on FormatException {
+          // Malformed icon data: the initial-letter avatar is used instead.
+        }
+      }
+    }
+
+    setState(() {
+      _appLabelCache.addAll(labels);
+      _appIconCache.addAll(icons);
+    });
   }
 
-  IconData _iconForAppName(String name) {
-    final lower = name.toLowerCase();
-
-    if (lower.contains('youtube') || lower.contains('video')) {
-      return Icons.play_arrow_rounded;
-    }
-    if (lower.contains('tiktok') || lower.contains('music')) {
-      return Icons.music_note_rounded;
-    }
-    if (lower.contains('facebook') ||
-        lower.contains('chrome') ||
-        lower.contains('browser')) {
-      return Icons.public_rounded;
-    }
-    if (lower.contains('game') ||
-        lower.contains('legends') ||
-        lower.contains('pubg')) {
-      return Icons.sports_esports_rounded;
-    }
-
-    return Icons.apps_rounded;
+  /// Hides Android system / launcher packages from display lists only. The
+  /// underlying usage data and reports are not filtered.
+  bool _isSystemPackage(String packageName) {
+    final package = packageName.toLowerCase();
+    return package.contains('launcher') ||
+        package.contains('permissioncontroller') ||
+        package.contains('systemui') ||
+        package.contains('packageinstaller') ||
+        package.endsWith('.settings');
   }
 
-  Widget _appUsageRow({
-    required IconData icon,
-    required Color iconColor,
-    required String appName,
-    required String time,
-    required double value,
+  List<AppUsageSummary> _visibleTodayApps() {
+    return (_usageDashboardState?.appUsageList ?? <AppUsageSummary>[])
+        .where((app) => !_isSystemPackage(app.packageName))
+        .toList();
+  }
+
+  String _appLabel(String packageName, String fallback) {
+    return _appLabelCache[packageName] ?? fallback;
+  }
+
+  Widget _appAvatar({
+    required String packageName,
+    required String name,
+    required double size,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 17),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: iconColor,
-            child: Icon(icon, color: Colors.white, size: 28),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  appName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: darkText,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: LinearProgressIndicator(
-                    value: value,
-                    minHeight: 5,
-                    color: purple,
-                    backgroundColor: AppColors.track,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 52,
-            child: Text(
-              time,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: darkText,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
+    final bytes = _appIconCache[packageName];
+    if (bytes != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.24),
+        child: Image.memory(
+          bytes,
+          width: size,
+          height: size,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          errorBuilder: (context, error, stackTrace) =>
+              _initialAvatar(name, size),
+        ),
+      );
+    }
+    return _initialAvatar(name, size);
+  }
+
+  Widget _initialAvatar(String name, double size) {
+    const palette = <Color>[
+      Color(0xFF254EDB),
+      Color(0xFF0D9488),
+      Color(0xFFDB2777),
+      Color(0xFFD97706),
+      Color(0xFF7C3AED),
+      Color(0xFF059669),
+    ];
+    final trimmed = name.trim();
+    final letter = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
+    final color = palette[trimmed.hashCode.abs() % palette.length];
+
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(size * 0.24),
+      ),
+      child: Text(
+        letter,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * 0.5,
+          fontWeight: FontWeight.w700,
+          height: 1,
+        ),
       ),
     );
   }
 
-  /// Same fabricated Mon-Sun bar chart as the parent dashboard's version -
-  /// see the note on ParentDashboardScreen._weeklyTrendSection. No daily
-  /// history is stored yet, so this is an honest placeholder instead.
-  Widget _weeklyTrendSection() {
-    return _whiteCard(
-      child: Column(
-        children: [
-          const Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Weekly Trend',
-                  style: TextStyle(
-                    color: darkText,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
+  String _lastSyncLabel() {
+    int? lastSyncedMs;
+    for (final entry in _syncLog.reversed) {
+      final timestamp = entry['timestampMs'];
+      if (entry['outcome'] == 'synced' && timestamp is int) {
+        lastSyncedMs = timestamp;
+        break;
+      }
+    }
+    if (lastSyncedMs == null) return 'Not synced yet';
+
+    final elapsed = DateTime.now().difference(
+      DateTime.fromMillisecondsSinceEpoch(lastSyncedMs),
+    );
+    if (elapsed.inMinutes < 1) return 'Synced just now';
+    if (elapsed.inMinutes < 60) return 'Synced ${elapsed.inMinutes}m ago';
+    if (elapsed.inHours < 24) return 'Synced ${elapsed.inHours}h ago';
+    return 'Synced ${elapsed.inDays}d ago';
+  }
+
+  String? _coordinatesText(Map<String, dynamic> data) {
+    final latestLocation = data['latestLocation'];
+    if (latestLocation is! Map) return null;
+    final latitude = latestLocation['latitude'];
+    final longitude = latestLocation['longitude'];
+    if (latitude == null || longitude == null) return null;
+    return '${formatCoordinate(latitude)}, ${formatCoordinate(longitude)}';
+  }
+
+  /// Resolves a readable address for the latest shared coordinates using
+  /// the existing LocationGeocodingService. Display only.
+  void _ensureGeocodedAddress(Map<String, dynamic> data) {
+    final latestLocation = data['latestLocation'];
+    if (latestLocation is! Map) return;
+    final latitude = latestLocation['latitude'];
+    final longitude = latestLocation['longitude'];
+    if (latitude is! num || longitude is! num) return;
+
+    final key =
+        '${latitude.toStringAsFixed(4)},${longitude.toStringAsFixed(4)}';
+    if (key == _geocodeKey) return;
+    _geocodeKey = key;
+    _geocodedAddress = null;
+    unawaited(_resolveAddress(key, latitude.toDouble(), longitude.toDouble()));
+  }
+
+  Future<void> _resolveAddress(
+    String key,
+    double latitude,
+    double longitude,
+  ) async {
+    final address = await _geocodingService.reverseGeocode(
+      latitude: latitude,
+      longitude: longitude,
+    );
+    if (!mounted || key != _geocodeKey) return;
+    setState(() => _geocodedAddress = address);
+  }
+
+  Future<void> _openAccessibilitySettings() async {
+    try {
+      await _androidAppService.openAccessibilitySettings();
+    } catch (_) {
+      showMessage(
+        'Could not open Accessibility settings. Open them from the '
+        'Android Settings app.',
+      );
+    }
+  }
+
+  void _goToSafetyTab({bool scrollToPairing = false}) {
+    handleBottomNavTap(2);
+    if (!scrollToPairing) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollToSection(_pairingSectionKey);
+    });
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text(
+          'You will need to sign in again to use WellScreen on this device.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
           ),
-          const SizedBox(height: 14),
-          const Icon(Icons.bar_chart_rounded, color: grayText, size: 42),
-          const SizedBox(height: 10),
-          const Text(
-            'Weekly trends aren\'t available yet',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: darkText, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'This needs several days of usage reports stored per day. '
-            'Today\'s data only, for now.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: grayText, fontSize: 12),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: _coral),
+            child: const Text('Logout'),
           ),
         ],
       ),
     );
+    if (confirmed == true) await logout();
   }
+
+  // ------------------------- shared building blocks ----------------------
 
   Widget _whiteCard({
     required Widget child,
-    EdgeInsets padding = const EdgeInsets.all(18),
+    EdgeInsets padding = const EdgeInsets.all(16),
+    double radius = 18,
   }) {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: _hairline),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x10000000),
+            color: Color(0x0A000000),
             blurRadius: 12,
-            offset: Offset(0, 5),
+            offset: Offset(0, 4),
           ),
         ],
       ),
       child: child,
     );
   }
+
+  Widget _roundIconButton({
+    required Widget icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white,
+        shape: const CircleBorder(side: BorderSide(color: _hairline)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(width: 40, height: 40, child: Center(child: icon)),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(
+    String title, {
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (actionLabel != null)
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onAction,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Text(
+                actionLabel,
+                style: const TextStyle(
+                  color: _brandIndigo,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _pill({
+    required String label,
+    required Color background,
+    required Color foreground,
+    EdgeInsets padding = const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    double fontSize = 11,
+  }) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: foreground,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w700,
+          fontFeatures: _tabular,
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetGrabber() {
+    return Center(
+      child: Container(
+        width: 40,
+        height: 4,
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: _hairline,
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+    );
+  }
+
+  // ------------------------------- top bar -------------------------------
+
+  Widget _topBar(Map<String, dynamic> data) {
+    final user = FirebaseAuth.instance.currentUser;
+    final photoUrl = (data['profilePhotoUrl'] ?? user?.photoURL ?? '')
+        .toString();
+
+    return Row(
+      children: [
+        Expanded(
+          // Long-press (not a visible button) opens the raw capture debug
+          // log - this screen is rendered on the CHILD's device, and that
+          // log is the child's own monitored browsing/usage data, so it
+          // must not be one visible tap away from the child themselves.
+          child: GestureDetector(
+            onLongPress: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CaptureDebugScreen()),
+              );
+            },
+            child: const Text(
+              'WellScreen',
+              style: TextStyle(
+                color: _ink,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ),
+        ),
+        _roundIconButton(
+          tooltip: 'Notifications',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ChatNotificationsScreen()),
+          ),
+          icon: _notificationBell(),
+        ),
+        const SizedBox(width: 10),
+        _roundIconButton(
+          tooltip: 'Profile',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
+          ),
+          icon: photoUrl.isEmpty
+              ? const Icon(Icons.person_rounded, color: _ink, size: 22)
+              : Image.network(
+                  photoUrl,
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.person_rounded,
+                    color: _ink,
+                    size: 22,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _notificationBell() {
+    const bell = Icon(Icons.notifications_none_rounded, color: _ink, size: 22);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return bell;
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: ChatNotificationsService.instance.unreadStream(uid),
+      builder: (context, snapshot) {
+        final hasUnread = (snapshot.data?.docs.length ?? 0) > 0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            bell,
+            if (hasUnread)
+              Positioned(
+                right: -1,
+                top: -1,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: _coral,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _bottomNav(String uid) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: ChatNotificationsService.instance.unreadStream(uid),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs;
+        final hasUnreadChat =
+            docs != null &&
+            docs.any((doc) => doc.data()['type'] == 'parent_child_chat');
+
+        return WellScreenBottomNav(
+          currentIndex: currentIndex,
+          items: [
+            const WellScreenNavItem(icon: Icons.home_rounded, label: 'Home'),
+            WellScreenNavItem(
+              icon: Icons.chat_bubble_rounded,
+              label: 'Chat',
+              showBadge: hasUnreadChat,
+            ),
+            const WellScreenNavItem(
+              icon: Icons.shield_outlined,
+              label: 'Safety',
+            ),
+            const WellScreenNavItem(
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+            ),
+          ],
+          onTap: handleBottomNavTap,
+        );
+      },
+    );
+  }
+
+  // =============================== HOME TAB ==============================
+
+  List<Widget> _homeTab(Map<String, dynamic> data, bool connected) {
+    return [
+      _deviceStatusCard(data, connected),
+      const SizedBox(height: 14),
+      if (!connected) ...[_pairPromptBanner(), const SizedBox(height: 14)],
+      _heroCard(),
+      if (connected) ...[
+        const SizedBox(height: 14),
+        _activeRulesRow(data),
+        const SizedBox(height: 14),
+        _emergencyAccessBanner(data),
+      ],
+      const SizedBox(height: 14),
+      _weeklySummaryCard(),
+      const SizedBox(height: 14),
+      _topAppsCard(),
+    ];
+  }
+
+  Widget _deviceStatusCard(Map<String, dynamic> data, bool connected) {
+    final user = FirebaseAuth.instance.currentUser;
+    final fullName = (data['fullName'] ?? user?.displayName ?? 'Student User')
+        .toString();
+    final subtitle = connected
+        ? '${_isOnline ? 'Online' : 'Offline'} \u2022 ${_lastSyncLabel()}'
+        : 'Waiting for parent pairing';
+
+    return _whiteCard(
+      radius: 16,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ProfileSettingsScreen(),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE0F2FE),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.person_rounded,
+                      color: Color(0xFF0D9488),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "$fullName's Phone",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _slate,
+                            fontSize: 12,
+                            fontFeatures: _tabular,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Material(
+            color: connected ? _emerald : _amber,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: connected
+                  ? _showMonitoringSheet
+                  : () => _goToSafetyTab(scrollToPairing: true),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      connected ? 'Monitoring On' : 'Setup Needed',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Replaces the permanent yellow banner: the same monitoring notice, plus
+  /// what is monitored and the privacy boundary, opened on demand.
+  void _showMonitoringSheet() {
+    Widget point(IconData icon, Color color, String text) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget heading(String text) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 6, bottom: 10),
+        child: Text(
+          text.toUpperCase(),
+          style: const TextStyle(
+            color: _slate,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+          ),
+        ),
+      );
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sheetGrabber(),
+                  const Text(
+                    'Monitoring is on',
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'This phone is paired with a parent account.',
+                    style: TextStyle(color: _slate, fontSize: 13),
+                  ),
+                  const SizedBox(height: 14),
+                  heading('What your parent can see'),
+                  point(
+                    Icons.timelapse_rounded,
+                    _brandIndigo,
+                    'Screen time and which apps are used, and for how long.',
+                  ),
+                  point(
+                    Icons.rule_rounded,
+                    _brandIndigo,
+                    'App rules set by your parent: monitored, blocked, or '
+                    'time-limited apps.',
+                  ),
+                  point(
+                    Icons.location_on_outlined,
+                    _brandIndigo,
+                    'This phone\'s location, when location sharing is on.',
+                  ),
+                  heading('Privacy boundary'),
+                  point(
+                    Icons.lock_outline_rounded,
+                    _emerald,
+                    'WellScreen does not read messages, passwords, calls, '
+                    'photos, or sensitive files.',
+                  ),
+                  heading('Good to know'),
+                  point(
+                    Icons.info_outline_rounded,
+                    _amber,
+                    'Disabling WellScreen permissions, turning off '
+                    'monitoring, or uninstalling WellScreen will interrupt '
+                    'screen-time tracking and usage reports. Your parent may '
+                    'be notified if this device stops reporting. Android '
+                    'controls the uninstall process.',
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _brandIndigo,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        'Got it',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _pairPromptBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: _amberTint,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.link_rounded, color: _amber, size: 24),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Not paired yet',
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Connect this phone to a parent account.',
+                  style: TextStyle(color: Color(0xFF334155), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: () => _goToSafetyTab(scrollToPairing: true),
+            style: FilledButton.styleFrom(
+              backgroundColor: _amber,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(22),
+              ),
+            ),
+            child: const Text(
+              'Pair Device',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --------------------- screen time + usage pattern ---------------------
+
+  Widget _heroCard() {
+    final state = _usageDashboardState;
+
+    if (!_loadingUsageDashboard &&
+        (state == null || !state.viewModel.hasUsagePermission)) {
+      return _usageAccessPrompt(state);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_brandIndigo, _brandViolet],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33254EDB),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: state == null
+          ? const SizedBox(
+              height: 150,
+              child: Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              ),
+            )
+          : IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _heroScreenTime(state)),
+                  Container(
+                    width: 1,
+                    margin: const EdgeInsets.symmetric(horizontal: 14),
+                    color: Colors.white24,
+                  ),
+                  Expanded(child: _heroUsagePattern(state)),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _heroLabel(String text) {
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Colors.white70,
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
+
+  Widget _heroScreenTime(UsageDashboardControllerState state) {
+    final goal = state.screenTimeGoalResult;
+    final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0).toDouble();
+    final hasLimit = state.dailyScreenTimeLimit > Duration.zero;
+    final limitLabel = hasLimit
+        ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} limit'
+        : 'No daily limit set';
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _heroLabel('SCREEN TIME TODAY'),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: 96,
+          height: 96,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox.expand(
+                child: CircularProgressIndicator(
+                  value: progress,
+                  strokeWidth: 8,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: Colors.white24,
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Colors.white,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        state.viewModel.totalUsageLabel,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          height: 1.1,
+                          fontFeatures: _tabular,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        limitLabel,
+                        style: const TextStyle(
+                          color: Color(0xD9FFFFFF),
+                          fontSize: 11,
+                          fontFeatures: _tabular,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _heroUsagePattern(UsageDashboardControllerState state) {
+    final status = state.viewModel.statusLabel;
+
+    Color tint;
+    IconData icon;
+    switch (status) {
+      case 'Unhealthy':
+        tint = const Color(0xFFFCA5A5);
+        icon = Icons.warning_rounded;
+        break;
+      case 'Warning':
+        tint = const Color(0xFFFBBF24);
+        icon = Icons.shield_moon_rounded;
+        break;
+      case 'Healthy':
+        tint = const Color(0xFF34D399);
+        icon = Icons.shield_rounded;
+        break;
+      default:
+        tint = Colors.white70;
+        icon = Icons.shield_outlined;
+    }
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _heroLabel('USAGE PATTERN'),
+        const SizedBox(height: 14),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+          decoration: BoxDecoration(
+            color: const Color(0x24FFFFFF),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0x29FFFFFF)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: tint.withValues(alpha: 0.35),
+                      blurRadius: 18,
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: tint, size: 34),
+              ),
+              const SizedBox(height: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  status,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  state.viewModel.unhealthyAppCountLabel,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontFeatures: _tabular,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --------------------------- active app rules --------------------------
+
+  Widget _activeRulesRow(Map<String, dynamic> data) {
+    final parentId = (data['pairedParentId'] ?? '').toString();
+    final childProfileId = (data['pairedChildProfileId'] ?? '').toString();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Active App Rules',
+          actionLabel: 'View All',
+          onAction: () => _showRulesSheet(data),
+        ),
+        const SizedBox(height: 8),
+        StreamBuilder<List<AppRule>>(
+          stream: _rulesService.watchRulesForParent(parentId),
+          builder: (context, rulesSnapshot) {
+            if (rulesSnapshot.hasData) _lastRules = rulesSnapshot.data;
+
+            return StreamBuilder<List<AppTimeLimit>>(
+              stream: _appTimeLimitService.watchLimits(childProfileId),
+              builder: (context, limitsSnapshot) {
+                if (limitsSnapshot.hasData) {
+                  _lastTimeLimits = limitsSnapshot.data;
+                }
+
+                final rules = _lastRules;
+                final limits = _lastTimeLimits ?? <AppTimeLimit>[];
+
+                if (rules == null) {
+                  if (rulesSnapshot.hasError) {
+                    return _rulesInfoPill(
+                      icon: Icons.warning_amber_rounded,
+                      color: _amber,
+                      text: 'Unable to load app rules right now',
+                    );
+                  }
+                  return _rulesInfoPill(
+                    icon: Icons.sync_rounded,
+                    color: _slate,
+                    text: 'Loading parent app rules...',
+                  );
+                }
+
+                final chips = _buildRuleChips(rules, limits);
+                if (chips.isEmpty) {
+                  return _rulesInfoPill(
+                    icon: Icons.check_rounded,
+                    color: _emerald,
+                    text: 'No active app restrictions right now',
+                  );
+                }
+
+                return SizedBox(
+                  height: 38,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    clipBehavior: Clip.none,
+                    itemCount: chips.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(width: 8),
+                    itemBuilder: (context, index) => chips[index],
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildRuleChips(List<AppRule> rules, List<AppTimeLimit> limits) {
+    final blocked = rules.where((rule) => rule.restrictEnabled).toList()
+      ..sort(
+        (a, b) =>
+            appTitle(a).toLowerCase().compareTo(appTitle(b).toLowerCase()),
+      );
+    final blockedPackages = blocked.map((rule) => rule.packageName).toSet();
+
+    final limited =
+        limits
+            .where((limit) => !blockedPackages.contains(limit.packageName))
+            .toList()
+          ..sort(
+            (a, b) => a.appName.toLowerCase().compareTo(b.appName.toLowerCase()),
+          );
+    final limitedPackages = limited.map((limit) => limit.packageName).toSet();
+
+    final monitored =
+        rules
+            .where(
+              (rule) =>
+                  rule.monitorEnabled &&
+                  !rule.restrictEnabled &&
+                  !limitedPackages.contains(rule.packageName),
+            )
+            .toList()
+          ..sort(
+            (a, b) =>
+                appTitle(a).toLowerCase().compareTo(appTitle(b).toLowerCase()),
+          );
+
+    _ensureAppMetadata([
+      ...blocked.map((rule) => rule.packageName),
+      ...limited.map((limit) => limit.packageName),
+      ...monitored.map((rule) => rule.packageName),
+    ]);
+
+    return [
+      for (final rule in blocked)
+        _ruleChip(
+          packageName: rule.packageName,
+          name: appTitle(rule),
+          status: 'Blocked',
+          statusBackground: _coralTint,
+          statusForeground: const Color(0xFFDC2626),
+        ),
+      for (final limit in limited)
+        _ruleChip(
+          packageName: limit.packageName,
+          name: limit.appName.trim().isEmpty ? limit.packageName : limit.appName,
+          status: _durationLabel(Duration(minutes: limit.limitMinutes)),
+          statusBackground: const Color(0xFFF1F5F9),
+          statusForeground: const Color(0xFF475569),
+        ),
+      for (final rule in monitored)
+        _ruleChip(
+          packageName: rule.packageName,
+          name: appTitle(rule),
+          status: 'Monitored',
+          statusBackground: const Color(0xFFDBEAFE),
+          statusForeground: const Color(0xFF1E40AF),
+        ),
+    ];
+  }
+
+  Widget _ruleChip({
+    required String packageName,
+    required String name,
+    required String status,
+    required Color statusBackground,
+    required Color statusForeground,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 0, 6, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _hairline),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _appAvatar(packageName: packageName, name: name, size: 18),
+          const SizedBox(width: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          _pill(
+            label: status,
+            background: statusBackground,
+            foreground: statusForeground,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _rulesInfoPill({
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _hairline),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// "View All": the full parent rules card (monitored / restricted groups)
+  /// plus daily time limits, in a sheet.
+  void _showRulesSheet(Map<String, dynamic> data) {
+    final childProfileId = (data['pairedChildProfileId'] ?? '').toString();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: pageBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sheetGrabber(),
+                  _activeRulesCard(data),
+                  const SizedBox(height: 14),
+                  StreamBuilder<List<AppTimeLimit>>(
+                    stream: _appTimeLimitService.watchLimits(childProfileId),
+                    builder: (context, snapshot) {
+                      final limits = snapshot.data ?? <AppTimeLimit>[];
+                      if (limits.isEmpty) return const SizedBox.shrink();
+
+                      return _whiteCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Daily Time Limits',
+                              style: TextStyle(
+                                color: _ink,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            for (final limit in limits)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Row(
+                                  children: [
+                                    _appAvatar(
+                                      packageName: limit.packageName,
+                                      name: limit.appName,
+                                      size: 28,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        limit.appName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: _ink,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    _pill(
+                                      label: _durationLabel(
+                                        Duration(minutes: limit.limitMinutes),
+                                      ),
+                                      background: const Color(0xFFF1F5F9),
+                                      foreground: const Color(0xFF475569),
+                                      fontSize: 12,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // --------------------------- emergency access --------------------------
+
+  /// Child-requests-temporary-bypass banner (EmergencyAccessService). Only
+  /// shown once paired - a request needs a parent to notify and a
+  /// child_profiles doc to write the status onto.
+  Widget _emergencyAccessBanner(Map<String, dynamic> data) {
+    final parentId = (data['pairedParentId'] ?? '').toString();
+    final childProfileId = (data['pairedChildProfileId'] ?? '').toString();
+
+    if (parentId.isEmpty || childProfileId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<Map<String, dynamic>>(
+      stream: _emergencyAccessService.watchStatus(childProfileId),
+      builder: (context, snapshot) {
+        final statusData = snapshot.data ?? const <String, dynamic>{};
+        final status = (statusData['status'] ?? 'none').toString();
+        final grantedUntil = statusData['grantedUntil'];
+        final until = grantedUntil is Timestamp ? grantedUntil.toDate() : null;
+
+        if (status == 'approved' &&
+            until != null &&
+            until.isAfter(DateTime.now())) {
+          final hh = until.hour.toString().padLeft(2, '0');
+          final mm = until.minute.toString().padLeft(2, '0');
+
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: _emeraldTint,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFA7F3D0)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: _emerald,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Urgent Access Approved',
+                        style: TextStyle(
+                          color: _ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Restrictions are lifted until $hh:$mm.',
+                        style: const TextStyle(
+                          color: Color(0xFF334155),
+                          fontSize: 12,
+                          fontFeatures: _tabular,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final pending = status == 'requested';
+        final String title;
+        final String subtitle;
+        if (pending) {
+          title = 'Request Sent';
+          subtitle = 'Waiting for your parent to respond';
+        } else if (status == 'denied') {
+          title = 'Need Urgent Access?';
+          subtitle = 'Your last request was denied. You can ask again.';
+        } else {
+          title = 'Need Urgent Access?';
+          subtitle = 'Request temporary time from parent';
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [Color(0xFFFDBA9B), Color(0xFFFCA5A5)],
+            ),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF334155),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              FilledButton(
+                onPressed: pending || isRequestingEmergencyAccess
+                    ? null
+                    : () => _showEmergencyRequestSheet(
+                        childProfileId,
+                        parentId,
+                      ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0x66DC2626),
+                  disabledForegroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                ),
+                child: Text(
+                  pending ? 'Pending' : 'Request',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEmergencyRequestSheet(String childProfileId, String parentId) {
+    const presets = <String>['Schoolwork', 'Call Parent', 'Urgent'];
+    String? selectedPreset;
+    var sending = false;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (sheetContext, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+              ),
+              child: SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sheetGrabber(),
+                      const Text(
+                        'Request Emergency Access',
+                        style: TextStyle(
+                          color: _ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Need a restricted app for something urgent? Ask '
+                        'your parent to temporarily lift restrictions.',
+                        style: TextStyle(
+                          color: _slate,
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          for (final preset in presets)
+                            ChoiceChip(
+                              label: Text(preset),
+                              selected: selectedPreset == preset,
+                              showCheckmark: false,
+                              backgroundColor: Colors.white,
+                              selectedColor: const Color(0xFFDBEAFE),
+                              side: BorderSide(
+                                color: selectedPreset == preset
+                                    ? _brandIndigo
+                                    : _hairline,
+                              ),
+                              labelStyle: TextStyle(
+                                color: selectedPreset == preset
+                                    ? const Color(0xFF1E40AF)
+                                    : _ink,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              onSelected: (selected) {
+                                setSheetState(() {
+                                  selectedPreset = selected ? preset : null;
+                                });
+                                if (selected) {
+                                  emergencyReasonController.text = preset;
+                                }
+                              },
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: emergencyReasonController,
+                        maxLength: 140,
+                        decoration: InputDecoration(
+                          hintText: 'Reason (optional) - e.g. need calculator',
+                          isDense: true,
+                          filled: true,
+                          fillColor: pageBg,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          counterText: '',
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: sending
+                              ? null
+                              : () async {
+                                  setSheetState(() => sending = true);
+                                  await requestEmergencyAccess(
+                                    childProfileId,
+                                    parentId,
+                                  );
+                                  if (sheetContext.mounted) {
+                                    Navigator.pop(sheetContext);
+                                  }
+                                },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFDC2626),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          child: Text(
+                            sending ? 'Sending...' : 'Send Request',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ---------------------------- weekly summary ---------------------------
+
+  Widget _weeklySummaryCard() {
+    const dayLabels = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const maxBarHeight = 120.0;
+
+    final state = _usageDashboardState;
+    final limit = state?.dailyScreenTimeLimit ?? Duration.zero;
+    final todayIndex = DateTime.now().weekday - 1;
+
+    // Today's bar uses the same total as the Screen Time ring above.
+    final days = List<Duration?>.of(_weeklyUsage);
+    final todayUsed = state?.screenTimeGoalResult?.usedDuration;
+    if (todayUsed != null) days[todayIndex] = todayUsed;
+
+    final hasData = days.any((day) => day != null);
+
+    var maxMs = limit.inMilliseconds;
+    for (final day in days) {
+      if (day != null && day.inMilliseconds > maxMs) maxMs = day.inMilliseconds;
+    }
+    if (maxMs <= 0) maxMs = 1;
+
+    Widget body;
+    if (!hasData) {
+      final waiting = _loadingUsageDashboard || !_weeklyUsageLoaded;
+      final noPermission =
+          state != null && !state.viewModel.hasUsagePermission;
+      body = SizedBox(
+        height: 96,
+        child: Center(
+          child: waiting && !noPermission
+              ? const CircularProgressIndicator()
+              : Text(
+                  noPermission
+                      ? 'Allow usage access to see this week\'s screen time.'
+                      : 'No screen time recorded yet this week.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: _slate, fontSize: 13),
+                ),
+        ),
+      );
+    } else {
+      final limitBottom = limit > Duration.zero
+          ? ((limit.inMilliseconds / maxMs) * maxBarHeight - 7).clamp(
+              0.0,
+              maxBarHeight,
+            )
+          : 0.0;
+
+      body = Column(
+        children: [
+          SizedBox(
+            height: maxBarHeight + 14,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 44),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (var i = 0; i < 7; i++)
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: _weeklyBar(
+                                label: dayLabels[i],
+                                duration: days[i],
+                                isToday: i == todayIndex,
+                                maxMs: maxMs,
+                                maxBarHeight: maxBarHeight,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (limit > Duration.zero)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: limitBottom.toDouble(),
+                    height: 14,
+                    child: const Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 1,
+                            child: CustomPaint(painter: _DashedLinePainter()),
+                          ),
+                        ),
+                        SizedBox(width: 6),
+                        SizedBox(
+                          width: 38,
+                          child: Text(
+                            'Limit',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(color: _slate, fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(right: 44),
+            child: Row(
+              children: [
+                for (var i = 0; i < 7; i++)
+                  Expanded(
+                    child: Text(
+                      dayLabels[i],
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: i == todayIndex ? _ink : _slate,
+                        fontSize: 11,
+                        fontWeight: i == todayIndex
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _whiteCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Weekly Summary',
+            style: TextStyle(
+              color: _ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 14),
+          body,
+        ],
+      ),
+    );
+  }
+
+  Widget _weeklyBar({
+    required String label,
+    required Duration? duration,
+    required bool isToday,
+    required int maxMs,
+    required double maxBarHeight,
+  }) {
+    final milliseconds = duration?.inMilliseconds ?? 0;
+    final hasReading = milliseconds > 0;
+    final height = hasReading
+        ? ((milliseconds / maxMs) * maxBarHeight)
+              .clamp(4.0, maxBarHeight)
+              .toDouble()
+        : 4.0;
+
+    return Tooltip(
+      triggerMode: TooltipTriggerMode.tap,
+      message: duration == null
+          ? '$label: no reading'
+          : '$label: ${_durationLabel(duration)}',
+      child: Container(
+        width: 18,
+        height: height,
+        decoration: BoxDecoration(
+          color: !hasReading
+              ? _hairline
+              : (isToday ? _brandIndigo : const Color(0xFFC7D2FE)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+        ),
+      ),
+    );
+  }
+
+  // ----------------------------- top apps today --------------------------
+
+  Widget _topAppsCard() {
+    final apps = _visibleTodayApps();
+    final topApps = apps.take(3).toList();
+    _ensureAppMetadata(apps.map((app) => app.packageName));
+
+    final maxDurationMs = topApps
+        .map((app) => app.usageDuration.inMilliseconds)
+        .fold<int>(0, (highest, value) => value > highest ? value : highest);
+
+    return _whiteCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(
+            'Top Apps Today',
+            actionLabel: apps.isEmpty ? null : 'See All >',
+            onAction: () => _showAllAppsSheet(apps),
+          ),
+          const SizedBox(height: 8),
+          if (_loadingUsageDashboard && _usageDashboardState == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (topApps.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No app usage recorded yet today.',
+                style: TextStyle(color: _slate, fontSize: 13),
+              ),
+            )
+          else
+            for (final app in topApps)
+              _appUsageRow(app: app, maxDurationMs: maxDurationMs),
+        ],
+      ),
+    );
+  }
+
+  Widget _appUsageRow({
+    required AppUsageSummary app,
+    required int maxDurationMs,
+  }) {
+    final name = _appLabel(app.packageName, app.displayName);
+    final ratio = maxDurationMs > 0
+        ? (app.usageDuration.inMilliseconds / maxDurationMs)
+              .clamp(0.0, 1.0)
+              .toDouble()
+        : 0.0;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        children: [
+          _appAvatar(packageName: app.packageName, name: name, size: 36),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 7),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 6,
+                    color: _brandIndigo,
+                    backgroundColor: _hairline,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 58,
+            child: Text(
+              app.usageLabel,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                fontFeatures: _tabular,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAllAppsSheet(List<AppUsageSummary> apps) {
+    final maxDurationMs = apps
+        .map((app) => app.usageDuration.inMilliseconds)
+        .fold<int>(0, (highest, value) => value > highest ? value : highest);
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.85,
+            ),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sheetGrabber(),
+                  const Text(
+                    'Apps Used Today',
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  for (final app in apps)
+                    _appUsageRow(app: app, maxDurationMs: maxDurationMs),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================== SAFETY TAB =============================
+
+  List<Widget> _safetyTab(Map<String, dynamic> data, bool connected) {
+    if (connected) _ensureGeocodedAddress(data);
+
+    return [
+      _gpsCard(data, connected),
+      const SizedBox(height: 14),
+      _protectionChecklistCard(connected),
+      if (!connected) ...[
+        const SizedBox(height: 14),
+        KeyedSubtree(key: _pairingSectionKey, child: _pairingCard()),
+      ],
+    ];
+  }
+
+  Widget _gpsCard(Map<String, dynamic> data, bool connected) {
+    final coordinates = _coordinatesText(data);
+    final updated = locationUpdatedText(data);
+    final fallback = locationText(data);
+    final primary = connected
+        ? (_geocodedAddress ?? fallback)
+        : 'Pair device first';
+
+    final String secondary;
+    if (!connected) {
+      secondary = 'Location sharing becomes available after pairing.';
+    } else if (coordinates != null && primary != coordinates) {
+      secondary = '$coordinates \u2022 Updated: $updated';
+    } else {
+      secondary = 'Updated: $updated';
+    }
+
+    return _whiteCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: connected ? _emeraldTint : _coralTint,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  connected
+                      ? Icons.location_on_rounded
+                      : Icons.location_off_rounded,
+                  color: connected ? _emerald : _coral,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'GPS LOCATION',
+                      style: TextStyle(
+                        color: _slate,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      primary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      secondary,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _slate,
+                        fontSize: 12,
+                        fontFeatures: _tabular,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Share GPS now',
+                onPressed: connected && !isSharingLocation
+                    ? () => shareCurrentLocation(data)
+                    : null,
+                icon: Icon(
+                  isSharingLocation
+                      ? Icons.sync_rounded
+                      : Icons.my_location_rounded,
+                  color: connected ? _brandIndigo : _slate,
+                  size: 26,
+                ),
+              ),
+            ],
+          ),
+          // Passive nudge set by either the manual "Share GPS" button or
+          // the periodic background auto-share timer detecting Android's
+          // location services are off device-wide - see
+          // _autoShareLocation()'s doc comment for why the background path
+          // never pops an interruptive dialog on its own and relies on this
+          // banner being visible whenever the user next opens the app.
+          if (connected && _locationServicesDisabled) ...[
+            const SizedBox(height: 12),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _showEnableLocationServicesDialog,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _amberTint,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: _amber, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Location services are off - tap to enable GPS.',
+                        style: TextStyle(
+                          color: _ink,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// One checklist for everything that keeps protection working: pairing,
+  /// SMS backup alerts (SmsAlertSender.kt sends natively; this only shows
+  /// whether it is able to fire), usage access and the accessibility
+  /// service.
+  Widget _protectionChecklistCard(bool connected) {
+    final hasPhoneNumber = _cachedParentPhoneNumber != null;
+    final sentCount = _smsAlertLog
+        .where(
+          (entry) =>
+              entry['outcome'] == 'sent' || entry['outcome'] == 'delivered',
+        )
+        .length;
+    final failedCount = _smsAlertLog
+        .where(
+          (entry) => (entry['outcome'] as String? ?? '').startsWith('failed'),
+        )
+        .length;
+
+    String smsSubtitle;
+    if (!connected) {
+      smsSubtitle = 'Available after this phone is paired with a parent.';
+    } else if (!_smsPermissionGranted) {
+      smsSubtitle =
+          'Off. Grant SMS permission so a backup text alert can reach your '
+          'parent even without internet, when a restricted app is opened.';
+    } else if (hasPhoneNumber) {
+      smsSubtitle =
+          'Enabled. Blocked-app alerts will text '
+          '${_maskPhoneNumber(_cachedParentPhoneNumber!)}.';
+    } else {
+      smsSubtitle =
+          'Permission granted, but your parent hasn\'t added a phone number '
+          'yet in their Profile Settings.';
+    }
+    if (connected && _smsAlertLog.isNotEmpty) {
+      smsSubtitle =
+          '$smsSubtitle\nRecent attempts: $sentCount sent, $failedCount failed';
+    }
+
+    final usageState = _usageDashboardState;
+    final bool? usageGranted = usageState == null
+        ? (_loadingUsageDashboard ? null : false)
+        : usageState.viewModel.hasUsagePermission;
+
+    return _whiteCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Protection & Setup',
+            style: TextStyle(
+              color: _ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          _checklistRow(
+            icon: Icons.link_rounded,
+            title: 'Device Pairing',
+            subtitle: connected
+                ? 'Connected to a parent account. Tap to view details.'
+                : 'Not paired yet. Enter the code from the parent account.',
+            done: connected,
+            actionLabel: connected ? null : 'Pair Device',
+            onAction: connected
+                ? null
+                : () => _scrollToSection(_pairingSectionKey),
+            onTap: connected ? showConnectedSuccessDialog : null,
+          ),
+          const Divider(height: 1, color: _hairline),
+          _checklistRow(
+            icon: Icons.sms_outlined,
+            title: 'SMS Backup Alerts',
+            subtitle: smsSubtitle,
+            done: connected && _smsPermissionGranted && hasPhoneNumber,
+            actionLabel: connected && !_smsPermissionGranted ? 'Enable' : null,
+            onAction: connected && !_smsPermissionGranted
+                ? _requestSmsPermission
+                : null,
+          ),
+          const Divider(height: 1, color: _hairline),
+          _checklistRow(
+            icon: Icons.bar_chart_rounded,
+            title: 'Usage Access',
+            subtitle: usageGranted == true
+                ? 'Allowed. Screen time is read from this phone.'
+                : 'Needed to show real screen time and app usage.',
+            done: usageGranted,
+            actionLabel: usageGranted == false ? 'Allow' : null,
+            onAction: usageGranted == false
+                ? () => _usageTrackingService.openUsageAccessSettings()
+                : null,
+          ),
+          const Divider(height: 1, color: _hairline),
+          _checklistRow(
+            icon: Icons.accessibility_new_rounded,
+            title: 'Accessibility Service',
+            subtitle:
+                'Needed to block restricted apps. Check that WellScreen is '
+                'switched on in Android Accessibility settings.',
+            done: null,
+            actionLabel: 'Open',
+            onAction: _openAccessibilitySettings,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// [done]: true = emerald check, false = amber "Setup Needed" badge,
+  /// null = status not known to the app (no badge).
+  Widget _checklistRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool? done,
+    String? actionLabel,
+    VoidCallback? onAction,
+    VoidCallback? onTap,
+  }) {
+    final Color iconColor;
+    final Color iconTint;
+    if (done == true) {
+      iconColor = _emerald;
+      iconTint = _emeraldTint;
+    } else if (done == false) {
+      iconColor = _amber;
+      iconTint = _amberTint;
+    } else {
+      iconColor = _slate;
+      iconTint = const Color(0xFFF1F5F9);
+    }
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: iconTint,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: _ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (done == false)
+                        _pill(
+                          label: 'Setup Needed',
+                          background: _amberTint,
+                          foreground: const Color(0xFFB45309),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: _slate,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (actionLabel != null)
+              FilledButton(
+                onPressed: onAction,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _brandIndigo,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
+                child: Text(
+                  actionLabel,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              )
+            else if (done == true)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  color: _emerald,
+                  size: 22,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================= SETTINGS TAB ============================
+
+  List<Widget> _settingsTab(Map<String, dynamic> data, bool connected) {
+    final user = FirebaseAuth.instance.currentUser;
+    final fullName = (data['fullName'] ?? user?.displayName ?? 'Student User')
+        .toString();
+    final email = (data['email'] ?? user?.email ?? '').toString();
+    final hasPhoneNumber = _cachedParentPhoneNumber != null;
+
+    void openProfile() {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
+      );
+    }
+
+    return [
+      _settingsGroup('Account', [
+        _settingsTile(
+          icon: Icons.person_outline_rounded,
+          title: fullName,
+          subtitle: email.isEmpty ? 'Account and profile' : email,
+          onTap: openProfile,
+        ),
+        _settingsTile(
+          icon: Icons.sms_outlined,
+          title: 'Parent Phone Number (SMS Backup)',
+          subtitle: hasPhoneNumber
+              ? 'Backup alerts text '
+                    '${_maskPhoneNumber(_cachedParentPhoneNumber!)}'
+              : 'Not added yet. Your parent sets this in their Profile '
+                    'Settings.',
+        ),
+      ]),
+      const SizedBox(height: 14),
+      _settingsGroup('App', [
+        _settingsTile(
+          icon: Icons.notifications_none_rounded,
+          title: 'Notifications',
+          subtitle: 'Messages and alerts from your parent',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ChatNotificationsScreen()),
+          ),
+        ),
+        if (connected)
+          _settingsTile(
+            icon: Icons.sync_rounded,
+            title: isSyncingUsage ? 'Syncing...' : 'Sync Usage Now',
+            subtitleWidget: _syncStatusIndicator(),
+            onTap: isSyncingUsage ? null : () => syncUsageReport(data),
+          ),
+      ]),
+      const SizedBox(height: 14),
+      _settingsGroup('Privacy', [
+        _settingsTile(
+          icon: Icons.privacy_tip_outlined,
+          title: 'Privacy & Monitoring Notice',
+          subtitle: 'What WellScreen monitors and what it never reads',
+          onTap: _showMonitoringSheet,
+        ),
+      ]),
+      const SizedBox(height: 14),
+      _settingsGroup(null, [
+        _settingsTile(
+          icon: Icons.logout_rounded,
+          title: 'Logout',
+          subtitle: 'Sign out from this WellScreen account',
+          destructive: true,
+          onTap: _confirmLogout,
+        ),
+      ]),
+    ];
+  }
+
+  Widget _settingsGroup(String? title, List<Widget> tiles) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (title != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+            child: Text(
+              title.toUpperCase(),
+              style: const TextStyle(
+                color: _slate,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+        Material(
+          color: Colors.white,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: const BorderSide(color: _hairline),
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < tiles.length; i++) ...[
+                if (i > 0)
+                  const Divider(height: 1, indent: 64, color: _hairline),
+                tiles[i],
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _settingsTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    Widget? subtitleWidget,
+    VoidCallback? onTap,
+    bool destructive = false,
+  }) {
+    final accent = destructive ? _coral : _brandIndigo;
+
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: destructive ? _coralTint : const Color(0xFFE0E7FF),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: accent, size: 20),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: destructive ? const Color(0xFFDC2626) : _ink,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle:
+          subtitleWidget ??
+          (subtitle == null
+              ? null
+              : Text(
+                  subtitle,
+                  style: const TextStyle(color: _slate, fontSize: 12),
+                )),
+      trailing: onTap == null
+          ? null
+          : const Icon(Icons.chevron_right_rounded, color: _slate, size: 22),
+    );
+  }
+}
+
+/// Dashed horizontal rule used for the daily-limit line on the weekly chart.
+class _DashedLinePainter extends CustomPainter {
+  const _DashedLinePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF94A3B8)
+      ..strokeWidth = 1;
+    const dash = 4.0;
+    const gap = 4.0;
+    final y = size.height / 2;
+
+    for (var x = 0.0; x < size.width; x += dash + gap) {
+      final end = x + dash < size.width ? x + dash : size.width;
+      canvas.drawLine(Offset(x, y), Offset(end, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedLinePainter oldDelegate) => false;
 }

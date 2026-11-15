@@ -1,11 +1,17 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../services/admin_settings_api_service.dart';
+import '../services/admin_users_api_service.dart';
 import '../theme/app_theme.dart';
 import 'admin_logs_screen.dart';
+import 'admin_patch_screen.dart';
+import 'admin_users_screen.dart';
 import 'login_screen.dart';
 
+/// Admin dashboard. Matches the manuscript's admin module: Manage Users,
+/// Manage System Settings (system patch) and Monitor System Logs. The
+/// class name is kept because login/splash route admins here.
 class AdminSettingsScreen extends StatefulWidget {
   const AdminSettingsScreen({super.key});
 
@@ -19,190 +25,54 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
 
-  final AdminSettingsApiService _apiService = AdminSettingsApiService();
-  final TextEditingController limitController = TextEditingController();
+  bool isChecking = true;
 
-  bool appBlockingEnabled = true;
-  bool focusModeEnabled = true;
-  bool cooldownTimerEnabled = true;
-  bool scheduledLockEnabled = false;
-  bool categoryRestrictionEnabled = true;
-  bool emergencyAccessEnabled = true;
-
-  bool isLoading = true;
-  bool isSaving = false;
-  String? loadError;
-
-  DateTime? updatedAt;
-  String? updatedBy;
+  final AdminUsersApiService _usersApi = AdminUsersApiService();
+  List<AdminManagedUser>? _users;
+  String? _usersError;
+  bool _usersLoading = false;
 
   @override
   void initState() {
     super.initState();
-    loadSettings();
+    verifyAdmin();
   }
 
-  @override
-  void dispose() {
-    limitController.dispose();
-    super.dispose();
-  }
-
-  Future<bool> currentUserIsAdmin() async {
+  Future<void> verifyAdmin() async {
     final user = FirebaseAuth.instance.currentUser;
+    var isAdmin = false;
 
-    if (user == null) {
-      return false;
+    if (user != null) {
+      final tokenResult = await user.getIdTokenResult(true);
+      final claims = tokenResult.claims ?? <String, dynamic>{};
+      isAdmin = claims['admin'] == true || claims['role'] == 'admin';
     }
-
-    final tokenResult = await user.getIdTokenResult(true);
-    final claims = tokenResult.claims ?? <String, dynamic>{};
-
-    return claims['admin'] == true || claims['role'] == 'admin';
-  }
-
-  Future<void> loadSettings() async {
-    setState(() {
-      isLoading = true;
-      loadError = null;
-    });
-
-    try {
-      final isAdmin = await currentUserIsAdmin();
-
-      if (!isAdmin) {
-        showMessage('Administrator access required.');
-
-        if (mounted) {
-          await logout();
-        }
-
-        return;
-      }
-
-      final data = await _apiService.getSettings();
-
-      if (!mounted) return;
-
-      setState(() {
-        limitController.text = (data['default_daily_limit_minutes'] ?? 180)
-            .toString();
-
-        appBlockingEnabled = data['app_blocking_enabled'] ?? true;
-
-        focusModeEnabled = data['focus_mode_enabled'] ?? true;
-
-        cooldownTimerEnabled = data['cooldown_timer_enabled'] ?? true;
-
-        scheduledLockEnabled = data['scheduled_lock_enabled'] ?? false;
-
-        categoryRestrictionEnabled =
-            data['category_restriction_enabled'] ?? true;
-
-        emergencyAccessEnabled = data['emergency_access_enabled'] ?? true;
-
-        final updatedAtValue = data['updated_at'];
-
-        if (updatedAtValue is String && updatedAtValue.isNotEmpty) {
-          updatedAt = DateTime.tryParse(updatedAtValue)?.toLocal();
-        } else {
-          updatedAt = null;
-        }
-
-        updatedBy = data['updated_by']?.toString();
-
-        isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      // Previously this only fired a transient SnackBar and then still
-      // rendered the toggle UI with its in-memory default values (true/
-      // true/true/false/true/true, 180 min) - an admin who didn't catch
-      // the snackbar could hit "Save" and silently overwrite the real
-      // system settings with those defaults. Now blocks on a persistent,
-      // retryable error state instead (see the AppErrorState branch in
-      // build() below), matching the pattern used on rules_screen.dart.
-      setState(() {
-        isLoading = false;
-        loadError = 'Failed to load system settings. $e';
-      });
-    }
-  }
-
-  Future<void> saveSettings() async {
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      showMessage('Please log in again.');
-      return;
-    }
-
-    final isAdmin = await currentUserIsAdmin();
 
     if (!isAdmin) {
       showMessage('Administrator access required.');
+      if (mounted) await logout();
       return;
     }
 
-    final limitMinutes = int.tryParse(limitController.text.trim());
+    if (mounted) setState(() => isChecking = false);
+    loadStats();
+  }
 
-    if (limitMinutes == null || limitMinutes < 1 || limitMinutes > 1440) {
-      showMessage('Daily usage limit must be between 1 and 1440 minutes.');
-      return;
-    }
-
-    setState(() => isSaving = true);
+  Future<void> loadStats() async {
+    setState(() {
+      _usersLoading = true;
+      _usersError = null;
+    });
 
     try {
-      final data = await _apiService.updateSettings(
-        defaultDailyLimitMinutes: limitMinutes,
-        appBlockingEnabled: appBlockingEnabled,
-        focusModeEnabled: focusModeEnabled,
-        cooldownTimerEnabled: cooldownTimerEnabled,
-        scheduledLockEnabled: scheduledLockEnabled,
-        categoryRestrictionEnabled: categoryRestrictionEnabled,
-        emergencyAccessEnabled: emergencyAccessEnabled,
-      );
-
+      final users = await _usersApi.listUsers();
       if (!mounted) return;
-
-      setState(() {
-        limitController.text =
-            (data['default_daily_limit_minutes'] ?? limitMinutes).toString();
-
-        appBlockingEnabled = data['app_blocking_enabled'] ?? appBlockingEnabled;
-
-        focusModeEnabled = data['focus_mode_enabled'] ?? focusModeEnabled;
-
-        cooldownTimerEnabled =
-            data['cooldown_timer_enabled'] ?? cooldownTimerEnabled;
-
-        scheduledLockEnabled =
-            data['scheduled_lock_enabled'] ?? scheduledLockEnabled;
-
-        categoryRestrictionEnabled =
-            data['category_restriction_enabled'] ?? categoryRestrictionEnabled;
-
-        emergencyAccessEnabled =
-            data['emergency_access_enabled'] ?? emergencyAccessEnabled;
-
-        final updatedAtValue = data['updated_at'];
-
-        if (updatedAtValue is String && updatedAtValue.isNotEmpty) {
-          updatedAt = DateTime.tryParse(updatedAtValue)?.toLocal();
-        }
-
-        updatedBy = data['updated_by']?.toString();
-      });
-
-      showMessage('System settings updated successfully.');
+      setState(() => _users = users);
     } catch (e) {
-      showMessage('Failed to update system settings: $e');
+      if (!mounted) return;
+      setState(() => _usersError = _usersApi.errorMessage(e));
     } finally {
-      if (mounted) {
-        setState(() => isSaving = false);
-      }
+      if (mounted) setState(() => _usersLoading = false);
     }
   }
 
@@ -218,11 +88,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     );
   }
 
-  void openSystemLogs() {
+  void open(Widget screen) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const AdminLogsScreen()),
-    );
+      MaterialPageRoute(builder: (_) => screen),
+    ).then((_) {
+      if (mounted) loadStats();
+    });
   }
 
   void showMessage(String message) {
@@ -233,29 +105,13 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  String formatUpdatedAt() {
-    if (updatedAt == null) {
-      return 'Not updated yet';
-    }
-
-    final date = updatedAt!;
-
-    final month = date.month.toString().padLeft(2, '0');
-    final day = date.day.toString().padLeft(2, '0');
-    final year = date.year;
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-
-    return '$month/$day/$year $hour:$minute';
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: pageBg,
       appBar: AppBar(
         title: const Text(
-          'Admin System Settings',
+          'Admin Dashboard',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         backgroundColor: Colors.white,
@@ -268,237 +124,317 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           ),
         ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : loadError != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.lg),
-                child: AppErrorState(
-                  title: 'Could Not Load Settings',
-                  message: loadError!,
-                  onRetry: loadSettings,
-                ),
-              ),
+      body: isChecking
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
             )
-          : ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: purple,
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.admin_panel_settings_rounded,
-                        color: Colors.white,
-                        size: 38,
-                      ),
-                      SizedBox(height: 10),
-                      Text(
-                        'System Configuration',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(height: 5),
-                      Text(
-                        'Manage global WellScreen defaults and system features.',
-                        style: TextStyle(
-                          color: AppColors.primaryLight,
-                          height: 1.4,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                AppCard(
-                  onTap: openSystemLogs,
-                  child: const Row(
-                    children: [
-                      CircleAvatar(
-                        backgroundColor: AppColors.primaryLight,
-                        child: Icon(
-                          Icons.receipt_long_rounded,
-                          color: purple,
-                        ),
-                      ),
-                      SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'System Logs',
-                              style: TextStyle(
-                                color: darkText,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(height: 3),
-                            Text(
-                              'Monitor administrative and system activity.',
-                              style: TextStyle(color: grayText),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.chevron_right_rounded, color: grayText),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                TextField(
-                  controller: limitController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Default Daily Usage Limit (minutes)',
-                    prefixIcon: const Icon(Icons.timer_rounded, color: purple),
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                _settingSwitch(
-                  title: 'App Blocking',
-                  subtitle: 'Enable or disable app blocking system-wide.',
-                  value: appBlockingEnabled,
-                  onChanged: (value) {
-                    setState(() => appBlockingEnabled = value);
-                  },
-                ),
-
-                _settingSwitch(
-                  title: 'Focus Mode',
-                  subtitle: 'Enable focus mode functionality.',
-                  value: focusModeEnabled,
-                  onChanged: (value) {
-                    setState(() => focusModeEnabled = value);
-                  },
-                ),
-
-                _settingSwitch(
-                  title: 'Cooldown Timer',
-                  subtitle: 'Enable cooldown periods after extended usage.',
-                  value: cooldownTimerEnabled,
-                  onChanged: (value) {
-                    setState(() => cooldownTimerEnabled = value);
-                  },
-                ),
-
-                _settingSwitch(
-                  title: 'Scheduled Lock',
-                  subtitle: 'Enable scheduled device lock sessions.',
-                  value: scheduledLockEnabled,
-                  onChanged: (value) {
-                    setState(() => scheduledLockEnabled = value);
-                  },
-                ),
-
-                _settingSwitch(
-                  title: 'Category Restriction',
-                  subtitle: 'Enable supported harmful-category restrictions.',
-                  value: categoryRestrictionEnabled,
-                  onChanged: (value) {
-                    setState(() => categoryRestrictionEnabled = value);
-                  },
-                ),
-
-                _settingSwitch(
-                  title: 'Emergency Access',
-                  subtitle:
-                      'Allow emergency-access functionality during restrictions.',
-                  value: emergencyAccessEnabled,
-                  onChanged: (value) {
-                    setState(() => emergencyAccessEnabled = value);
-                  },
-                ),
-
-                const SizedBox(height: 18),
-
-                SizedBox(
-                  height: 54,
-                  child: FilledButton.icon(
-                    onPressed: isSaving ? null : saveSettings,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: purple,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    icon: const Icon(Icons.save_rounded),
-                    label: Text(
-                      isSaving ? 'Saving...' : 'Save System Settings',
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                Text(
-                  'Last updated: ${formatUpdatedAt()}',
-                  style: const TextStyle(
-                    color: grayText,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-
-                if (updatedBy != null)
+          : RefreshIndicator(
+              onRefresh: loadStats,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(20),
+                children: [
+                  _header(),
+                  const SizedBox(height: 16),
+                  _statsSection(),
+                  const SizedBox(height: 20),
                   Text(
-                    'Updated by: $updatedBy',
-                    style: const TextStyle(
-                      color: grayText,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    'Administration',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w900),
                   ),
-              ],
+                  const SizedBox(height: 10),
+                  _menuCard(
+                    icon: Icons.manage_accounts_rounded,
+                    title: 'Manage Users',
+                    subtitle:
+                        'View, update, deactivate, or delete user accounts.',
+                    onTap: () => open(const AdminUsersScreen()),
+                  ),
+                  const SizedBox(height: 12),
+                  _menuCard(
+                    icon: Icons.system_update_alt_rounded,
+                    title: 'System Patch',
+                    subtitle: 'Validate and apply a configuration patch.',
+                    onTap: () => open(const AdminPatchScreen()),
+                  ),
+                  const SizedBox(height: 12),
+                  _menuCard(
+                    icon: Icons.receipt_long_rounded,
+                    title: 'System Logs',
+                    subtitle: 'Search activity, error, and sync logs.',
+                    onTap: () => open(const AdminLogsScreen()),
+                  ),
+                  const SizedBox(height: 20),
+                  _recentActivity(),
+                ],
+              ),
             ),
     );
   }
 
-  Widget _settingSwitch({
+  Widget _header() {
+    final email = FirebaseAuth.instance.currentUser?.email ?? 'Administrator';
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: purple,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.admin_panel_settings_rounded,
+            color: Colors.white,
+            size: 42,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'System Administration',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Signed in as $email',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.primaryLight,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statsSection() {
+    if (_usersLoading && _users == null) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_usersError != null && _users == null) {
+      return AppCard(
+        onTap: loadStats,
+        child: Row(
+          children: [
+            const Icon(Icons.cloud_off_rounded, color: AppColors.warning),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Could not load user statistics. The server may be waking '
+                'up - tap to retry.',
+              ),
+            ),
+            const Icon(Icons.refresh_rounded, color: grayText),
+          ],
+        ),
+      );
+    }
+
+    final users = _users ?? const <AdminManagedUser>[];
+    final guardians = users.where((u) => u.role == 'parent').length;
+    final children = users.where((u) => u.role == 'child').length;
+    final admins = users.where((u) => u.role == 'admin').length;
+    final deactivated = users.where((u) => u.disabled).length;
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            _statTile('Total users', users.length, Icons.groups_rounded,
+                purple),
+            const SizedBox(width: 10),
+            _statTile('Guardians', guardians, Icons.shield_rounded,
+                AppColors.info),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _statTile('Children', children, Icons.child_care_rounded,
+                AppColors.success),
+            const SizedBox(width: 10),
+            _statTile('Deactivated', deactivated, Icons.block_rounded,
+                deactivated > 0 ? AppColors.danger : grayText),
+          ],
+        ),
+        if (admins > 0) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '$admins administrator account${admins == 1 ? '' : 's'}',
+              style: const TextStyle(color: grayText),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _statTile(String label, int value, IconData icon, Color color) {
+    return Expanded(
+      child: AppCard(
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 26),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$value',
+                    style: const TextStyle(
+                      color: darkText,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: grayText, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _recentActivity() {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('system_logs')
+          .orderBy('timestamp', descending: true)
+          .limit(5)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? [];
+
+        return AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppSectionHeader(
+                icon: Icons.history_rounded,
+                iconColor: purple,
+                title: 'Recent Activity',
+                trailing: TextButton(
+                  onPressed: () => open(const AdminLogsScreen()),
+                  child: const Text('View all'),
+                ),
+              ),
+              if (snapshot.hasError)
+                const Text('Unable to load recent activity.')
+              else if (docs.isEmpty)
+                const Text('No activity recorded yet.')
+              else
+                for (final doc in docs) _activityRow(doc.data()),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _activityRow(Map<String, dynamic> data) {
+    final level = (data['level'] ?? 'info').toString().toLowerCase();
+    final isProblem = level == 'error' || level == 'warning';
+    final ts = data['timestamp'];
+    var when = '';
+
+    if (ts is Timestamp) {
+      final d = ts.toDate().toLocal();
+      when = '${d.month.toString().padLeft(2, '0')}/'
+          '${d.day.toString().padLeft(2, '0')} '
+          '${d.hour.toString().padLeft(2, '0')}:'
+          '${d.minute.toString().padLeft(2, '0')}';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          Icon(
+            isProblem ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+            size: 18,
+            color: isProblem ? AppColors.warning : AppColors.success,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              (data['action'] ?? 'Unknown action').toString(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: darkText,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(when, style: const TextStyle(color: grayText, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _menuCard({
+    required IconData icon,
     required String title,
     required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
+    required VoidCallback onTap,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: AppCard(
-        padding: EdgeInsets.zero,
-        child: SwitchListTile(
-          activeThumbColor: purple,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-          title: Text(
-            title,
-            style: const TextStyle(color: darkText, fontWeight: FontWeight.w900),
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: AppColors.primaryLight,
+            child: Icon(icon, color: purple),
           ),
-          subtitle: Text(
-            subtitle,
-            style: const TextStyle(color: grayText, height: 1.3),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: darkText,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(subtitle, style: const TextStyle(color: grayText)),
+              ],
+            ),
           ),
-          value: value,
-          onChanged: onChanged,
-        ),
+          const Icon(Icons.chevron_right_rounded, color: grayText),
+        ],
       ),
     );
   }

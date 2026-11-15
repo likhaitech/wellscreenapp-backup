@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
-
 class WellScreenNavItem {
-  const WellScreenNavItem({required this.icon, required this.label});
+  const WellScreenNavItem({
+    required this.icon,
+    required this.label,
+    this.showBadge = false,
+  });
 
   final IconData icon;
   final String label;
+
+  /// Draws a small red unread dot on the icon's top-right corner.
+  final bool showBadge;
 }
 
+/// Floating white pill navigation bar: icon with a text label underneath.
+/// The active tab gets a soft blue pill highlight behind its icon.
 class WellScreenBottomNav extends StatelessWidget {
   const WellScreenBottomNav({
     super.key,
@@ -21,25 +28,30 @@ class WellScreenBottomNav extends StatelessWidget {
   final List<WellScreenNavItem> items;
   final ValueChanged<int> onTap;
 
-  static const Color navBackground = AppColors.track;
+  static const Color navBackground = Colors.white;
+  static const Color _activeColor = Color(0xFF1E40AF);
+  static const Color _activePill = Color(0xFFDBEAFE);
+  static const Color _inactiveColor = Color(0xFF64748B);
+  static const Color _badgeColor = Color(0xFFEF4444);
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Container(
-          height: 68,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          height: 66,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           decoration: BoxDecoration(
             color: navBackground,
-            borderRadius: BorderRadius.circular(34),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x16000000),
-                blurRadius: 12,
-                offset: Offset(0, 5),
+                color: Color(0x1F0F172A),
+                blurRadius: 18,
+                offset: Offset(0, 6),
               ),
             ],
           ),
@@ -47,40 +59,66 @@ class WellScreenBottomNav extends StatelessWidget {
             children: List.generate(items.length, (index) {
               final item = items[index];
               final selected = index == currentIndex;
+              final color = selected ? _activeColor : _inactiveColor;
 
               return Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(30),
-                  onTap: () => onTap(index),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    curve: Curves.easeOut,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      color: selected ? Colors.white : Colors.transparent,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                child: Semantics(
+                  button: true,
+                  selected: selected,
+                  label: item.label,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(26),
+                    onTap: () => onTap(index),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          item.icon,
-                          color: selected
-                              ? AppColors.primary
-                              : AppColors.textPrimary,
-                          size: 27,
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOut,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: selected ? _activePill : Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Icon(item.icon, color: color, size: 22),
+                              if (item.showBadge)
+                                Positioned(
+                                  right: -3,
+                                  top: -2,
+                                  child: Container(
+                                    width: 9,
+                                    height: 9,
+                                    decoration: BoxDecoration(
+                                      color: _badgeColor,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
+                        const SizedBox(height: 3),
+                        ExcludeSemantics(
                           child: Text(
                             item.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: selected
-                              ? AppColors.primary
-                              : AppColors.textPrimary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
+                              color: color,
+                              fontSize: 11,
+                              fontWeight: selected
+                                  ? FontWeight.w700
+                                  : FontWeight.w600,
                             ),
                           ),
                         ),
