@@ -110,6 +110,37 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> resetPassword() async {
+    final email = emailController.text.trim();
+
+    if (email.isEmpty) {
+      showMessage('Enter your email above, then tap Forgot password.');
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      showMessage(
+        'If an account exists for $email, a password reset link has been '
+        'sent. Check your inbox and spam folder.',
+      );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'invalid-email') {
+        showMessage('Invalid email address.');
+      } else if (e.code == 'network-request-failed') {
+        showMessage('Network error. Please check your internet connection.');
+      } else {
+        showMessage('Could not send reset email. Please try again.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
   String authErrorMessage(String code) {
     if (code == 'user-not-found') {
       return 'No account found with this email.';
@@ -303,7 +334,17 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 22),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: isLoading ? null : resetPassword,
+              child: const Text(
+                'Forgot password?',
+                style: TextStyle(color: purple, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           SizedBox(
             height: 54,
             child: FilledButton(

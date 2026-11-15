@@ -25,10 +25,11 @@ class AdminLogsScreen extends StatefulWidget {
   State<AdminLogsScreen> createState() => _AdminLogsScreenState();
 }
 
-enum _LevelFilter { all, attention }
+enum _LevelFilter { all, activity, errors, sync }
 
 class _AdminLogsScreenState extends State<AdminLogsScreen> {
   _LevelFilter _filter = _LevelFilter.all;
+  String _search = '';
 
   // Keyed by Firestore document id (stable and unique) rather than list
   // position, so which entries are expanded survives the list reordering
@@ -71,6 +72,47 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
     }
 
     return details.toString();
+  }
+
+  bool _isSync(Map<String, dynamic> data) {
+    final action = (data['action'] ?? '').toString().toLowerCase();
+    return action.contains('sync') ||
+        action.contains('sweep') ||
+        action.contains('dispatch') ||
+        action.contains('notification') ||
+        action.contains('monitoring');
+  }
+
+  bool _matches(Map<String, dynamic> data) {
+    final level = (data['level'] ?? 'info').toString();
+    final isError = _needsAttention(level);
+
+    switch (_filter) {
+      case _LevelFilter.errors:
+        if (!isError) return false;
+        break;
+      case _LevelFilter.sync:
+        if (!_isSync(data)) return false;
+        break;
+      case _LevelFilter.activity:
+        if (isError || _isSync(data)) return false;
+        break;
+      case _LevelFilter.all:
+        break;
+    }
+
+    final q = _search.trim().toLowerCase();
+    if (q.isEmpty) return true;
+
+    final haystack = [
+      data['action'],
+      data['message'],
+      data['actor_uid'],
+      data['level'],
+      _formatDetails(data['details']),
+    ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
+
+    return haystack.contains(q);
   }
 
   bool _needsAttention(String level) {
@@ -141,12 +183,8 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                 return _needsAttention(level);
               }).length;
 
-          final visibleDocs = _filter == _LevelFilter.attention
-              ? documents.where((doc) {
-                  final level = (doc.data()['level'] ?? 'info').toString();
-                  return _needsAttention(level);
-                }).toList()
-              : documents;
+          final visibleDocs =
+              documents.where((doc) => _matches(doc.data())).toList();
 
           return RefreshIndicator(
             onRefresh: () async {
@@ -161,9 +199,9 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                 if (visibleDocs.isEmpty)
                   const AppEmptyState(
                     icon: Icons.check_circle_rounded,
-                    title: 'Nothing Needs Attention',
-                    message: 'No error or warning entries in the most '
-                        'recent 100 log entries.',
+                    title: 'No Matching Logs',
+                    message: 'No entries match this filter or search in the '
+                        'most recent 100 log entries.',
                   )
                 else
                   for (final document in visibleDocs) ...[
@@ -207,24 +245,45 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
             'Most recent $total entr${total == 1 ? 'y' : 'ies'} recorded server-side.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          if (attentionCount > 0) ...[
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: [
-                _filterChip(
-                  label: 'All',
-                  selected: _filter == _LevelFilter.all,
-                  onTap: () => setState(() => _filter = _LevelFilter.all),
-                ),
-                const SizedBox(width: 8),
-                _filterChip(
-                  label: 'Errors & warnings only ($attentionCount)',
-                  selected: _filter == _LevelFilter.attention,
-                  onTap: () => setState(() => _filter = _LevelFilter.attention),
-                ),
-              ],
+          const SizedBox(height: AppSpacing.sm),
+          TextField(
+            onChanged: (v) => setState(() => _search = v),
+            decoration: InputDecoration(
+              hintText: 'Search logs',
+              prefixIcon: const Icon(Icons.search_rounded),
+              isDense: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.button),
+              ),
             ),
-          ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _filterChip(
+                label: 'All',
+                selected: _filter == _LevelFilter.all,
+                onTap: () => setState(() => _filter = _LevelFilter.all),
+              ),
+              _filterChip(
+                label: 'Activity',
+                selected: _filter == _LevelFilter.activity,
+                onTap: () => setState(() => _filter = _LevelFilter.activity),
+              ),
+              _filterChip(
+                label: 'Errors ($attentionCount)',
+                selected: _filter == _LevelFilter.errors,
+                onTap: () => setState(() => _filter = _LevelFilter.errors),
+              ),
+              _filterChip(
+                label: 'Sync',
+                selected: _filter == _LevelFilter.sync,
+                onTap: () => setState(() => _filter = _LevelFilter.sync),
+              ),
+            ],
+          ),
         ],
       ),
     );

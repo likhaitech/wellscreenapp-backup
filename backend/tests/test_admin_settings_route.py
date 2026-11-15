@@ -107,3 +107,67 @@ def test_patch_service_error_becomes_500():
         app.dependency_overrides.pop(require_admin, None)
 
     assert response.status_code == 500
+
+
+def _as_admin():
+    app.dependency_overrides[require_admin] = lambda: {"uid": "admin-1", "admin": True}
+
+
+def test_patch_endpoint_requires_auth():
+    r = client.post("/admin/settings/patch", json={"settings": {"focus_mode_enabled": False}})
+    assert r.status_code == 401
+
+
+def test_system_patch_applies_valid_settings_and_logs():
+    _as_admin()
+    try:
+        with patch("app.routes.admin_settings.update_system_settings", return_value={"focus_mode_enabled": False}) as upd, \
+             patch("app.routes.admin_settings.create_system_log") as log:
+            r = client.post(
+                "/admin/settings/patch",
+                json={"version": "1.0.1", "settings": {"focus_mode_enabled": False, "default_daily_limit_minutes": 120}},
+            )
+    finally:
+        app.dependency_overrides.pop(require_admin, None)
+    assert r.status_code == 200
+    assert r.json()["applied"] is True
+    upd.assert_called_once()
+    assert log.call_args.kwargs["action"] == "system_patch_applied"
+
+
+def test_system_patch_rejects_unknown_key_and_changes_nothing():
+    _as_admin()
+    try:
+        with patch("app.routes.admin_settings.update_system_settings") as upd, \
+             patch("app.routes.admin_settings.create_system_log") as log:
+            r = client.post("/admin/settings/patch", json={"settings": {"hack_enabled": True}})
+    finally:
+        app.dependency_overrides.pop(require_admin, None)
+    assert r.status_code == 422
+    upd.assert_not_called()
+    assert log.call_args.kwargs["action"] == "system_patch_rejected"
+
+
+def test_system_patch_rejects_wrong_type_and_out_of_range():
+    _as_admin()
+    try:
+        with patch("app.routes.admin_settings.update_system_settings") as upd, \
+             patch("app.routes.admin_settings.create_system_log"):
+            r1 = client.post("/admin/settings/patch", json={"settings": {"focus_mode_enabled": "yes"}})
+            r2 = client.post("/admin/settings/patch", json={"settings": {"default_daily_limit_minutes": 99999}})
+            r3 = client.post("/admin/settings/patch", json={"settings": {}})
+    finally:
+        app.dependency_overrides.pop(require_admin, None)
+    assert r1.status_code == r2.status_code == r3.status_code == 422
+    upd.assert_not_called()
+
+
+def test_system_patch_validate_only_does_not_apply():
+    _as_admin()
+    try:
+        with patch("app.routes.admin_settings.update_system_settings") as upd:
+            r = client.post("/admin/settings/patch", json={"validate_only": True, "settings": {"focus_mode_enabled": False}})
+    finally:
+        app.dependency_overrides.pop(require_admin, None)
+    assert r.status_code == 200 and r.json()["applied"] is False
+    upd.assert_not_called()

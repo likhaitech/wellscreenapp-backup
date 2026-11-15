@@ -89,4 +89,49 @@ class AdminSettingsApiService {
 
     return Map<String, dynamic>.from(response.data);
   }
+
+  /// Validates (and optionally applies) a system patch. Throws
+  /// [SystemPatchRejected] with the server's error list when invalid.
+  Future<Map<String, dynamic>> applyPatch(
+    Map<String, dynamic> patch, {
+    required bool validateOnly,
+  }) async {
+    final token = await _getAdminToken();
+
+    try {
+      final response = await _dio.post(
+        '/admin/settings/patch',
+        data: {...patch, 'validate_only': validateOnly},
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      return Map<String, dynamic>.from(response.data);
+    } on DioException catch (e) {
+      final data = e.response?.data;
+
+      if (e.response?.statusCode == 422 && data is Map) {
+        final detail = data['detail'];
+
+        if (detail is Map && detail['errors'] is List) {
+          throw SystemPatchRejected(
+            (detail['errors'] as List).map((x) => x.toString()).toList(),
+          );
+        }
+
+        if (detail is List) {
+          throw SystemPatchRejected(
+            detail.map((x) => (x is Map ? x['msg'] : x).toString()).toList(),
+          );
+        }
+      }
+
+      rethrow;
+    }
+  }
+}
+
+class SystemPatchRejected implements Exception {
+  SystemPatchRejected(this.errors);
+
+  final List<String> errors;
 }
