@@ -129,262 +129,17 @@ describe('users/{uid}', () => {
 // ---------------------------------------------------------------------
 // child_profiles/{childProfileId}
 // ---------------------------------------------------------------------
-describe('child_profiles/{childProfileId}', () => {
-  it('the owning parent can create a child profile with their own parentId', async () => {
-    const parent1 = testEnv.authenticatedContext('parent1').firestore();
-    await assertSucceeds(
-      setDoc(doc(parent1, 'child_profiles/cp1'), { parentId: 'parent1' })
-    );
-  });
 
-  it('CANNOT create a child profile claiming a different parentId', async () => {
-    const parent1 = testEnv.authenticatedContext('parent1').firestore();
-    await assertFails(
-      setDoc(doc(parent1, 'child_profiles/cp1'), { parentId: 'someoneElse' })
-    );
-  });
-
-  it('the owning parent can read their own child profile', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'child_profiles/cp1'), {
-        parentId: 'parent1',
-      });
-    });
-    const parent1 = testEnv.authenticatedContext('parent1').firestore();
-    await assertSucceeds(getDoc(doc(parent1, 'child_profiles/cp1')));
-  });
-
-  it('a different (non-owning, non-claiming) signed-in user CANNOT read the profile', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'child_profiles/cp1'), {
-        parentId: 'parent1',
-      });
-    });
-    const stranger = testEnv.authenticatedContext('stranger1').firestore();
-    await assertFails(getDoc(doc(stranger, 'child_profiles/cp1')));
-  });
-
-  it('an unclaimed profile can be claimed by a child setting childAccountId to themselves', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'child_profiles/cp1'), {
-        parentId: 'parent1',
-      });
-    });
-    const child1 = testEnv.authenticatedContext('child1').firestore();
-    await assertSucceeds(
-      updateDoc(doc(child1, 'child_profiles/cp1'), {
-        parentId: 'parent1',
-        childAccountId: 'child1',
-      })
-    );
-  });
-
-  it('CANNOT claim an unclaimed profile as someone other than yourself', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'child_profiles/cp1'), {
-        parentId: 'parent1',
-      });
-    });
-    const child1 = testEnv.authenticatedContext('child1').firestore();
-    await assertFails(
-      updateDoc(doc(child1, 'child_profiles/cp1'), {
-        parentId: 'parent1',
-        childAccountId: 'someoneElse',
-      })
-    );
-  });
-
-  it('an already-claimed profile CANNOT be re-claimed by a different child', async () => {
-    // This is the "isUnclaimed() || isClaimedByCaller()" branch: once
-    // childAccountId is set, only that same child (or the owning parent)
-    // may write to it again.
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'child_profiles/cp1'), {
-        parentId: 'parent1',
-        childAccountId: 'child1',
-      });
-    });
-    const child2 = testEnv.authenticatedContext('child2').firestore();
-    await assertFails(
-      updateDoc(doc(child2, 'child_profiles/cp1'), {
-        parentId: 'parent1',
-        childAccountId: 'child2',
-      })
-    );
-  });
-
-  it('the already-claimed child CAN sync usage/location merge updates', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'child_profiles/cp1'), {
-        parentId: 'parent1',
-        childAccountId: 'child1',
-      });
-    });
-    const child1 = testEnv.authenticatedContext('child1').firestore();
-    await assertSucceeds(
-      updateDoc(doc(child1, 'child_profiles/cp1'), {
-        parentId: 'parent1',
-        childAccountId: 'child1',
-        lastLocation: { lat: 1, lng: 2 },
-      })
-    );
-  });
-
-  it('CANNOT reassign a claimed profile to a different parentId', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'child_profiles/cp1'), {
-        parentId: 'parent1',
-        childAccountId: 'child1',
-      });
-    });
-    const child1 = testEnv.authenticatedContext('child1').firestore();
-    await assertFails(
-      updateDoc(doc(child1, 'child_profiles/cp1'), {
-        parentId: 'parentAttacker',
-        childAccountId: 'child1',
-      })
-    );
-  });
-
-  it('deletes are always denied, even for the owning parent', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'child_profiles/cp1'), {
-        parentId: 'parent1',
-      });
-    });
-    const parent1 = testEnv.authenticatedContext('parent1').firestore();
-    const { deleteDoc } = await import('firebase/firestore');
-    await assertFails(deleteDoc(doc(parent1, 'child_profiles/cp1')));
-  });
-});
 
 // ---------------------------------------------------------------------
 // pairing_codes/{code}
 // ---------------------------------------------------------------------
-describe('pairing_codes/{code}', () => {
-  it('the owning parent can create a pairing code', async () => {
-    const parent1 = testEnv.authenticatedContext('parent1').firestore();
-    await assertSucceeds(
-      setDoc(doc(parent1, 'pairing_codes/123456'), {
-        parentId: 'parent1',
-        childId: 'cp1',
-        status: 'active',
-      })
-    );
-  });
 
-  it('any signed-in user can read a pairing code (unpaired-child lookup case)', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'pairing_codes/123456'), {
-        parentId: 'parent1',
-        childId: 'cp1',
-        status: 'active',
-      });
-    });
-    const child1 = testEnv.authenticatedContext('child1').firestore();
-    await assertSucceeds(getDoc(doc(child1, 'pairing_codes/123456')));
-  });
-
-  it('a child can claim an active code, flipping it to connected as themselves', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'pairing_codes/123456'), {
-        parentId: 'parent1',
-        childId: 'cp1',
-        status: 'active',
-      });
-    });
-    const child1 = testEnv.authenticatedContext('child1').firestore();
-    await assertSucceeds(
-      updateDoc(doc(child1, 'pairing_codes/123456'), {
-        parentId: 'parent1',
-        childId: 'cp1',
-        status: 'connected',
-        childAccountId: 'child1',
-      })
-    );
-  });
-
-  it('CANNOT claim a code that is already connected (no reuse)', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'pairing_codes/123456'), {
-        parentId: 'parent1',
-        childId: 'cp1',
-        status: 'connected',
-        childAccountId: 'child1',
-      });
-    });
-    const child2 = testEnv.authenticatedContext('child2').firestore();
-    await assertFails(
-      updateDoc(doc(child2, 'pairing_codes/123456'), {
-        parentId: 'parent1',
-        childId: 'cp1',
-        status: 'connected',
-        childAccountId: 'child2',
-      })
-    );
-  });
-
-  it('CANNOT change parentId or childId while claiming', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'pairing_codes/123456'), {
-        parentId: 'parent1',
-        childId: 'cp1',
-        status: 'active',
-      });
-    });
-    const child1 = testEnv.authenticatedContext('child1').firestore();
-    await assertFails(
-      updateDoc(doc(child1, 'pairing_codes/123456'), {
-        parentId: 'parentAttacker',
-        childId: 'cp1',
-        status: 'connected',
-        childAccountId: 'child1',
-      })
-    );
-  });
-
-  it('deletes are always denied', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'pairing_codes/123456'), {
-        parentId: 'parent1',
-        childId: 'cp1',
-        status: 'active',
-      });
-    });
-    const parent1 = testEnv.authenticatedContext('parent1').firestore();
-    const { deleteDoc } = await import('firebase/firestore');
-    await assertFails(deleteDoc(doc(parent1, 'pairing_codes/123456')));
-  });
-});
 
 // ---------------------------------------------------------------------
 // app_rules/{parentId}
 // ---------------------------------------------------------------------
-describe('app_rules/{parentId}', () => {
-  it('the owning parent can write their own rules doc', async () => {
-    const parent1 = testEnv.authenticatedContext('parent1').firestore();
-    await assertSucceeds(
-      setDoc(doc(parent1, 'app_rules/parent1'), { bedtime: '21:00' })
-    );
-  });
 
-  it('CANNOT write to a different parent\'s rules doc', async () => {
-    const parent1 = testEnv.authenticatedContext('parent1').firestore();
-    await assertFails(
-      setDoc(doc(parent1, 'app_rules/parent2'), { bedtime: '21:00' })
-    );
-  });
-
-  it('the paired child CAN read the parent\'s rules doc (cross-account by design)', async () => {
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), 'app_rules/parent1'), {
-        bedtime: '21:00',
-      });
-    });
-    const child1 = testEnv.authenticatedContext('child1').firestore();
-    await assertSucceeds(getDoc(doc(child1, 'app_rules/parent1')));
-  });
-});
 
 // ---------------------------------------------------------------------
 // system_logs/{id}
@@ -502,5 +257,349 @@ describe('app access request rate-limit protection', () => {
         notificationState: 'pending',
       }));
     }
+  });
+});
+
+
+describe('Task 5 - Secure pairing and family access', () => {
+  function client(uid) {
+    return uid === null
+      ? testEnv.unauthenticatedContext().firestore()
+      : testEnv.authenticatedContext(uid).firestore();
+  }
+
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+
+      await Promise.all([
+        setDoc(doc(db, 'users/parent1'), {
+          uid: 'parent1',
+          role: 'parent',
+        }),
+
+        setDoc(doc(db, 'users/parent2'), {
+          uid: 'parent2',
+          role: 'parent',
+        }),
+
+        setDoc(doc(db, 'users/child1'), {
+          uid: 'child1',
+          role: 'child',
+          pairedParentId: 'parent1',
+          pairedChildProfileId: 'profile1',
+          pairingStatus: 'connected',
+        }),
+
+        setDoc(doc(db, 'users/child2'), {
+          uid: 'child2',
+          role: 'child',
+          pairingStatus: 'not_paired',
+          pairedParentId: null,
+          pairedChildProfileId: null,
+        }),
+
+        setDoc(doc(db, 'child_profiles/profile1'), {
+          id: 'profile1',
+          parentId: 'parent1',
+          childAccountId: 'child1',
+          pairingStatus: 'connected',
+          name: 'Test Child',
+        }),
+
+        setDoc(doc(db, 'child_profiles/waiting1'), {
+          id: 'waiting1',
+          parentId: 'parent1',
+          pairingStatus: 'waiting',
+        }),
+
+        setDoc(doc(db, 'pairing_codes/123456'), {
+          code: '123456',
+          parentId: 'parent1',
+          childId: 'waiting1',
+          status: 'active',
+        }),
+
+        setDoc(doc(db, 'pairing_attempt_limits/child1'), {
+          count: 1,
+        }),
+
+        setDoc(doc(db, 'app_rules/parent1'), {
+          parentId: 'parent1',
+          rules: [],
+        }),
+
+        setDoc(doc(db, 'restriction_settings/settings1'), {
+          parentId: 'parent1',
+          enabled: true,
+        }),
+      ]);
+    });
+  });
+
+  // Pairing codes are accessible only through FastAPI.
+
+  it.each(['parent1', 'child1', 'child2', null])(
+    'denies direct pairing code reads for %s',
+    async (uid) => {
+      await assertFails(
+        getDoc(doc(client(uid), 'pairing_codes/123456'))
+      );
+    }
+  );
+
+  it('denies parent creating pairing codes directly', async () => {
+    await assertFails(
+      setDoc(doc(client('parent1'), 'pairing_codes/654321'), {
+        parentId: 'parent1',
+        childId: 'waiting1',
+        status: 'active',
+      })
+    );
+  });
+
+  it('denies child redeeming pairing codes directly', async () => {
+    await assertFails(
+      updateDoc(doc(client('child2'), 'pairing_codes/123456'), {
+        status: 'connected',
+        childAccountId: 'child2',
+      })
+    );
+  });
+
+  it('denies reading pairing attempt counters', async () => {
+    await assertFails(
+      getDoc(doc(client('child1'), 'pairing_attempt_limits/child1'))
+    );
+  });
+
+  it('denies resetting pairing attempt counters', async () => {
+    await assertFails(
+      updateDoc(
+        doc(client('child1'), 'pairing_attempt_limits/child1'),
+        { count: 0 }
+      )
+    );
+  });
+
+  // User account security.
+
+  it('allows normal child registration', async () => {
+    await assertSucceeds(
+      setDoc(doc(client('newChild'), 'users/newChild'), {
+        uid: 'newChild',
+        role: 'child',
+        pairingStatus: 'not_paired',
+        pairedParentId: null,
+        pairedChildProfileId: null,
+      })
+    );
+  });
+
+  it('denies registration with forged pairing fields', async () => {
+    await assertFails(
+      setDoc(doc(client('newChild'), 'users/newChild'), {
+        uid: 'newChild',
+        role: 'child',
+        pairingStatus: 'connected',
+        pairedParentId: 'parent1',
+        pairedChildProfileId: 'profile1',
+      })
+    );
+  });
+
+  it('denies child changing paired parent', async () => {
+    await assertFails(
+      updateDoc(doc(client('child1'), 'users/child1'), {
+        pairedParentId: 'parent2',
+      })
+    );
+  });
+
+  it('denies child changing paired profile', async () => {
+    await assertFails(
+      updateDoc(doc(client('child1'), 'users/child1'), {
+        pairedChildProfileId: 'waiting1',
+      })
+    );
+  });
+
+  it('denies child changing pairing status', async () => {
+    await assertFails(
+      updateDoc(doc(client('child1'), 'users/child1'), {
+        pairingStatus: 'not_paired',
+      })
+    );
+  });
+
+  it('allows normal user profile updates', async () => {
+    await assertSucceeds(
+      updateDoc(doc(client('child1'), 'users/child1'), {
+        fullName: 'Updated Name',
+      })
+    );
+  });
+
+  // Child profile security.
+
+  it('allows owning parent to read child profile', async () => {
+    await assertSucceeds(
+      getDoc(doc(client('parent1'), 'child_profiles/profile1'))
+    );
+  });
+
+  it('allows paired child to read own profile', async () => {
+    await assertSucceeds(
+      getDoc(doc(client('child1'), 'child_profiles/profile1'))
+    );
+  });
+
+  it('denies unrelated parent reading child profile', async () => {
+    await assertFails(
+      getDoc(doc(client('parent2'), 'child_profiles/profile1'))
+    );
+  });
+
+  it('denies unrelated child reading child profile', async () => {
+    await assertFails(
+      getDoc(doc(client('child2'), 'child_profiles/profile1'))
+    );
+  });
+
+  it('denies direct child profile creation', async () => {
+    await assertFails(
+      setDoc(doc(client('parent1'), 'child_profiles/newProfile'), {
+        parentId: 'parent1',
+        pairingStatus: 'waiting',
+      })
+    );
+  });
+
+  it('denies claiming an unpaired child profile directly', async () => {
+    await assertFails(
+      updateDoc(doc(client('child2'), 'child_profiles/waiting1'), {
+        childAccountId: 'child2',
+        pairingStatus: 'connected',
+      })
+    );
+  });
+
+  it('denies parent replacing paired child identity', async () => {
+    await assertFails(
+      updateDoc(doc(client('parent1'), 'child_profiles/profile1'), {
+        childAccountId: 'child2',
+      })
+    );
+  });
+
+  it('denies parent changing profile ownership', async () => {
+    await assertFails(
+      updateDoc(doc(client('parent1'), 'child_profiles/profile1'), {
+        parentId: 'parent2',
+      })
+    );
+  });
+
+  it('denies child changing parent identity information', async () => {
+    await assertFails(
+      updateDoc(doc(client('child1'), 'child_profiles/profile1'), {
+        parentDisplayName: 'Forged Name',
+      })
+    );
+  });
+
+  it('allows parent updating normal child profile information', async () => {
+    await assertSucceeds(
+      updateDoc(doc(client('parent1'), 'child_profiles/profile1'), {
+        parentDisplayName: 'Updated Parent Name',
+      })
+    );
+  });
+
+  it('allows paired child updating display name', async () => {
+    await assertSucceeds(
+      updateDoc(doc(client('child1'), 'child_profiles/profile1'), {
+        childDisplayName: 'Updated Child Name',
+      })
+    );
+  });
+
+  // Application rules.
+
+  it('allows parent reading own app rules', async () => {
+    await assertSucceeds(
+      getDoc(doc(client('parent1'), 'app_rules/parent1'))
+    );
+  });
+
+  it('allows verified paired child reading parent app rules', async () => {
+    await assertSucceeds(
+      getDoc(doc(client('child1'), 'app_rules/parent1'))
+    );
+  });
+
+  it.each(['parent2', 'child2', null])(
+    'denies unauthorized app rules access for %s',
+    async (uid) => {
+      await assertFails(
+        getDoc(doc(client(uid), 'app_rules/parent1'))
+      );
+    }
+  );
+
+  it('allows parent updating own app rules', async () => {
+    await assertSucceeds(
+      updateDoc(doc(client('parent1'), 'app_rules/parent1'), {
+        rules: [],
+      })
+    );
+  });
+
+  it('denies child updating parent app rules', async () => {
+    await assertFails(
+      updateDoc(doc(client('child1'), 'app_rules/parent1'), {
+        rules: [],
+      })
+    );
+  });
+
+  it('denies another parent updating app rules', async () => {
+    await assertFails(
+      updateDoc(doc(client('parent2'), 'app_rules/parent1'), {
+        rules: [],
+      })
+    );
+  });
+
+  // Restriction settings.
+
+  it('allows parent reading own restriction settings', async () => {
+    await assertSucceeds(
+      getDoc(doc(client('parent1'), 'restriction_settings/settings1'))
+    );
+  });
+
+  it('allows paired child reading restriction settings', async () => {
+    await assertSucceeds(
+      getDoc(doc(client('child1'), 'restriction_settings/settings1'))
+    );
+  });
+
+  it.each(['parent2', 'child2', null])(
+    'denies unauthorized restriction settings access for %s',
+    async (uid) => {
+      await assertFails(
+        getDoc(doc(client(uid), 'restriction_settings/settings1'))
+      );
+    }
+  );
+
+  it('denies child modifying restriction settings', async () => {
+    await assertFails(
+      updateDoc(
+        doc(client('child1'), 'restriction_settings/settings1'),
+        { enabled: false }
+      )
+    );
   });
 });

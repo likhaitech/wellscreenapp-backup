@@ -1,4 +1,3 @@
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -10,40 +9,94 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        get(/databases/$(database)/documents/users/$(request.auth.uid))
+          .data.role == 'admin';
     }
 
-    // Users may edit their own profile, but cannot promote themselves to admin.
-    // Admin role assignment must happen through trusted server-side code.
+    function isParentAccount() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid))
+          .data.role == 'parent';
+    }
+
+    function hasMatchingChildProfile(parentUid, profileId) {
+      let profile = get(
+        /databases/$(database)/documents/child_profiles/$(profileId)
+      ).data;
+
+      return profile.parentId == parentUid &&
+        profile.get('childAccountId', '') == request.auth.uid &&
+        profile.get('pairingStatus', '') == 'connected';
+    }
+
+    function isPairedChildOf(parentUid) {
+      let user = get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+
+      let profileId = user.get('pairedChildProfileId', '');
+
+      return user.role == 'child' &&
+        user.get('pairedParentId', '') == parentUid &&
+        user.get('pairingStatus', '') == 'connected' &&
+        profileId is string &&
+        profileId.matches('^[^/]+$') &&
+        hasMatchingChildProfile(parentUid, profileId);
+    }
+
+    // User accounts.
     match /users/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
+
+      allow read: if isSignedIn() &&
+        request.auth.uid == uid;
+
       allow read: if isAdmin();
 
+      // Registration must not create an already-paired account.
       allow create: if isSignedIn() &&
         request.auth.uid == uid &&
-        request.resource.data.role in ['parent', 'child'];
+        request.resource.data.role in ['parent', 'child'] &&
+        request.resource.data.get('pairedParentId', null) == null &&
+        request.resource.data.get('pairedChildProfileId', null) == null &&
+        request.resource.data.get('pairingCode', null) == null &&
+        request.resource.data.get('pairedAt', null) == null &&
+        request.resource.data.get('pairingStatus', 'not_paired')
+          in ['not_paired', null];
 
+      // Users cannot modify their own role or pairing relationships.
+      // Pairing fields are managed by the trusted FastAPI backend.
       allow update: if isSignedIn() &&
         request.auth.uid == uid &&
-        request.resource.data.role == resource.data.role;
+        request.resource.data.role == resource.data.role &&
+        !request.resource.data.diff(resource.data)
+          .affectedKeys().hasAny([
+            'pairedParentId',
+            'pairedChildProfileId',
+            'pairingStatus',
+            'pairingCode',
+            'pairedAt'
+          ]);
 
       allow delete: if false;
 
       // Durable chat notifications for this account only.
-      // Clients cannot forge inbox records or change server-issued notification content.
       match /notifications/{notificationId} {
-        allow get, list: if isSignedIn() && request.auth.uid == uid;
+
+        allow get, list: if isSignedIn() &&
+          request.auth.uid == uid;
 
         allow create, delete: if false;
 
         allow update: if isSignedIn() &&
           request.auth.uid == uid &&
           resource.data.readAt == null &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']) &&
+          request.resource.data.diff(resource.data)
+            .affectedKeys().hasOnly(['readAt']) &&
           request.resource.data.readAt == request.time;
       }
     }
 
+    // Child profiles.
     match /child_profiles/{childProfileId} {
 
       function isOwningParent() {
@@ -57,28 +110,44 @@ service cloud.firestore {
           resource.data.childAccountId == request.auth.uid;
       }
 
-      function isUnclaimed() {
-        return !('childAccountId' in resource.data);
+      // Pairing identity fields cannot be modified by clients.
+      function pairingIdentityUnchanged() {
+        return !request.resource.data.diff(resource.data)
+          .affectedKeys().hasAny([
+            'id',
+            'parentId',
+            'childAccountId',
+            'childEmail',
+            'pairingStatus',
+            'connectedAt',
+            'createdAt'
+          ]);
       }
 
-      allow read: if isOwningParent() || isClaimedByCaller();
+      allow read: if isOwningParent() ||
+        isClaimedByCaller();
 
-      allow create: if isSignedIn() &&
-        request.resource.data.parentId == request.auth.uid;
+      // Child profiles must be created by the secure pairing backend.
+      allow create: if false;
 
-      allow update: if isOwningParent() ||
-        (isSignedIn() &&
-          request.resource.data.parentId == resource.data.parentId &&
-          request.resource.data.childAccountId == request.auth.uid &&
-          // Only the owning parent may change the linked parent's identity.
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-            'parentDisplayName', 'parentEmail'
-          ]) &&
-          (isUnclaimed() || isClaimedByCaller()));
+      // Existing family members may update permitted profile information.
+      allow update: if pairingIdentityUnchanged() &&
+        (
+          isOwningParent() ||
+          (
+            isClaimedByCaller() &&
+            !request.resource.data.diff(resource.data)
+              .affectedKeys().hasAny([
+                'parentDisplayName',
+                'parentEmail'
+              ])
+          )
+        );
 
       allow delete: if false;
 
       match /monitoring_alerts/{alertId} {
+
         // Only the owning parent can view security alerts.
         allow get, list: if request.auth != null &&
           get(
@@ -89,8 +158,7 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
-      // Per-app daily limits are a subcollection.
-      // Parent-document rules do not automatically apply to subcollections.
+      // Per-app daily limits.
       match /app_time_limits/{appPackage} {
 
         function childProfile() {
@@ -110,13 +178,18 @@ service cloud.firestore {
             childProfile().data.childAccountId == request.auth.uid;
         }
 
-        // Matches AppTimeLimitService.saveLimit() payload.
         function isValidLimit() {
           return request.resource.data.keys().hasOnly([
-              'packageName', 'appName', 'limitMinutes', 'updatedAt'
+              'packageName',
+              'appName',
+              'limitMinutes',
+              'updatedAt'
             ]) &&
             request.resource.data.keys().hasAll([
-              'packageName', 'appName', 'limitMinutes', 'updatedAt'
+              'packageName',
+              'appName',
+              'limitMinutes',
+              'updatedAt'
             ]) &&
             request.resource.data.packageName == appPackage &&
             request.resource.data.appName is string &&
@@ -128,14 +201,17 @@ service cloud.firestore {
             request.resource.data.updatedAt == request.time;
         }
 
-        // The guardian configures limits; the paired child only receives them.
-        allow get, list: if isOwningLimitParent() || isPairedLimitChild();
+        // Parents configure limits; paired children receive them.
+        allow get, list: if isOwningLimitParent() ||
+          isPairedLimitChild();
 
-        allow create, update: if isOwningLimitParent() && isValidLimit();
+        allow create, update: if isOwningLimitParent() &&
+          isValidLimit();
 
         allow delete: if isOwningLimitParent();
       }
 
+      // Parent-child chat authorization.
       function chatProfile() {
         return get(
           /databases/$(database)/documents/child_profiles/$(childProfileId)
@@ -158,14 +234,21 @@ service cloud.firestore {
       }
 
       match /chat_messages/{messageId} {
+
         allow get, list: if chatMember();
 
         allow create: if chatMember() &&
           request.resource.data.keys().hasOnly([
-            'senderId', 'body', 'createdAt', 'notificationState'
+            'senderId',
+            'body',
+            'createdAt',
+            'notificationState'
           ]) &&
           request.resource.data.keys().hasAll([
-            'senderId', 'body', 'createdAt', 'notificationState'
+            'senderId',
+            'body',
+            'createdAt',
+            'notificationState'
           ]) &&
           request.resource.data.senderId == request.auth.uid &&
           request.resource.data.body is string &&
@@ -178,57 +261,75 @@ service cloud.firestore {
       }
 
       // App access requests.
-      // Both paired family members can read requests.
-      // All writes must go through the trusted FastAPI backend.
+      // Writes must go through FastAPI.
       match /access_requests/{requestId} {
+
         allow get, list: if chatMember();
 
-        // Client-side creation, modification, and deletion are prohibited.
-        // FastAPI uses Firebase Admin SDK to manage these documents.
         allow create, update, delete: if false;
       }
 
+      // Temporary application access grants.
       match /temporary_access_grants/{packageName} {
+
         allow get, list: if chatMember();
 
-        // Written only by trusted FastAPI with Firebase Admin SDK.
         allow create, update, delete: if false;
       }
     }
 
+    // Secure pairing codes.
+    // Only the trusted backend may generate or redeem codes.
     match /pairing_codes/{code} {
-      allow read: if isSignedIn();
-
-      allow create: if isSignedIn() &&
-        request.resource.data.parentId == request.auth.uid;
-
-      allow update: if isSignedIn() &&
-        resource.data.status == 'active' &&
-        request.resource.data.status == 'connected' &&
-        request.resource.data.parentId == resource.data.parentId &&
-        request.resource.data.childId == resource.data.childId &&
-        request.resource.data.childAccountId == request.auth.uid;
-
-      allow delete: if false;
+      allow read, write: if false;
     }
 
+    // Server-side pairing attempt rate limits.
+    match /pairing_attempt_limits/{uid} {
+      allow read, write: if false;
+    }
+
+    // Application rules.
+    // Only the owning parent and verified paired children can read.
     match /app_rules/{parentId} {
-      allow read: if isSignedIn();
+
+      allow get: if isSignedIn() &&
+        (
+          (request.auth.uid == parentId && isParentAccount()) ||
+          isPairedChildOf(parentId)
+        );
+
+      allow list: if false;
 
       allow write: if isSignedIn() &&
-        request.auth.uid == parentId;
+        request.auth.uid == parentId &&
+        isParentAccount();
     }
 
+    // Restriction settings.
     match /restriction_settings/{docId} {
-      allow read: if isSignedIn();
+
+      allow get: if isSignedIn() &&
+        (
+          (
+            request.auth.uid == resource.data.parentId &&
+            isParentAccount()
+          ) ||
+          isPairedChildOf(resource.data.parentId)
+        );
+
+      allow list: if false;
 
       allow create: if isSignedIn() &&
+        isParentAccount() &&
         request.resource.data.parentId == request.auth.uid;
 
       allow update, delete: if false;
     }
 
+    // Administrative system logs.
     match /system_logs/{logId} {
+
       allow read: if isAdmin();
 
       allow write: if false;
