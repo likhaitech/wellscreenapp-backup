@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../services/pairing_api_service.dart';
 
 import '../theme/app_theme.dart';
 import 'login_screen.dart';
@@ -193,7 +193,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              '$childName’s device has been successfully connected to your account.',
+              '$childNameâ€™s device has been successfully connected to your account.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: grayText,
@@ -242,23 +242,9 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
         .snapshots();
   }
 
-  Future<String> createUniquePairingCode() async {
-    final firestore = FirebaseFirestore.instance;
-    final random = Random();
-
-    for (int attempt = 0; attempt < 10; attempt++) {
-      final code = (100000 + random.nextInt(900000)).toString();
-      final doc = await firestore.collection('pairing_codes').doc(code).get();
-
-      if (!doc.exists) {
-        return code;
-      }
-    }
-
-    throw Exception('Unable to generate unique pairing code. Try again.');
-  }
-
   Future<void> generatePairingCode() async {
+    if (isGenerating) return;
+
     final parentUser = FirebaseAuth.instance.currentUser;
 
     if (parentUser == null) {
@@ -276,49 +262,22 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     setState(() => isGenerating = true);
 
     try {
-      final firestore = FirebaseFirestore.instance;
-      final code = await createUniquePairingCode();
-      final expiryDate = DateTime.now().add(const Duration(minutes: 15));
-
-      final childProfileRef = firestore.collection('child_profiles').doc();
-      final pairingCodeRef = firestore.collection('pairing_codes').doc(code);
-      final parentIdentity = await _parentIdentityFields(parentUser);
-
-      final batch = firestore.batch();
-
-      batch.set(childProfileRef, {
-        'id': childProfileRef.id,
-        'parentId': parentUser.uid,
-        ...parentIdentity,
-        'name': childName,
-        'pairingStatus': 'waiting',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-
-      batch.set(pairingCodeRef, {
-        'code': code,
-        'parentId': parentUser.uid,
-        'childId': childProfileRef.id,
-        'childName': childName,
-        'status': 'active',
-        'createdAt': FieldValue.serverTimestamp(),
-        'expiresAt': Timestamp.fromDate(expiryDate),
-      }, SetOptions(merge: true));
-
-      await batch.commit();
+      final result = await PairingApiService().generateCode(
+        childName: childName,
+      );
 
       if (!mounted) return;
 
       setState(() {
-        generatedCode = code;
+        generatedCode = result.code;
         generatedChildName = childName;
-        generatedExpiry = expiryDate;
+        generatedExpiry = result.expiresAt;
       });
 
       childNameController.clear();
       showMessage('Pairing code generated.');
     } catch (e) {
+      if (!mounted) return;
       showMessage(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) {
@@ -817,7 +776,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$name’s Phone',
+                  '$nameâ€™s Phone',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
