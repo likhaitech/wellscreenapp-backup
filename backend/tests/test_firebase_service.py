@@ -28,13 +28,19 @@ from app.services import firebase_service as svc
 
 
 @pytest.fixture(autouse=True)
-def clean_firebase_apps():
-    """Isolates each test from firebase_admin's real global app registry."""
+def clean_firebase_apps(monkeypatch):
+    """Isolate Firebase app registry and production credential tests."""
+
+    monkeypatch.delenv("FIRESTORE_EMULATOR_HOST", raising=False)
+
     original = dict(firebase_admin._apps)
     firebase_admin._apps.clear()
-    yield
-    firebase_admin._apps.clear()
-    firebase_admin._apps.update(original)
+
+    try:
+        yield
+    finally:
+        firebase_admin._apps.clear()
+        firebase_admin._apps.update(original)
 
 
 class TestInitializeFirebase:
