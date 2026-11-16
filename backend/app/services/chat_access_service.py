@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+from math import ceil
 from typing import Any
 
 from firebase_admin import auth, firestore, messaging
 from google.cloud.firestore_v1 import transactional
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from .firebase_service import get_auth_module, get_firestore_client
 
@@ -18,10 +20,21 @@ UTC = dt.timezone.utc
 LOGGER = logging.getLogger(__name__)
 PARENT_ALERT_CHANNEL = "wellscreen_alerts"  # created by the parent app's PushNotificationService
 MAX_APPROVED_MINUTES = 180
+APP_REQUEST_COOLDOWN = dt.timedelta(minutes=5)
+APP_REQUEST_DAILY_LIMIT = 10
+PHT = dt.timezone(dt.timedelta(hours=8))
 
 
 class ChatAccessError(ValueError):
     pass
+
+
+class AppRequestLimitError(ChatAccessError):
+    """A valid request exceeded the submission rate limit."""
+
+
+def _request_now() -> dt.datetime:
+    return dt.datetime.now(UTC)
 
 
 def authenticated_uid(authorization: str | None) -> str:
@@ -81,6 +94,147 @@ def _restricted_rule(db: Any, parent_uid: str, package: str) -> dict[str, Any] |
                 rule.get("restrictEnabled") is True):
             return rule
     return None
+
+
+def submit_access_request(
+    *,
+    child_uid: str,
+    profile_id: str,
+    request_id: str,
+    package_name: str,
+    requested_minutes: int,
+) -> dict[str, Any]:
+    """Create a request only after checking the server-side submission limits."""
+    for label, value in (("child profile", profile_id), ("request ID", request_id)):
+        if (
+            not value or "/" in value or len(value) > 200
+            or value in (".", "..") or value.startswith("__")
+        ):
+            raise ChatAccessError(f"Invalid {label}")
+    if (
+        not isinstance(package_name, str)
+        or not 3 <= len(package_name) <= 200
+        or "/" in package_name
+    ):
+        raise ChatAccessError("Invalid application package")
+    if (
+        not isinstance(requested_minutes, int)
+        or isinstance(requested_minutes, bool)
+        or not 5 <= requested_minutes <= 120
+    ):
+        raise ChatAccessError("Requested time must be 5–120 minutes")
+
+    db = get_firestore_client()
+    profile_ref = db.collection("child_profiles").document(profile_id)
+    requests = profile_ref.collection("access_requests")
+    request_ref = requests.document(request_id)
+    lock_ref = profile_ref.collection("request_limits").document("app_access")
+
+    @transactional
+    def submit(tx: Any) -> dict[str, Any]:
+        profile_snap = profile_ref.get(transaction=tx)
+        profile = profile_snap.to_dict() or {}
+        if (
+            not profile_snap.exists
+            or profile.get("childAccountId") != child_uid
+            or not profile.get("parentId")
+            or profile.get("pairingStatus") != "connected"
+        ):
+            raise ChatAccessError("Only the paired child can submit an access request")
+
+        existing = request_ref.get(transaction=tx)
+        if existing.exists:
+            data = existing.to_dict() or {}
+            if (
+                data.get("childUid") != child_uid
+                or data.get("packageName") != package_name
+                or data.get("requestedMinutes") != requested_minutes
+            ):
+                raise ChatAccessError("Request ID already in use")
+            return {"requestId": request_id, "status": data.get("status", "pending")}
+
+        # Every accepted submission also writes this per-profile lock document.
+        # Reading it first forces competing transactions to serialize/retry.
+        lock_ref.get(transaction=tx)
+        now = _request_now()
+        today = now.astimezone(PHT).date()
+
+        recent = list(
+            requests.order_by("createdAt", direction="DESCENDING")
+            .limit(APP_REQUEST_DAILY_LIMIT).stream(transaction=tx)
+        )
+        timestamps = [
+            (item.to_dict() or {}).get("createdAt") for item in recent
+        ]
+        timestamps = [
+            value for value in timestamps
+            if isinstance(value, dt.datetime)
+        ]
+        daily_count = sum(
+            1 for value in timestamps if value.astimezone(PHT).date() == today
+        )
+        if daily_count >= APP_REQUEST_DAILY_LIMIT:
+            raise AppRequestLimitError(
+                "Daily app access limit reached. You can send another request tomorrow."
+            )
+
+        if timestamps:
+            elapsed = now - max(timestamps)
+            if elapsed < APP_REQUEST_COOLDOWN:
+                remaining = APP_REQUEST_COOLDOWN - elapsed
+                minutes = ceil(remaining.total_seconds() / 60)
+                raise AppRequestLimitError(
+                    f"Please wait {minutes} minute(s) before sending another app access request."
+                )
+
+        unresolved = requests.where(
+            filter=FieldFilter(
+                "status", "in", ["pending", "approved_pending_activation", "active"]
+            )
+        ).stream(transaction=tx)
+        for item in unresolved:
+            data = item.to_dict() or {}
+            if data.get("packageName") != package_name:
+                continue
+            expires_at = data.get("expiresAt")
+            if (
+                data.get("status") == "active"
+                and isinstance(expires_at, dt.datetime)
+                and expires_at <= now
+            ):
+                continue
+            raise ChatAccessError("You already have an unresolved request for this app.")
+
+        rule_snap = (
+            db.collection("app_rules").document(profile["parentId"])
+            .get(transaction=tx)
+        )
+        rules = (rule_snap.to_dict() or {}).get("rules", [])
+        rule = next(
+            (
+                item for item in rules
+                if isinstance(item, dict)
+                and item.get("packageName") == package_name
+                and item.get("restrictEnabled") is True
+            ),
+            None,
+        )
+        if rule is None:
+            raise ChatAccessError("The selected app is no longer restricted.")
+
+        tx.set(request_ref, {
+            "childUid": child_uid,
+            "packageName": package_name,
+            "appName": str(rule.get("appName") or package_name)[:150],
+            "requestedMinutes": requested_minutes,
+            "status": "pending",
+            "createdAt": now,
+            "notificationState": "pending",
+        })
+        tx.set(lock_ref, {"updatedAt": firestore.SERVER_TIMESTAMP})
+        return {"requestId": request_id, "status": "pending"}
+
+    return submit(db.transaction())
 
 
 def respond_to_request(*, parent_uid: str, profile_id: str, request_id: str,
