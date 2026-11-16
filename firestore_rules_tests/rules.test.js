@@ -11,7 +11,7 @@ import {
   assertFails,
 } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'node:fs';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 const PROJECT_ID = 'wellscreen-rules-test';
 
@@ -434,5 +434,73 @@ describe('deny-by-default fallback', () => {
     await assertFails(
       setDoc(doc(parent1, 'pairingCodes/123456'), { parentId: 'parent1' })
     );
+  });
+});
+
+// ---------------------------------------------------------------------
+// Access requests are created only by the trusted backend; normal chat
+// messages retain their original client-side create permissions.
+// ---------------------------------------------------------------------
+describe('app access request rate-limit protection', () => {
+  async function seedFamily() {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'child_profiles/cp1'), {
+        parentId: 'parent1', childAccountId: 'child1', pairingStatus: 'connected',
+      });
+      await setDoc(doc(db, 'child_profiles/cp1/access_requests/existing'), {
+        childUid: 'child1', packageName: 'com.example.app', status: 'pending',
+      });
+      await setDoc(doc(db, 'child_profiles/cp1/request_limits/app_access'), {
+        updatedAt: serverTimestamp(),
+      });
+    });
+  }
+
+  it('rejects direct app access creation even by the paired child', async () => {
+    await seedFamily();
+    const child = testEnv.authenticatedContext('child1').firestore();
+    await assertFails(setDoc(doc(child, 'child_profiles/cp1/access_requests/new'), {
+      childUid: 'child1',
+      packageName: 'com.example.app',
+      appName: 'Example',
+      requestedMinutes: 30,
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      notificationState: 'pending',
+    }));
+  });
+
+  it('allows both family members to read backend-created access requests', async () => {
+    await seedFamily();
+    for (const uid of ['parent1', 'child1']) {
+      const db = testEnv.authenticatedContext(uid).firestore();
+      await assertSucceeds(getDoc(doc(db, 'child_profiles/cp1/access_requests/existing')));
+    }
+    const stranger = testEnv.authenticatedContext('stranger').firestore();
+    await assertFails(getDoc(doc(stranger, 'child_profiles/cp1/access_requests/existing')));
+  });
+
+  it('prevents children and guardians from altering the request-limit metadata', async () => {
+    await seedFamily();
+    for (const uid of ['child1', 'parent1']) {
+      const db = testEnv.authenticatedContext(uid).firestore();
+      const lock = doc(db, 'child_profiles/cp1/request_limits/app_access');
+      await assertFails(getDoc(lock));
+      await assertFails(setDoc(lock, { updatedAt: serverTimestamp() }));
+    }
+  });
+
+  it('continues to allow normal chat messages without a cooldown', async () => {
+    await seedFamily();
+    const child = testEnv.authenticatedContext('child1').firestore();
+    for (const id of ['message1', 'message2']) {
+      await assertSucceeds(setDoc(doc(child, 'child_profiles/cp1/chat_messages/' + id), {
+        senderId: 'child1',
+        body: 'Hello!',
+        createdAt: serverTimestamp(),
+        notificationState: 'pending',
+      }));
+    }
   });
 });

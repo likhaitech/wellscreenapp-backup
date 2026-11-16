@@ -10,8 +10,6 @@ import '../services/chat_notifications_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_usage_icon.dart';
 
-
-
 /// Parent-child chat and app-access request screen.
 ///
 /// This changes presentation only; requests still require the trusted backend
@@ -40,7 +38,8 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
   int _requestedMinutes = 60;
   final Set<String> _locallyRequestedPackages = <String>{};
   String? _decidingRequest;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _inboxReadSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _inboxReadSubscription;
 
   static const Color _chatBlue = Color(0xFF254EDB);
   static const Color _chatDarkBlue = AppColors.primaryDark;
@@ -57,7 +56,9 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
     super.initState();
     // A conversation view acknowledges its own unread notification history.
     // Firestore queues this change while offline and synchronizes on return.
-    unawaited(ChatNotificationsService.instance.markProfileRead(widget.childProfileId));
+    unawaited(
+      ChatNotificationsService.instance.markProfileRead(widget.childProfileId),
+    );
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       _inboxReadSubscription = ChatNotificationsService.instance
@@ -65,12 +66,15 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
           .where('childProfileId', isEqualTo: widget.childProfileId)
           .snapshots()
           .listen((snapshot) {
-        if (!snapshot.metadata.hasPendingWrites &&
-            snapshot.docs.any((doc) => doc.data()['readAt'] == null)) {
-          unawaited(ChatNotificationsService.instance
-              .markProfileRead(widget.childProfileId));
-        }
-      });
+            if (!snapshot.metadata.hasPendingWrites &&
+                snapshot.docs.any((doc) => doc.data()['readAt'] == null)) {
+              unawaited(
+                ChatNotificationsService.instance.markProfileRead(
+                  widget.childProfileId,
+                ),
+              );
+            }
+          });
     }
   }
 
@@ -113,12 +117,13 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
         return;
       } on DioException catch (error) {
         final status = error.response?.statusCode;
-        debugPrint('WellScreen $kind notification dispatch failed: '
-            'HTTP=$status attempt=$attempt '
-            'detail=${error.response?.data ?? error.message}');
+        debugPrint(
+          'WellScreen $kind notification dispatch failed: '
+          'HTTP=$status attempt=$attempt '
+          'detail=${error.response?.data ?? error.message}',
+        );
         // Only retry transient failures. Auth/pairing/data errors need a fix.
-        if (status == 400 || status == 401 ||
-            status == 403 || status == 404) {
+        if (status == 400 || status == 401 || status == 403 || status == 404) {
           return;
         }
       } catch (error) {
@@ -138,15 +143,19 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
     _message.clear();
     final doc = _profile.collection('chat_messages').doc();
     // Returning immediately is intentional: Firestore queues writes offline.
-    unawaited(doc.set({
-      'senderId': uid,
-      'body': text,
-      'createdAt': FieldValue.serverTimestamp(),
-      'notificationState': 'pending',
-    }).then((_) => _dispatchCommittedEvent('message', doc.id))
-        .catchError((Object error) {
-      _showError(error);
-    }));
+    unawaited(
+      doc
+          .set({
+            'senderId': uid,
+            'body': text,
+            'createdAt': FieldValue.serverTimestamp(),
+            'notificationState': 'pending',
+          })
+          .then((_) => _dispatchCommittedEvent('message', doc.id))
+          .catchError((Object error) {
+            _showError(error);
+          }),
+    );
     if (mounted) setState(() => _sendingMessage = false);
   }
 
@@ -156,116 +165,173 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
     Set<String> pendingPackages,
   ) async {
     if (_sendingRequest) return;
+
     final packageName = _selectedPackage;
+
     if (packageName == null || packageName.isEmpty) {
       _showError('Select an application first.');
       return;
     }
+
     final matching = apps.where((app) => app['packageName'] == packageName);
+
     if (matching.isEmpty) {
       _showError('The selected app is no longer restricted.');
       return;
     }
+
     if (pendingPackages.contains(packageName) ||
         !_locallyRequestedPackages.add(packageName)) {
       _showError('You already have an unresolved request for this app.');
       return;
     }
+
     setState(() => _sendingRequest = true);
-    final doc = _profile.collection('access_requests').doc();
-    // A fixed Firestore document ID prevents retries of the same write from
-    // creating duplicate request records; approval is always backend-only.
-    unawaited(doc.set({
-      'childUid': uid,
-      'packageName': packageName,
-      'appName': matching.first['appName'],
-      'requestedMinutes': _requestedMinutes,
-      'status': 'pending',
-      'createdAt': FieldValue.serverTimestamp(),
-      'notificationState': 'pending',
-    }).then((_) => _dispatchCommittedEvent('request', doc.id))
-        .catchError((Object error) {
-      _locallyRequestedPackages.remove(packageName);
-      _showError(error);
-    }));
-    if (mounted) {
+
+    try {
+      // Authenticate the child using Firebase.
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user == null || user.uid != uid) {
+        throw StateError('Your session expired. Please sign in again.');
+      }
+
+      final token = await user.getIdToken();
+
+      if (token == null || token.isEmpty) {
+        throw StateError('Unable to authenticate. Please sign in again.');
+      }
+
+      // Generate a Firestore document ID without directly writing to Firestore.
+      // The trusted backend will create the actual request document.
+      final requestId = _profile.collection('access_requests').doc().id;
+
+      // Submit the request through FastAPI.
+      await Dio().post<Object?>(
+        '${AppConfig.backendBaseUrl}/chat/requests/${widget.childProfileId}/$requestId',
+        data: {
+          'packageName': packageName,
+          'requestedMinutes': _requestedMinutes,
+        },
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+
+      // Notify the parent after the backend successfully creates the request.
+      await _dispatchCommittedEvent('request', requestId);
+
+      if (!mounted) return;
+
       setState(() {
-        _sendingRequest = false;
         _showRequestComposer = false;
         _selectedPackage = null;
       });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'App access request sent. Your parent will be notified.',
+          ),
+        ),
+      );
+    } on DioException catch (error) {
+      _locallyRequestedPackages.remove(packageName);
+
+      final responseData = error.response?.data;
+
+      final detail = responseData is Map
+          ? responseData['detail']?.toString()
+          : responseData?.toString();
+
+      if (error.response?.statusCode == 404) {
+        _showError(
+          'App access request API not found. '
+          'Please deploy the latest FastAPI backend.',
+        );
+      } else if (error.response?.statusCode == 429) {
+        _showError(
+          detail ?? 'Request limit reached. Please wait before trying again.',
+        );
+      } else {
+        _showError(
+          detail ?? error.message ?? 'Unable to submit app access request.',
+        );
+      }
+    } catch (error) {
+      _locallyRequestedPackages.remove(packageName);
+      _showError(error);
+    } finally {
+      if (mounted) {
+        setState(() => _sendingRequest = false);
+      }
     }
   }
 
-Future<void> _decide(
-  String requestId, {
-  required bool approve,
-  required int minutes,
-}) async {
-  if (_decidingRequest != null) return;
+  Future<void> _decide(
+    String requestId, {
+    required bool approve,
+    required int minutes,
+  }) async {
+    if (_decidingRequest != null) return;
 
-  setState(() => _decidingRequest = requestId);
+    setState(() => _decidingRequest = requestId);
 
-  try {
-    final user = FirebaseAuth.instance.currentUser;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
 
-    if (user == null) {
-      throw StateError('Please sign in again.');
-    }
+      if (user == null) {
+        throw StateError('Please sign in again.');
+      }
 
-    final token = await user.getIdToken();
+      final token = await user.getIdToken();
 
-    await Dio().post<Object?>(
-      '${AppConfig.backendBaseUrl}/chat/requests/'
-      '${widget.childProfileId}/$requestId/decision',
-      data: {
-        'approve': approve,
-        'approvedMinutes': approve ? minutes : null,
-      },
-      options: Options(
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-        sendTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 35),
-      ),
-    );
+      await Dio().post<Object?>(
+        '${AppConfig.backendBaseUrl}/chat/requests/'
+        '${widget.childProfileId}/$requestId/decision',
+        data: {'approve': approve, 'approvedMinutes': approve ? minutes : null},
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+          sendTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 35),
+        ),
+      );
 
-    debugPrint('App access decision saved successfully.');
-  } on DioException catch (error) {
-    final responseData = error.response?.data;
+      debugPrint('App access decision saved successfully.');
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
 
-    String detail = 'Unable to process the request.';
+      String detail = 'Unable to process the request.';
 
-    if (responseData is Map) {
-      detail = (responseData['detail'] ?? detail).toString();
-    } else if (responseData != null) {
-      detail = responseData.toString();
-    } else if (error.message != null) {
-      detail = error.message!;
-    }
+      if (responseData is Map) {
+        detail = (responseData['detail'] ?? detail).toString();
+      } else if (responseData != null) {
+        detail = responseData.toString();
+      } else if (error.message != null) {
+        detail = error.message!;
+      }
 
-    final status = error.response?.statusCode;
+      final status = error.response?.statusCode;
 
-    debugPrint(
-      'App access decision failed: '
-      'HTTP=$status, '
-      'PATH=${error.requestOptions.uri.path}, '
-      'DETAIL=$detail',
-    );
+      debugPrint(
+        'App access decision failed: '
+        'HTTP=$status, '
+        'PATH=${error.requestOptions.uri.path}, '
+        'DETAIL=$detail',
+      );
 
-    _showError(
-      'Request failed (HTTP ${status ?? 'network error'}): $detail',
-    );
-  } catch (error) {
-    debugPrint('App access decision error: $error');
-    _showError(error);
-  } finally {
-    if (mounted) {
-      setState(() => _decidingRequest = null);
+      _showError('Request failed (HTTP ${status ?? 'network error'}): $detail');
+    } catch (error) {
+      debugPrint('App access decision error: $error');
+      _showError(error);
+    } finally {
+      if (mounted) {
+        setState(() => _decidingRequest = null);
+      }
     }
   }
-}
 
   Future<void> _openApprovalDialog(String id, int requested) async {
     var minutes = requested;
@@ -285,13 +351,27 @@ Future<void> _decide(
               DropdownButtonFormField<int>(
                 initialValue: minutes,
                 isExpanded: true,
-                items: (<int>{5, 10, 15, 20, 30, 45, 60, 90, 120, 180, requested}
-                      .toList()..sort())
-                    .map((value) => DropdownMenuItem<int>(
-                          value: value,
-                          child: Text('$value minutes'),
-                        ))
-                    .toList(),
+                items:
+                    (<int>{
+                          5,
+                          10,
+                          15,
+                          20,
+                          30,
+                          45,
+                          60,
+                          90,
+                          120,
+                          180,
+                          requested,
+                        }.toList()..sort())
+                        .map(
+                          (value) => DropdownMenuItem<int>(
+                            value: value,
+                            child: Text('$value minutes'),
+                          ),
+                        )
+                        .toList(),
                 onChanged: (value) {
                   if (value != null) setModalState(() => minutes = value);
                 },
@@ -407,14 +487,16 @@ Future<void> _decide(
     String id,
     Map<String, dynamic> profile,
   ) {
-    final app = (request['appName'] ?? request['packageName'] ?? 'App').toString();
+    final app = (request['appName'] ?? request['packageName'] ?? 'App')
+        .toString();
     final pkg = (request['packageName'] ?? '').toString();
     final requested = request['requestedMinutes'] is num
         ? (request['requestedMinutes'] as num).toInt()
         : 0;
     final rawStatus = (request['status'] ?? 'pending').toString();
     final endTime = request['expiresAt'];
-    final status = rawStatus == 'active' &&
+    final status =
+        rawStatus == 'active' &&
             endTime is Timestamp &&
             !endTime.toDate().isAfter(DateTime.now())
         ? 'expired'
@@ -451,7 +533,11 @@ Future<void> _decide(
             children: [
               const Row(
                 children: [
-                  Icon(Icons.access_time_filled_rounded, size: 17, color: _chatBlue),
+                  Icon(
+                    Icons.access_time_filled_rounded,
+                    size: 17,
+                    color: _chatBlue,
+                  ),
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -515,13 +601,16 @@ Future<void> _decide(
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: status == 'declined'
                           ? AppColors.dangerBg
                           : status == 'active'
-                              ? AppColors.successBg
-                              : _softBlue,
+                          ? AppColors.successBg
+                          : _softBlue,
                       borderRadius: BorderRadius.circular(15),
                     ),
                     child: Text(
@@ -553,12 +642,15 @@ Future<void> _decide(
                           onPressed: isBusy
                               ? null
                               : () => _decide(
-                                    id,
-                                    approve: true,
-                                    minutes: requested,
-                                  ),
+                                  id,
+                                  approve: true,
+                                  minutes: requested,
+                                ),
                           icon: const Icon(Icons.check_rounded, size: 17),
-                          label: const Text('Approve', style: TextStyle(fontSize: 12)),
+                          label: const Text(
+                            'Approve',
+                            style: TextStyle(fontSize: 12),
+                          ),
                           style: FilledButton.styleFrom(
                             backgroundColor: _chatBlue,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -575,7 +667,10 @@ Future<void> _decide(
                               ? null
                               : () => _decide(id, approve: false, minutes: 0),
                           icon: const Icon(Icons.close_rounded, size: 16),
-                          label: const Text('Decline', style: TextStyle(fontSize: 12)),
+                          label: const Text(
+                            'Decline',
+                            style: TextStyle(fontSize: 12),
+                          ),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.danger,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -609,7 +704,9 @@ Future<void> _decide(
     List<Map<String, String>> apps,
     Set<String> pending,
   ) {
-    final allowedSelection = apps.any((a) => a['packageName'] == _selectedPackage);
+    final allowedSelection = apps.any(
+      (a) => a['packageName'] == _selectedPackage,
+    );
     final selected = allowedSelection
         ? _selectedPackage
         : (apps.isEmpty ? null : apps.first['packageName']);
@@ -681,10 +778,12 @@ Future<void> _decide(
                 border: OutlineInputBorder(),
               ),
               items: const [5, 10, 15, 30, 45, 60, 90, 120]
-                  .map((minutes) => DropdownMenuItem<int>(
-                        value: minutes,
-                        child: Text('$minutes minutes'),
-                      ))
+                  .map(
+                    (minutes) => DropdownMenuItem<int>(
+                      value: minutes,
+                      child: Text('$minutes minutes'),
+                    ),
+                  )
                   .toList(),
               onChanged: (value) {
                 if (value != null) setState(() => _requestedMinutes = value);
@@ -703,14 +802,18 @@ Future<void> _decide(
             children: [
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: _sendingRequest || apps.isEmpty || selectedIsPending
+                  onPressed:
+                      _sendingRequest || apps.isEmpty || selectedIsPending
                       ? null
                       : () {
                           _selectedPackage = selected;
                           _submitAccessRequest(uid, apps, pending);
                         },
                   icon: const Icon(Icons.check_rounded, size: 16),
-                  label: const Text('Send Request', style: TextStyle(fontSize: 12)),
+                  label: const Text(
+                    'Send Request',
+                    style: TextStyle(fontSize: 12),
+                  ),
                   style: FilledButton.styleFrom(
                     backgroundColor: _chatBlue,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -830,8 +933,8 @@ Future<void> _decide(
             Text(
               denied
                   ? 'Firebase denied access to the chat collection. '
-                    'Your paired parent/child Firestore chat rules must be '
-                    'published before messages and requests can load.'
+                        'Your paired parent/child Firestore chat rules must be '
+                        'published before messages and requests can load.'
                   : details,
               textAlign: TextAlign.center,
               style: const TextStyle(
@@ -850,17 +953,27 @@ Future<void> _decide(
     final parentId = (profile['parentId'] ?? '').toString();
     final childId = (profile['childAccountId'] ?? '').toString();
     if (parentId.isEmpty || childId.isEmpty) {
-      return const Center(child: Text('Pair a child device to start chatting.'));
+      return const Center(
+        child: Text('Pair a child device to start chatting.'),
+      );
     }
     if ((widget.isParent && uid != parentId) ||
         (!widget.isParent && uid != childId)) {
-      return const Center(child: Text('Only paired family members can use this chat.'));
+      return const Center(
+        child: Text('Only paired family members can use this chat.'),
+      );
     }
 
-    final messages = _profile.collection('chat_messages')
-        .orderBy('createdAt').limit(200).snapshots();
-    final requests = _profile.collection('access_requests')
-        .orderBy('createdAt').limit(100).snapshots();
+    final messages = _profile
+        .collection('chat_messages')
+        .orderBy('createdAt')
+        .limit(200)
+        .snapshots();
+    final requests = _profile
+        .collection('access_requests')
+        .orderBy('createdAt')
+        .limit(100)
+        .snapshots();
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: messages,
@@ -872,25 +985,40 @@ Future<void> _decide(
           stream: requests,
           builder: (context, requestSnapshot) {
             if (requestSnapshot.hasError) {
-              return _chatError('Unable to load requests', requestSnapshot.error!);
+              return _chatError(
+                'Unable to load requests',
+                requestSnapshot.error!,
+              );
             }
             final reqDocs = requestSnapshot.data?.docs ?? [];
-            final serverPending = reqDocs.where((doc) {
-              final data = doc.data();
-              final status = data['status'];
-              if (status == 'active' && data['expiresAt'] is Timestamp &&
-                  !(data['expiresAt'] as Timestamp)
-                      .toDate().isAfter(DateTime.now())) {
-                return false;
-              }
-              return ['pending', 'approved_pending_activation', 'active']
-                  .contains(status);
-            }).map((doc) => (doc.data()['packageName'] ?? '').toString()).toSet();
+            final serverPending = reqDocs
+                .where((doc) {
+                  final data = doc.data();
+                  final status = data['status'];
+                  if (status == 'active' &&
+                      data['expiresAt'] is Timestamp &&
+                      !(data['expiresAt'] as Timestamp).toDate().isAfter(
+                        DateTime.now(),
+                      )) {
+                    return false;
+                  }
+                  return [
+                    'pending',
+                    'approved_pending_activation',
+                    'active',
+                  ].contains(status);
+                })
+                .map((doc) => (doc.data()['packageName'] ?? '').toString())
+                .toSet();
 
             // A resolved server request permits a later, new request.
-            _locallyRequestedPackages.removeWhere((packageName) =>
-                !serverPending.contains(packageName) &&
-                reqDocs.any((doc) => doc.data()['packageName'] == packageName));
+            _locallyRequestedPackages.removeWhere(
+              (packageName) =>
+                  !serverPending.contains(packageName) &&
+                  reqDocs.any(
+                    (doc) => doc.data()['packageName'] == packageName,
+                  ),
+            );
             final pending = <String>{
               ...serverPending,
               ..._locallyRequestedPackages,
@@ -907,6 +1035,7 @@ Future<void> _decide(
               final raw = item['createdAt'];
               return raw is Timestamp ? raw.toDate() : DateTime.now();
             }
+
             timeline.sort((a, b) => when(a).compareTo(when(b)));
 
             return Column(
@@ -958,49 +1087,61 @@ Future<void> _decide(
                   Flexible(
                     fit: FlexFit.loose,
                     child: SingleChildScrollView(
-                      child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                    stream: FirebaseFirestore.instance
-                        .collection('app_rules').doc(parentId).snapshots(),
-                    builder: (context, rulesSnapshot) {
-                      final raw = rulesSnapshot.data?.data()?['rules'];
-                      final apps = <Map<String, String>>[];
-                      if (raw is List) {
-                        for (final item in raw) {
-                          if (item is Map &&
-                              item['restrictEnabled'] == true &&
-                              item['packageName'] is String) {
-                            apps.add({
-                              'packageName': item['packageName'] as String,
-                              'appName': (item['appName'] ??
-                                  item['packageName']).toString(),
-                            });
-                          }
-                        }
-                      }
-                      return _showRequestComposer
-                          ? _requestComposer(uid, apps, pending)
-                          : Align(
-                              alignment: Alignment.centerLeft,
-                              child: Padding(
-                                padding: const EdgeInsets.only(left: 13),
-                                child: TextButton.icon(
-                                  onPressed: _sendingRequest
-                                      ? null
-                                      : () => setState(
-                                          () => _showRequestComposer = true),
-                                  icon: const Icon(
-                                    Icons.lock_open_rounded,
-                                    size: 18,
-                                  ),
-                                  label: const Text('Request app access'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: _chatBlue,
-                                  ),
-                                ),
-                              ),
-                            );
-                    },
-                  ),
+                      child:
+                          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                            stream: FirebaseFirestore.instance
+                                .collection('app_rules')
+                                .doc(parentId)
+                                .snapshots(),
+                            builder: (context, rulesSnapshot) {
+                              final raw = rulesSnapshot.data?.data()?['rules'];
+                              final apps = <Map<String, String>>[];
+                              if (raw is List) {
+                                for (final item in raw) {
+                                  if (item is Map &&
+                                      item['restrictEnabled'] == true &&
+                                      item['packageName'] is String) {
+                                    apps.add({
+                                      'packageName':
+                                          item['packageName'] as String,
+                                      'appName':
+                                          (item['appName'] ??
+                                                  item['packageName'])
+                                              .toString(),
+                                    });
+                                  }
+                                }
+                              }
+                              return _showRequestComposer
+                                  ? _requestComposer(uid, apps, pending)
+                                  : Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 13,
+                                        ),
+                                        child: TextButton.icon(
+                                          onPressed: _sendingRequest
+                                              ? null
+                                              : () => setState(
+                                                  () => _showRequestComposer =
+                                                      true,
+                                                ),
+                                          icon: const Icon(
+                                            Icons.lock_open_rounded,
+                                            size: 18,
+                                          ),
+                                          label: const Text(
+                                            'Request app access',
+                                          ),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: _chatBlue,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                            },
+                          ),
                     ),
                   ),
                 _messageBar(uid),
@@ -1037,11 +1178,21 @@ Future<void> _decide(
             final data = snapshot.data?.data() ?? <String, dynamic>{};
             String name;
             if (widget.isParent) {
-              name = (data['childDisplayName'] ?? data['name'] ??
-                  data['childEmail'] ?? 'Child').toString().trim();
+              name =
+                  (data['childDisplayName'] ??
+                          data['name'] ??
+                          data['childEmail'] ??
+                          'Child')
+                      .toString()
+                      .trim();
             } else {
-              name = (data['parentDisplayName'] ?? data['parentName'] ??
-                  data['parentEmail'] ?? 'Parent').toString().trim();
+              name =
+                  (data['parentDisplayName'] ??
+                          data['parentName'] ??
+                          data['parentEmail'] ??
+                          'Parent')
+                      .toString()
+                      .trim();
             }
             if (name.isEmpty) name = widget.isParent ? 'Child' : 'Parent';
             return Row(
@@ -1049,8 +1200,11 @@ Future<void> _decide(
                 const CircleAvatar(
                   radius: 19,
                   backgroundColor: Color(0xFFE3EEFF),
-                  child: Icon(Icons.person_rounded,
-                    color: _chatDarkBlue, size: 24),
+                  child: Icon(
+                    Icons.person_rounded,
+                    color: _chatDarkBlue,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1058,12 +1212,24 @@ Future<void> _decide(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: AppColors.textPrimary,
-                          fontSize: 17, fontWeight: FontWeight.w800)),
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
                       const SizedBox(height: 1),
-                      const Text('Private family conversation',
-                        style: TextStyle(color: Color(0xFF8A8D91), fontSize: 11)),
+                      const Text(
+                        'Private family conversation',
+                        style: TextStyle(
+                          color: Color(0xFF8A8D91),
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1083,7 +1249,9 @@ Future<void> _decide(
           }
           final profile = snapshot.data?.data();
           if (profile == null) {
-            return const Center(child: Text('Pair your devices to start chatting.'));
+            return const Center(
+              child: Text('Pair your devices to start chatting.'),
+            );
           }
           return _chatBody(profile, uid);
         },

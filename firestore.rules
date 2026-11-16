@@ -1,235 +1,242 @@
-  rules_version = '2';
 
-  service cloud.firestore {
-    match /databases/{database}/documents {
+rules_version = '2';
 
-      function isSignedIn() {
-        return request.auth != null;
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Users may edit their own profile, but cannot promote themselves to admin.
+    // Admin role assignment must happen through trusted server-side code.
+    match /users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow read: if isAdmin();
+
+      allow create: if isSignedIn() &&
+        request.auth.uid == uid &&
+        request.resource.data.role in ['parent', 'child'];
+
+      allow update: if isSignedIn() &&
+        request.auth.uid == uid &&
+        request.resource.data.role == resource.data.role;
+
+      allow delete: if false;
+
+      // Durable chat notifications for this account only.
+      // Clients cannot forge inbox records or change server-issued notification content.
+      match /notifications/{notificationId} {
+        allow get, list: if isSignedIn() && request.auth.uid == uid;
+
+        allow create, delete: if false;
+
+        allow update: if isSignedIn() &&
+          request.auth.uid == uid &&
+          resource.data.readAt == null &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']) &&
+          request.resource.data.readAt == request.time;
       }
+    }
 
-      function isAdmin() {
+    match /child_profiles/{childProfileId} {
+
+      function isOwningParent() {
         return isSignedIn() &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+          resource.data.parentId == request.auth.uid;
       }
 
-      // Users may edit their own profile, but cannot promote themselves to admin.
-      // Admin role assignment must happen through trusted server-side code.
-      match /users/{uid} {
-        allow read: if isSignedIn() && request.auth.uid == uid;
-        allow read: if isAdmin();
-
-        allow create: if isSignedIn() &&
-          request.auth.uid == uid &&
-          request.resource.data.role in ['parent', 'child'];
-
-        allow update: if isSignedIn() &&
-          request.auth.uid == uid &&
-          request.resource.data.role == resource.data.role;
-
-        allow delete: if false;
-
-        // Durable chat notifications for this account only. Clients cannot
-        // forge inbox records or change server-issued notification content.
-        match /notifications/{notificationId} {
-          allow get, list: if isSignedIn() && request.auth.uid == uid;
-          allow create, delete: if false;
-          allow update: if isSignedIn() && request.auth.uid == uid &&
-            resource.data.readAt == null &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']) &&
-            request.resource.data.readAt == request.time;
-        }
+      function isClaimedByCaller() {
+        return isSignedIn() &&
+          ('childAccountId' in resource.data) &&
+          resource.data.childAccountId == request.auth.uid;
       }
 
-      match /child_profiles/{childProfileId} {
-        function isOwningParent() {
-          return isSignedIn() && resource.data.parentId == request.auth.uid;
-        }
-
-        function isClaimedByCaller() {
-          return isSignedIn() &&
-            ('childAccountId' in resource.data) &&
-            resource.data.childAccountId == request.auth.uid;
-        }
-
-        function isUnclaimed() {
-          return !('childAccountId' in resource.data);
-        }
-
-        allow read: if isOwningParent() || isClaimedByCaller();
-
-        allow create: if isSignedIn() &&
-          request.resource.data.parentId == request.auth.uid;
-
-        allow update: if isOwningParent() ||
-          (isSignedIn() &&
-            request.resource.data.parentId == resource.data.parentId &&
-            request.resource.data.childAccountId == request.auth.uid &&
-            // Only the owning parent may change the linked parent's identity.
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-              'parentDisplayName', 'parentEmail'
-            ]) &&
-            (isUnclaimed() || isClaimedByCaller()));
-
-        allow delete: if false;
-
-  match /monitoring_alerts/{alertId} {
-    // Only the owning parent can view security alerts.
-    allow get, list: if request.auth != null &&
-      get(
-        /databases/$(database)/documents/child_profiles/$(childProfileId)
-      ).data.parentId == request.auth.uid;
-
-    // Monitoring alerts are written by the trusted backend.
-    allow create, update, delete: if false;
-  }
-
-        // Per-app daily limits are a subcollection. Parent-document rules do
-        // not automatically apply to subcollections in Firestore.
-        match /app_time_limits/{appPackage} {
-          function childProfile() {
-            return get(/databases/$(database)/documents/child_profiles/$(childProfileId));
-          }
-
-          function isOwningLimitParent() {
-            return isSignedIn() &&
-              childProfile().data.parentId == request.auth.uid;
-          }
-
-          function isPairedLimitChild() {
-            return isSignedIn() &&
-              ('childAccountId' in childProfile().data) &&
-              childProfile().data.childAccountId == request.auth.uid;
-          }
-
-          // Matches AppTimeLimitService.saveLimit() payload.
-          function isValidLimit() {
-            return request.resource.data.keys().hasOnly([
-                    'packageName', 'appName', 'limitMinutes', 'updatedAt'
-                  ]) &&
-                  request.resource.data.keys().hasAll([
-                    'packageName', 'appName', 'limitMinutes', 'updatedAt'
-                  ]) &&
-                  request.resource.data.packageName == appPackage &&
-                  request.resource.data.appName is string &&
-                  request.resource.data.appName.size() > 0 &&
-                  request.resource.data.appName.size() <= 150 &&
-                  request.resource.data.limitMinutes is int &&
-                  request.resource.data.limitMinutes >= 1 &&
-                  request.resource.data.limitMinutes <= 1440 &&
-                  request.resource.data.updatedAt == request.time;
-          }
-
-          // The guardian configures limits; the paired child only receives them.
-          allow get, list: if isOwningLimitParent() || isPairedLimitChild();
-          allow create, update: if isOwningLimitParent() && isValidLimit();
-          allow delete: if isOwningLimitParent();
-        }
-
-        function chatProfile() {
-          return get(/databases/$(database)/documents/child_profiles/$(childProfileId)).data;
-        }
-        function chatParent() {
-          return request.auth != null && chatProfile().parentId == request.auth.uid;
-        }
-        function chatChild() {
-          return request.auth != null &&
-            ('childAccountId' in chatProfile()) &&
-            chatProfile().childAccountId == request.auth.uid;
-        }
-        function chatMember() {
-          return chatParent() || chatChild();
-        }
-
-        match /chat_messages/{messageId} {
-          allow get, list: if chatMember();
-          allow create: if chatMember() &&
-            request.resource.data.keys().hasOnly([
-              'senderId', 'body', 'createdAt', 'notificationState'
-            ]) &&
-            request.resource.data.keys().hasAll([
-              'senderId', 'body', 'createdAt', 'notificationState'
-            ]) &&
-            request.resource.data.senderId == request.auth.uid &&
-            request.resource.data.body is string &&
-            request.resource.data.body.size() >= 1 &&
-            request.resource.data.body.size() <= 2000 &&
-            request.resource.data.notificationState == 'pending' &&
-            request.resource.data.createdAt == request.time;
-          allow update, delete: if false;
-        }
-
-        match /access_requests/{requestId} {
-          allow get, list: if chatMember();
-          allow create: if chatChild() &&
-            request.resource.data.keys().hasOnly([
-              'childUid', 'packageName', 'appName', 'requestedMinutes',
-              'status', 'createdAt', 'notificationState'
-            ]) &&
-            request.resource.data.keys().hasAll([
-              'childUid', 'packageName', 'appName', 'requestedMinutes',
-              'status', 'createdAt', 'notificationState'
-            ]) &&
-            request.resource.data.childUid == request.auth.uid &&
-            request.resource.data.packageName is string &&
-            request.resource.data.packageName.size() >= 3 &&
-            request.resource.data.packageName.size() <= 200 &&
-            !request.resource.data.packageName.matches('.*[/].*') &&
-            request.resource.data.appName is string &&
-            request.resource.data.appName.size() >= 1 &&
-            request.resource.data.appName.size() <= 150 &&
-            request.resource.data.requestedMinutes is int &&
-            request.resource.data.requestedMinutes >= 5 &&
-            request.resource.data.requestedMinutes <= 120 &&
-            request.resource.data.status == 'pending' &&
-            request.resource.data.notificationState == 'pending' &&
-            request.resource.data.createdAt == request.time;
-          // Approval is server-only. A child cannot modify status or grant time.
-          allow update, delete: if false;
-        }
-
-        match /temporary_access_grants/{packageName} {
-          allow get, list: if chatMember();
-          // Written only by trusted FastAPI with Firebase Admin SDK.
-          allow create, update, delete: if false;
-        }
+      function isUnclaimed() {
+        return !('childAccountId' in resource.data);
       }
 
-      match /pairing_codes/{code} {
-        allow read: if isSignedIn();
+      allow read: if isOwningParent() || isClaimedByCaller();
 
-        allow create: if isSignedIn() &&
-          request.resource.data.parentId == request.auth.uid;
+      allow create: if isSignedIn() &&
+        request.resource.data.parentId == request.auth.uid;
 
-        allow update: if isSignedIn() &&
-          resource.data.status == 'active' &&
-          request.resource.data.status == 'connected' &&
+      allow update: if isOwningParent() ||
+        (isSignedIn() &&
           request.resource.data.parentId == resource.data.parentId &&
-          request.resource.data.childId == resource.data.childId &&
-          request.resource.data.childAccountId == request.auth.uid;
+          request.resource.data.childAccountId == request.auth.uid &&
+          // Only the owning parent may change the linked parent's identity.
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'parentDisplayName', 'parentEmail'
+          ]) &&
+          (isUnclaimed() || isClaimedByCaller()));
 
-        allow delete: if false;
+      allow delete: if false;
+
+      match /monitoring_alerts/{alertId} {
+        // Only the owning parent can view security alerts.
+        allow get, list: if request.auth != null &&
+          get(
+            /databases/$(database)/documents/child_profiles/$(childProfileId)
+          ).data.parentId == request.auth.uid;
+
+        // Monitoring alerts are written by the trusted backend.
+        allow create, update, delete: if false;
       }
 
-      match /app_rules/{parentId} {
-        allow read: if isSignedIn();
-        allow write: if isSignedIn() && request.auth.uid == parentId;
+      // Per-app daily limits are a subcollection.
+      // Parent-document rules do not automatically apply to subcollections.
+      match /app_time_limits/{appPackage} {
+
+        function childProfile() {
+          return get(
+            /databases/$(database)/documents/child_profiles/$(childProfileId)
+          );
+        }
+
+        function isOwningLimitParent() {
+          return isSignedIn() &&
+            childProfile().data.parentId == request.auth.uid;
+        }
+
+        function isPairedLimitChild() {
+          return isSignedIn() &&
+            ('childAccountId' in childProfile().data) &&
+            childProfile().data.childAccountId == request.auth.uid;
+        }
+
+        // Matches AppTimeLimitService.saveLimit() payload.
+        function isValidLimit() {
+          return request.resource.data.keys().hasOnly([
+              'packageName', 'appName', 'limitMinutes', 'updatedAt'
+            ]) &&
+            request.resource.data.keys().hasAll([
+              'packageName', 'appName', 'limitMinutes', 'updatedAt'
+            ]) &&
+            request.resource.data.packageName == appPackage &&
+            request.resource.data.appName is string &&
+            request.resource.data.appName.size() > 0 &&
+            request.resource.data.appName.size() <= 150 &&
+            request.resource.data.limitMinutes is int &&
+            request.resource.data.limitMinutes >= 1 &&
+            request.resource.data.limitMinutes <= 1440 &&
+            request.resource.data.updatedAt == request.time;
+        }
+
+        // The guardian configures limits; the paired child only receives them.
+        allow get, list: if isOwningLimitParent() || isPairedLimitChild();
+
+        allow create, update: if isOwningLimitParent() && isValidLimit();
+
+        allow delete: if isOwningLimitParent();
       }
 
-      match /restriction_settings/{docId} {
-        allow read: if isSignedIn();
-        allow create: if isSignedIn() &&
-          request.resource.data.parentId == request.auth.uid;
+      function chatProfile() {
+        return get(
+          /databases/$(database)/documents/child_profiles/$(childProfileId)
+        ).data;
+      }
+
+      function chatParent() {
+        return request.auth != null &&
+          chatProfile().parentId == request.auth.uid;
+      }
+
+      function chatChild() {
+        return request.auth != null &&
+          ('childAccountId' in chatProfile()) &&
+          chatProfile().childAccountId == request.auth.uid;
+      }
+
+      function chatMember() {
+        return chatParent() || chatChild();
+      }
+
+      match /chat_messages/{messageId} {
+        allow get, list: if chatMember();
+
+        allow create: if chatMember() &&
+          request.resource.data.keys().hasOnly([
+            'senderId', 'body', 'createdAt', 'notificationState'
+          ]) &&
+          request.resource.data.keys().hasAll([
+            'senderId', 'body', 'createdAt', 'notificationState'
+          ]) &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.body is string &&
+          request.resource.data.body.size() >= 1 &&
+          request.resource.data.body.size() <= 2000 &&
+          request.resource.data.notificationState == 'pending' &&
+          request.resource.data.createdAt == request.time;
+
         allow update, delete: if false;
       }
 
-      match /system_logs/{logId} {
-        allow read: if isAdmin();
-        allow write: if false;
+      // App access requests.
+      // Both paired family members can read requests.
+      // All writes must go through the trusted FastAPI backend.
+      match /access_requests/{requestId} {
+        allow get, list: if chatMember();
+
+        // Client-side creation, modification, and deletion are prohibited.
+        // FastAPI uses Firebase Admin SDK to manage these documents.
+        allow create, update, delete: if false;
       }
 
-      // Deny all other paths by default.
-      match /{document=**} {
-        allow read, write: if false;
+      match /temporary_access_grants/{packageName} {
+        allow get, list: if chatMember();
+
+        // Written only by trusted FastAPI with Firebase Admin SDK.
+        allow create, update, delete: if false;
       }
     }
+
+    match /pairing_codes/{code} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+        request.resource.data.parentId == request.auth.uid;
+
+      allow update: if isSignedIn() &&
+        resource.data.status == 'active' &&
+        request.resource.data.status == 'connected' &&
+        request.resource.data.parentId == resource.data.parentId &&
+        request.resource.data.childId == resource.data.childId &&
+        request.resource.data.childAccountId == request.auth.uid;
+
+      allow delete: if false;
+    }
+
+    match /app_rules/{parentId} {
+      allow read: if isSignedIn();
+
+      allow write: if isSignedIn() &&
+        request.auth.uid == parentId;
+    }
+
+    match /restriction_settings/{docId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+        request.resource.data.parentId == request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
+    match /system_logs/{logId} {
+      allow read: if isAdmin();
+
+      allow write: if false;
+    }
+
+    // Deny all other paths by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
+}
