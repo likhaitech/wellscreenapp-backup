@@ -35,6 +35,36 @@ class Col:
     def document(self, doc_id):
         return Doc(self.store, f"{self.path}/{doc_id}")
 
+    def order_by(self, field, direction="ASCENDING"):
+        rows = [doc for doc in self.stream() if field in doc.to_dict()]
+        rows.sort(key=lambda doc: doc.to_dict()[field], reverse=direction == "DESCENDING")
+        return Query(rows)
+
+    def where(self, *, filter):
+        assert filter.op_string == "in"
+        return Query([
+            doc for doc in self.stream()
+            if doc.to_dict().get(filter.field_path) in filter.value
+        ])
+
+    def stream(self, transaction=None):
+        return [
+            Doc(self.store, path).get()
+            for path in self.store
+            if path.rpartition("/")[0] == self.path
+        ]
+
+
+class Query:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def limit(self, count):
+        return Query(self.rows[:count])
+
+    def stream(self, transaction=None):
+        return iter(self.rows)
+
 
 class Tx:
     def __init__(self, store):
@@ -42,6 +72,9 @@ class Tx:
 
     def update(self, ref, data):
         ref.update(data)
+
+    def set(self, ref, data):
+        self.store[ref.path] = dict(data)
 
 
 class FakeDb:
@@ -75,6 +108,7 @@ def db(monkeypatch):
 def test_routes_are_registered():
     paths = set(app.openapi()["paths"])
     assert "/chat/events/{profile_id}/{kind}/{event_id}/dispatch" in paths
+    assert "/chat/requests/{profile_id}/{request_id}" in paths
     assert "/monitoring/events" in paths
     assert "/internal/monitoring/sweep" in paths
 
@@ -183,5 +217,90 @@ def test_per_app_usage_events_accepted(monkeypatch, etype, eid):
     ev = {"type": etype, "eventId": eid, "timestampMs": int(time.time() * 1000),
           "subject": "com.tiktok.android", "label": "TikTok (1h 31m today)"}
     out = mas.accept_child_events(child_uid="child", profile_id="p1", events=[ev])
-    assert out["acceptedEventIds"] == [eid]
+    assert out["acceptedEventIds"] == [eid] and created[0]["kind"] == etype
     assert "TikTok" in created[0]["body"]
+
+
+# ---- app access request creation and limits ----
+
+@pytest.fixture
+def request_clock(db, monkeypatch):
+    db["app_rules/parent"] = {
+        "rules": [
+            {"packageName": "com.example.one", "appName": "One", "restrictEnabled": True},
+            {"packageName": "com.example.two", "appName": "Two", "restrictEnabled": True},
+        ],
+    }
+    clock = [cas.dt.datetime(2026, 11, 16, 12, tzinfo=cas.PHT)]
+    monkeypatch.setattr(cas, "_request_now", lambda: clock[0].astimezone(cas.UTC))
+    return clock
+
+
+def _submit(request_id, package="com.example.one", child_uid="child"):
+    return cas.submit_access_request(
+        child_uid=child_uid, profile_id="p1", request_id=request_id,
+        package_name=package, requested_minutes=30,
+    )
+
+
+def test_access_request_cooldown_across_apps(db, request_clock):
+    assert _submit("new1")["status"] == "pending"
+    assert db["child_profiles/p1/access_requests/new1"]["appName"] == "One"
+    with pytest.raises(cas.AppRequestLimitError, match="Please wait"):
+        _submit("new2", "com.example.two")
+    assert "child_profiles/p1/access_requests/new2" not in db
+    request_clock[0] += cas.dt.timedelta(minutes=5)
+    assert _submit("new2", "com.example.two")["status"] == "pending"
+
+
+def test_access_request_daily_cap_and_midnight(db, request_clock):
+    request_clock[0] = cas.dt.datetime(2026, 11, 16, 23, 0, tzinfo=cas.PHT)
+    for index in range(10):
+        request_id = f"quota{index}"
+        assert _submit(request_id)["status"] == "pending"
+        db[f"child_profiles/p1/access_requests/{request_id}"]["status"] = "declined"
+        request_clock[0] += cas.dt.timedelta(minutes=5)
+    with pytest.raises(cas.AppRequestLimitError, match="Daily app access limit"):
+        _submit("quota10")
+    assert "child_profiles/p1/access_requests/quota10" not in db
+    request_clock[0] = cas.dt.datetime(2026, 11, 17, 0, 1, tzinfo=cas.PHT)
+    assert _submit("quota10")["status"] == "pending"
+
+
+def test_access_request_duplicate_pending_rejected(db, request_clock):
+    _submit("pending1")
+    request_clock[0] += cas.dt.timedelta(minutes=6)
+    with pytest.raises(cas.ChatAccessError, match="unresolved request"):
+        _submit("pending2")
+    assert "child_profiles/p1/access_requests/pending2" not in db
+
+
+def test_access_request_replay_does_not_consume_slot(db, request_clock):
+    result = _submit("replay")
+    assert _submit("replay") == result
+    request_clock[0] += cas.dt.timedelta(minutes=5)
+    assert _submit("different", "com.example.two")["status"] == "pending"
+
+
+def test_access_request_authorization_and_restriction(db, request_clock):
+    with pytest.raises(cas.ChatAccessError, match="paired child"):
+        _submit("stranger", child_uid="stranger")
+    with pytest.raises(cas.ChatAccessError, match="no longer restricted"):
+        _submit("unrestricted", "com.example.other")
+    assert "child_profiles/p1/access_requests/stranger" not in db
+    assert "child_profiles/p1/access_requests/unrestricted" not in db
+
+
+def test_access_request_route_returns_429(db, request_clock):
+    _submit("route_first")
+    client = TestClient(app, raise_server_exceptions=True)
+    with mock.patch.object(cas, "get_auth_module") as auth:
+        auth.return_value.verify_id_token.return_value = {"uid": "child"}
+        response = client.post(
+            "/chat/requests/p1/route_second",
+            headers={"Authorization": "Bearer test-token"},
+            json={"packageName": "com.example.two", "requestedMinutes": 30},
+        )
+    assert response.status_code == 429
+    assert "Please wait" in response.json()["detail"]
+    assert "child_profiles/p1/access_requests/route_second" not in db
