@@ -226,7 +226,9 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   bool isGenerating = false;
   String generatedCode = '';
   String generatedChildName = '';
+  String generatedChildProfileId = '';
   DateTime? generatedExpiry;
+  final Set<String> _removingProfileIds = {};
 
   @override
   void dispose() {
@@ -271,6 +273,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
       setState(() {
         generatedCode = result.code;
         generatedChildName = childName;
+        generatedChildProfileId = result.childProfileId;
         generatedExpiry = result.expiresAt;
       });
 
@@ -282,6 +285,79 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     } finally {
       if (mounted) {
         setState(() => isGenerating = false);
+      }
+    }
+  }
+
+  Future<void> removeChildDevice({
+    required String childProfileId,
+    required String childName,
+  }) async {
+    if (_removingProfileIds.contains(childProfileId)) return;
+
+    setState(() {
+      _removingProfileIds.add(childProfileId);
+    });
+
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: const Text(
+            'Remove Child Device?',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            'Are you sure you want to remove $childName?\n\n'
+            'You will no longer be able to monitor or control '
+            'this device until it is paired again.\n\n'
+            'The child account will not be deleted.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Remove Device'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      await PairingApiService().unpairDevice(childProfileId: childProfileId);
+
+      if (!mounted) return;
+
+      setState(() {
+        if (generatedChildProfileId == childProfileId) {
+          generatedCode = '';
+          generatedChildName = '';
+          generatedChildProfileId = '';
+          generatedExpiry = null;
+        }
+      });
+
+      showMessage('$childName has been successfully removed.');
+    } catch (error) {
+      if (!mounted) return;
+
+      showMessage(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _removingProfileIds.remove(childProfileId);
+        });
       }
     }
   }
@@ -387,7 +463,9 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             );
           }
 
-          final childDocs = snapshot.data?.docs ?? [];
+          final childDocs = (snapshot.data?.docs ?? [])
+              .where((doc) => doc.data()['pairingStatus'] != 'unpaired')
+              .toList();
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
@@ -705,7 +783,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
         if (childDocs.isEmpty)
           _emptyChildrenCard()
         else
-          ...childDocs.map((doc) => _childDeviceCard(doc.data())),
+          ...childDocs.map((doc) => _childDeviceCard(doc.id, doc.data())),
       ],
     );
   }
@@ -739,11 +817,12 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     );
   }
 
-  Widget _childDeviceCard(Map<String, dynamic> data) {
+  Widget _childDeviceCard(String childProfileId, Map<String, dynamic> data) {
     final name = (data['name'] ?? 'Child Device').toString();
     final email = (data['childEmail'] ?? 'Not connected yet').toString();
     final connected = isConnected(data);
     final connectedAt = formatTimestamp(data['connectedAt']);
+    final isRemoving = _removingProfileIds.contains(childProfileId);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -759,67 +838,105 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          CircleAvatar(
-            radius: 29,
-            backgroundColor: connected ? softGreen : softOrange,
-            child: Icon(
-              connected ? Icons.phone_android_rounded : Icons.link_off_rounded,
-              color: connected ? teal : Colors.orange,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$name,',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: darkText,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 29,
+                backgroundColor: connected ? softGreen : softOrange,
+                child: Icon(
+                  connected
+                      ? Icons.phone_android_rounded
+                      : Icons.link_off_rounded,
+                  color: connected ? teal : Colors.orange,
+                  size: 32,
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  connected ? email : 'Waiting for child pairing',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: grayText,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  connected ? 'Connected: $connectedAt' : 'Status: Waiting',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: grayText, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: connected ? softGreen : softOrange,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Text(
-              connected ? 'Online' : 'Waiting',
-              style: TextStyle(
-                color: connected ? teal : Colors.orange,
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
               ),
-            ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: darkText,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      connected ? email : 'Waiting for child pairing',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: grayText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      connected ? 'Connected: $connectedAt' : 'Status: Waiting',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: grayText, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: connected ? softGreen : softOrange,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Text(
+                  connected ? 'Online' : 'Waiting',
+                  style: TextStyle(
+                    color: connected ? teal : Colors.orange,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
           ),
+          if (connected) ...[
+            const SizedBox(height: 14),
+            const Divider(),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: isRemoving
+                  ? null
+                  : () => removeChildDevice(
+                      childProfileId: childProfileId,
+                      childName: name,
+                    ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                side: const BorderSide(color: Colors.redAccent),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              icon: isRemoving
+                  ? const SizedBox(
+                      width: 17,
+                      height: 17,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.link_off_rounded),
+              label: Text(isRemoving ? 'Removing Device...' : 'Remove Device'),
+            ),
+          ],
         ],
       ),
     );

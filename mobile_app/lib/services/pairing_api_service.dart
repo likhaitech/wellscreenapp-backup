@@ -137,4 +137,14 @@ class PairingApiService {
 
     return PairingConnection.fromJson(result);
   }
+
+  Future<void> unpairDevice({required String childProfileId}) async {
+    final result = await _post('/pairing/unpair', {
+      'childProfileId': childProfileId,
+    });
+
+    if (result['status'] != 'unpaired') {
+      throw Exception('Unable to remove the child device.');
+    }
+  }
 }
