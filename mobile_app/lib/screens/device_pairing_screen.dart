@@ -158,7 +158,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     );
 
     final childNames = newlyConnected
-        .map((doc) => (doc.data()['name'] ?? 'Student').toString())
+        .map((doc) => (doc.data()['name'] ?? 'Child').toString())
         .toList();
 
     // Update before showing dialogs to prevent duplicate confirmations on
@@ -193,7 +193,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              '$childNameâ€™s device has been successfully connected to your account.',
+              '$childName\'s device has been successfully connected to your account.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: grayText,
@@ -431,7 +431,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           const SizedBox(width: 14),
           const Expanded(
             child: Text(
-              'Pair Student Device',
+              'Pair Child Device',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 24,
@@ -478,7 +478,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Enter the student name and generate a 6-digit code. The student will enter this code on their device.',
+            'Enter the child name and generate a 6-digit code. The child will enter this code on their device.',
             style: TextStyle(
               color: grayText,
               height: 1.35,
@@ -490,7 +490,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             controller: childNameController,
             textInputAction: TextInputAction.done,
             decoration: InputDecoration(
-              labelText: 'Student Name',
+              labelText: 'Child Name',
               prefixIcon: const Icon(Icons.child_care_rounded, color: purple),
               filled: true,
               fillColor: pageBg,
@@ -580,7 +580,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          // Same code as above, just scannable - the student can either
+          // Same code as above, just scannable - the child can either
           // type the 6 digits or point their camera at this on the child
           // app's pairing screen (see qr_scan_screen.dart). Encodes the
           // plain code only, nothing else, so it carries no more trust
@@ -611,7 +611,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Or let the student scan this QR code',
+                  'Or let the child scan this QR code',
                   style: TextStyle(
                     color: grayText,
                     fontWeight: FontWeight.w700,
@@ -726,7 +726,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           ),
           SizedBox(height: 6),
           Text(
-            'Generate a pairing code to connect a student account.',
+            'Generate a pairing code to connect a child account.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: grayText,
@@ -740,7 +740,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   }
 
   Widget _childDeviceCard(Map<String, dynamic> data) {
-    final name = (data['name'] ?? 'Student Device').toString();
+    final name = (data['name'] ?? 'Child Device').toString();
     final email = (data['childEmail'] ?? 'Not connected yet').toString();
     final connected = isConnected(data);
     final connectedAt = formatTimestamp(data['connectedAt']);
@@ -776,7 +776,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$nameâ€™s Phone',
+                  '$name,',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -787,7 +787,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  connected ? email : 'Waiting for student pairing',
+                  connected ? email : 'Waiting for child pairing',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
