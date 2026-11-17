@@ -58,6 +58,7 @@ dependencies:
   # does not change what data is trusted or how a code is validated.
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.1.3
+  firebase_crashlytics: ^5.4.1
 
 dev_dependencies:
   flutter_test:
