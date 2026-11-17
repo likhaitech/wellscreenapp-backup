@@ -16,6 +16,7 @@ from .routes.alerts import router as alerts_router
 from .routes.parent_child_chat import router as parent_child_chat_router
 from .routes.monitoring import router as monitoring_router
 from .routes.pairing import router as pairing_router
+from .routes.data_cleanup import router as data_cleanup_router
 
 
 class InMemoryRateLimiter:
@@ -139,3 +140,4 @@ app.include_router(alerts_router)
 app.include_router(parent_child_chat_router)
 app.include_router(monitoring_router)
 app.include_router(pairing_router)
+app.include_router(data_cleanup_router)
