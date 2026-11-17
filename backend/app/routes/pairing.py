@@ -15,6 +15,7 @@ from ..services.pairing_service import (
     PairingRateLimitError,
     generate_pairing_code,
     redeem_pairing_code,
+    unpair_child_device,
 )
 
 
@@ -28,6 +29,12 @@ class GeneratePairingCodeBody(BaseModel):
 class RedeemPairingCodeBody(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
 
+class UnpairChildDeviceBody(BaseModel):
+    childProfileId: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
 
 def _get_authenticated_uid(authorization: str | None) -> str:
     try:
@@ -87,6 +94,41 @@ def redeem_code(
             status_code=429,
             detail=str(error),
         ) from error
+
+    except PairingConflictError as error:
+        raise HTTPException(
+            status_code=409,
+            detail=str(error),
+        ) from error
+
+    except PairingForbiddenError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+        ) from error
+
+    except PairingError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+
+
+@router.post("/pairing/unpair")
+def unpair_device(
+    body: UnpairChildDeviceBody,
+    authorization: str | None = Header(default=None),
+):
+    """Remove a child device from its owning parent."""
+
+    uid = _get_authenticated_uid(authorization)
+
+    try:
+        return unpair_child_device(
+            parent_uid=uid,
+            child_profile_id=body.childProfileId,
+        )
 
     except PairingConflictError as error:
         raise HTTPException(

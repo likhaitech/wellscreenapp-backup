@@ -296,3 +296,141 @@ def test_concurrent_redemption_allows_only_one_child(pairing_context):
         child_one,
         child_two,
     }
+
+
+def test_unpair_resets_child_and_allows_repair(pairing_context):
+    context = pairing_context
+    db = context["db"]
+
+    parent_uid = context["create_user"]("parent")
+    child_uid = context["create_user"]("child")
+
+    generated = create_test_pairing(context, parent_uid)
+
+    pairing.redeem_pairing_code(
+        child_uid=child_uid,
+        code=generated["code"],
+    )
+
+    result = pairing.unpair_child_device(
+        parent_uid=parent_uid,
+        child_profile_id=generated["childProfileId"],
+    )
+
+    assert result["status"] == "unpaired"
+
+    child_doc = (
+        db.collection("users")
+        .document(child_uid)
+        .get()
+        .to_dict()
+    )
+
+    assert child_doc["pairingStatus"] == "not_paired"
+    assert child_doc.get("pairedParentId") is None
+    assert child_doc.get("pairedChildProfileId") is None
+    assert child_doc.get("pairingCode") is None
+
+    profile_doc = (
+        db.collection("child_profiles")
+        .document(generated["childProfileId"])
+        .get()
+        .to_dict()
+    )
+
+    assert profile_doc["pairingStatus"] == "unpaired"
+    assert profile_doc.get("childAccountId") is None
+
+    code_doc = (
+        db.collection("pairing_codes")
+        .document(generated["code"])
+        .get()
+        .to_dict()
+    )
+
+    assert code_doc["status"] == "revoked"
+
+    with pytest.raises(pairing.PairingError):
+        pairing.redeem_pairing_code(
+            child_uid=child_uid,
+            code=generated["code"],
+        )
+
+    new_pairing = create_test_pairing(context, parent_uid)
+
+    repaired = pairing.redeem_pairing_code(
+        child_uid=child_uid,
+        code=new_pairing["code"],
+    )
+
+    assert repaired["status"] == "connected"
+
+    # Retrying the old removal must not unlink the new pairing.
+    pairing.unpair_child_device(
+        parent_uid=parent_uid,
+        child_profile_id=generated["childProfileId"],
+    )
+
+    current_child = (
+        db.collection("users")
+        .document(child_uid)
+        .get()
+        .to_dict()
+    )
+
+    assert (
+        current_child["pairedChildProfileId"]
+        == new_pairing["childProfileId"]
+    )
+
+
+def test_other_parent_cannot_unpair_child(pairing_context):
+    context = pairing_context
+    db = context["db"]
+
+    parent_uid = context["create_user"]("parent")
+    other_parent = context["create_user"]("parent")
+    child_uid = context["create_user"]("child")
+
+    generated = create_test_pairing(context, parent_uid)
+
+    pairing.redeem_pairing_code(
+        child_uid=child_uid,
+        code=generated["code"],
+    )
+
+    with pytest.raises(pairing.PairingForbiddenError):
+        pairing.unpair_child_device(
+            parent_uid=other_parent,
+            child_profile_id=generated["childProfileId"],
+        )
+
+    child_doc = (
+        db.collection("users")
+        .document(child_uid)
+        .get()
+        .to_dict()
+    )
+
+    assert child_doc["pairingStatus"] == "connected"
+    assert child_doc["pairedParentId"] == parent_uid
+
+
+def test_child_cannot_unpair_own_device(pairing_context):
+    context = pairing_context
+
+    parent_uid = context["create_user"]("parent")
+    child_uid = context["create_user"]("child")
+
+    generated = create_test_pairing(context, parent_uid)
+
+    pairing.redeem_pairing_code(
+        child_uid=child_uid,
+        code=generated["code"],
+    )
+
+    with pytest.raises(pairing.PairingForbiddenError):
+        pairing.unpair_child_device(
+            parent_uid=child_uid,
+            child_profile_id=generated["childProfileId"],
+        )
