@@ -4,6 +4,7 @@ import '../../models/app_rule.dart';
 import '../../models/installed_app_info.dart';
 import '../../services/android_app_service.dart';
 import '../../services/app_rules_service.dart';
+import '../../services/site_category_service.dart';
 import '../../theme/app_theme.dart';
 
 class RulesScreen extends StatefulWidget {
@@ -16,6 +17,13 @@ class RulesScreen extends StatefulWidget {
 class _RulesScreenState extends State<RulesScreen> {
   final AndroidAppService _androidAppService = AndroidAppService();
   final AppRulesService _rulesService = AppRulesService();
+  final SiteCategoryService _siteCategoryService = SiteCategoryService();
+  final TextEditingController _websiteController = TextEditingController();
+
+  WebsiteRules _websiteRules = const WebsiteRules();
+  bool _loadingWebsites = true;
+  bool _savingWebsite = false;
+  String? _websiteError;
 
   bool _loading = true;
   bool _saving = false;
@@ -30,6 +38,240 @@ class _RulesScreenState extends State<RulesScreen> {
   void initState() {
     super.initState();
     _loadAppsAndRules();
+    _loadWebsiteRules();
+  }
+
+  @override
+  void dispose() {
+    _websiteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadWebsiteRules() async {
+    if (_savingWebsite) return;
+    setState(() {
+      _loadingWebsites = true;
+      _websiteError = null;
+    });
+    try {
+      final rules = await _siteCategoryService.fetchGuardianWebsiteRules();
+      if (!mounted) return;
+      setState(() => _websiteRules = rules);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _websiteError =
+            'Could not load website rules. Check your connection and retry.';
+      });
+    } finally {
+      if (mounted) setState(() => _loadingWebsites = false);
+    }
+  }
+
+  Future<void> _changeWebsiteRule(
+    String input,
+    WebsiteRuleAction? action,
+  ) async {
+    if (_savingWebsite || _loadingWebsites || _websiteError != null) return;
+    final domain = WebsiteRules.normalizeDomain(input);
+    if (domain == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a valid website such as example.com.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _savingWebsite = true);
+    try {
+      final rules = await _siteCategoryService.updateGuardianWebsiteRule(
+        domain,
+        action,
+      );
+      if (!mounted) return;
+      setState(() => _websiteRules = rules);
+      if (action != null) _websiteController.clear();
+      final message = switch (action) {
+        WebsiteRuleAction.block => '$domain added to blocked websites.',
+        WebsiteRuleAction.allow => '$domain added to allowed websites.',
+        null => '$domain removed from custom website rules.',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is FormatException
+          ? error.message
+          : 'Could not save website rule. Check your connection and try again.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _savingWebsite = false);
+    }
+  }
+
+  Widget _websiteRuleList({
+    required String title,
+    required List<String> domains,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              '$title (${domains.length})',
+              style: TextStyle(color: color, fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+        if (domains.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'No websites added yet.',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          )
+        else
+          ...domains.map(
+            (domain) => ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(domain),
+              trailing: IconButton(
+                tooltip: 'Remove custom rule',
+                onPressed: _savingWebsite
+                    ? null
+                    : () => _changeWebsiteRule(domain, null),
+                icon: const Icon(Icons.delete_outline),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _websiteRulesCard() {
+    final canEdit =
+        !_loadingWebsites && !_savingWebsite && _websiteError == null;
+    return Card(
+      color: Colors.white,
+      margin: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        leading: const Icon(Icons.language_rounded, color: AppColors.primary),
+        title: const Text(
+          'Website Rules',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        subtitle: const Text(
+          'Block or allow specific websites.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        children: [
+          if (_loadingWebsites)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: LinearProgressIndicator(),
+            )
+          else if (_websiteError != null) ...[
+            Text(_websiteError!),
+            TextButton(
+              onPressed: _loadWebsiteRules,
+              child: const Text('Retry'),
+            ),
+          ] else ...[
+            const Text(
+              'Rules apply to the website and its subdomains. '
+              'Allowed websites override blocked and automatic category rules.',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _websiteController,
+              enabled: canEdit,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: InputDecoration(
+                labelText: 'Website or URL',
+                hintText: 'example.com',
+                prefixIcon: const Icon(Icons.link),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: canEdit
+                        ? () => _changeWebsiteRule(
+                            _websiteController.text,
+                            WebsiteRuleAction.block,
+                          )
+                        : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.danger,
+                    ),
+                    icon: const Icon(Icons.block_rounded),
+                    label: const Text('Block'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: canEdit
+                        ? () => _changeWebsiteRule(
+                            _websiteController.text,
+                            WebsiteRuleAction.allow,
+                          )
+                        : null,
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('Allow'),
+                  ),
+                ),
+              ],
+            ),
+            if (_savingWebsite) const LinearProgressIndicator(),
+            const SizedBox(height: 8),
+            const Text(
+              'Website changes save immediately.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            _websiteRuleList(
+              title: 'Blocked Websites',
+              domains: _websiteRules.blockedDomains,
+              color: AppColors.danger,
+              icon: Icons.block_rounded,
+            ),
+            const Divider(),
+            _websiteRuleList(
+              title: 'Allowed Websites',
+              domains: _websiteRules.allowedDomains,
+              color: AppColors.primary,
+              icon: Icons.check_circle_outline,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   /// Was previously missing a try/catch entirely: if getInstalledApps() or
@@ -145,7 +387,7 @@ class _RulesScreenState extends State<RulesScreen> {
 
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('All rules cleared.')));
+    ).showSnackBar(const SnackBar(content: Text('App rules cleared.')));
   }
 
   @override
@@ -184,7 +426,12 @@ class _RulesScreenState extends State<RulesScreen> {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: _loading ? null : _loadAppsAndRules,
+            onPressed: _loading || _loadingWebsites || _savingWebsite
+                ? null
+                : () {
+                    _loadAppsAndRules();
+                    _loadWebsiteRules();
+                  },
             icon: const Icon(Icons.refresh),
           ),
           TextButton(
@@ -235,6 +482,7 @@ class _RulesScreenState extends State<RulesScreen> {
                         monitoredRules: monitoredRules,
                         restrictedRules: restrictedRules,
                       ),
+                      _websiteRulesCard(),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
                         child: TextField(
@@ -404,7 +652,7 @@ class _PermissionCard extends StatelessWidget {
                 onPressed: onClearRules,
                 icon: const Icon(Icons.delete_outline),
                 label: const Text(
-                  'Clear rules',
+                  'Clear app rules',
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
