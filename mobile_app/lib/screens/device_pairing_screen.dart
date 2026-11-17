@@ -193,7 +193,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              '$childNameâ€™s device has been successfully connected to your account.',
+              '$childName\'s device has been successfully connected to your account.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: grayText,
@@ -776,7 +776,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$nameâ€™s Phone',
+                  '$name,',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
