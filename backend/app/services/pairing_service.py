@@ -404,3 +404,168 @@ def redeem_pairing_code(
         }
 
     return redeem(db.transaction())
+
+
+def unpair_child_device(
+    *,
+    parent_uid: str,
+    child_profile_id: str,
+) -> dict[str, str]:
+    """Securely unlink a child device from its owning parent."""
+
+    if not _valid_uid(parent_uid):
+        raise PairingForbiddenError("Invalid parent account.")
+
+    if (
+        not isinstance(child_profile_id, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", child_profile_id)
+    ):
+        raise PairingError("Invalid child profile ID.")
+
+    db = get_firestore_client()
+
+    parent_ref = db.collection("users").document(parent_uid)
+
+    profile_ref = (
+        db.collection("child_profiles")
+        .document(child_profile_id)
+    )
+
+    @transactional
+    def unpair(transaction: Any) -> dict[str, str]:
+
+        parent_snapshot = parent_ref.get(
+            transaction=transaction
+        )
+
+        parent_data = parent_snapshot.to_dict() or {}
+
+        if parent_data.get("role") != "parent":
+            raise PairingForbiddenError(
+                "Only parent accounts can remove child devices."
+            )
+
+        profile_snapshot = profile_ref.get(
+            transaction=transaction
+        )
+
+        profile_data = profile_snapshot.to_dict() or {}
+
+        if (
+            not profile_snapshot.exists
+            or profile_data.get("parentId") != parent_uid
+        ):
+            raise PairingForbiddenError(
+                "You are not authorized to remove this device."
+            )
+
+        child_uid = profile_data.get("childAccountId")
+
+        # Repeated requests must not affect a newly paired device.
+        if (
+            profile_data.get("pairingStatus") == "unpaired"
+            and not child_uid
+        ):
+            return {
+                "childProfileId": child_profile_id,
+                "status": "unpaired",
+            }
+
+        if (
+            profile_data.get("pairingStatus") != "connected"
+            or not _valid_uid(child_uid)
+        ):
+            raise PairingConflictError(
+                "This device is not currently connected."
+            )
+
+        child_ref = db.collection("users").document(
+            child_uid
+        )
+
+        child_snapshot = child_ref.get(
+            transaction=transaction
+        )
+
+        child_data = child_snapshot.to_dict() or {}
+
+        if (
+            not child_snapshot.exists
+            or child_data.get("role") != "child"
+            or child_data.get("pairedParentId") != parent_uid
+            or child_data.get("pairedChildProfileId")
+            != child_profile_id
+        ):
+            raise PairingConflictError(
+                "The child pairing information does not match."
+            )
+
+        pairing_code = child_data.get("pairingCode")
+
+        code_ref = None
+        revoke_code = False
+
+        if (
+            isinstance(pairing_code, str)
+            and PAIRING_CODE_PATTERN.fullmatch(pairing_code)
+        ):
+            code_ref = (
+                db.collection("pairing_codes")
+                .document(pairing_code)
+            )
+
+            code_snapshot = code_ref.get(
+                transaction=transaction
+            )
+
+            code_data = code_snapshot.to_dict() or {}
+
+            revoke_code = (
+                code_snapshot.exists
+                and code_data.get("parentId") == parent_uid
+                and code_data.get("childId") == child_profile_id
+                and code_data.get("childAccountId") == child_uid
+            )
+
+        # Reset the child's pairing relationship.
+        transaction.update(
+            child_ref,
+            {
+                "pairingStatus": "not_paired",
+                "pairedParentId": firestore.DELETE_FIELD,
+                "pairedChildProfileId": firestore.DELETE_FIELD,
+                "pairingCode": firestore.DELETE_FIELD,
+                "pairedAt": firestore.DELETE_FIELD,
+            },
+        )
+
+        # Archive the old profile without deleting historical reports.
+        transaction.update(
+            profile_ref,
+            {
+                "pairingStatus": "unpaired",
+                "childAccountId": firestore.DELETE_FIELD,
+                "childEmail": firestore.DELETE_FIELD,
+                "childDisplayName": firestore.DELETE_FIELD,
+                "connectedAt": firestore.DELETE_FIELD,
+                "unpairedAt": firestore.SERVER_TIMESTAMP,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            },
+        )
+
+        # Permanently invalidate the old pairing code.
+        if revoke_code and code_ref is not None:
+            transaction.update(
+                code_ref,
+                {
+                    "status": "revoked",
+                    "revokedAt": firestore.SERVER_TIMESTAMP,
+                },
+            )
+
+        return {
+            "childProfileId": child_profile_id,
+            "status": "unpaired",
+        }
+
+    return unpair(db.transaction())
