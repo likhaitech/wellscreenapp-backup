@@ -1,3 +1,4 @@
+import '../services/pairing_api_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -659,6 +660,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   }
 
   Future<void> pairWithParent() async {
+    if (isPairing) return;
+
     final code = pairingCodeController.text.trim().replaceAll(' ', '');
     final user = FirebaseAuth.instance.currentUser;
 
@@ -667,98 +670,29 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       return;
     }
 
-    if (code.length != 6) {
+    if (!RegExp(r'^[0-9]{6}$').hasMatch(code)) {
       showMessage('Please enter a valid 6-digit pairing code.');
       return;
     }
 
     setState(() => isPairing = true);
 
-    String newlyPairedParentId = '';
-    String newlyPairedProfileId = '';
-
     try {
-      final firestore = FirebaseFirestore.instance;
-
-      final codeRef = firestore.collection('pairing_codes').doc(code);
-      final userRef = firestore.collection('users').doc(user.uid);
-
-      await firestore.runTransaction((transaction) async {
-        final codeSnapshot = await transaction.get(codeRef);
-
-        if (!codeSnapshot.exists) {
-          throw Exception('Pairing code not found.');
-        }
-
-        final codeData = codeSnapshot.data() ?? <String, dynamic>{};
-
-        final status = (codeData['status'] ?? '').toString();
-        final parentId = (codeData['parentId'] ?? '').toString();
-        final childProfileId = (codeData['childId'] ?? '').toString();
-        final expiresAt = codeData['expiresAt'];
-
-        if (status != 'active') {
-          throw Exception('This pairing code is no longer active.');
-        }
-
-        if (parentId.isEmpty || childProfileId.isEmpty) {
-          throw Exception('Invalid pairing code data.');
-        }
-
-        newlyPairedParentId = parentId;
-        newlyPairedProfileId = childProfileId;
-
-        if (expiresAt is Timestamp) {
-          final expiryDate = expiresAt.toDate();
-
-          if (DateTime.now().isAfter(expiryDate)) {
-            throw Exception('This pairing code has expired.');
-          }
-        }
-
-        final childProfileRef = firestore
-            .collection('child_profiles')
-            .doc(childProfileId);
-
-        transaction.set(userRef, {
-          'uid': user.uid,
-          'email': user.email,
-          'fullName': user.displayName ?? 'Student User',
-          'role': 'child',
-          'pairingStatus': 'connected',
-          'pairedParentId': parentId,
-          'pairedChildProfileId': childProfileId,
-          'pairingCode': code,
-          'pairedAt': FieldValue.serverTimestamp(),
-          'lastLoginAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        transaction.set(codeRef, {
-          'status': 'connected',
-          'childAccountId': user.uid,
-          'childEmail': user.email,
-          'connectedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-
-        transaction.set(childProfileRef, {
-          'childAccountId': user.uid,
-          'childEmail': user.email,
-          'pairingStatus': 'connected',
-          'connectedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      });
-
-      pairingCodeController.clear();
+      final result = await PairingApiService().redeemCode(
+        code: code,
+      );
 
       if (!mounted) return;
 
+      pairingCodeController.clear();
+
       showConnectedSuccessDialog(
-        parentId: newlyPairedParentId,
-        childProfileId: newlyPairedProfileId,
+        parentId: result.parentId,
+        childProfileId: result.childProfileId,
       );
     } catch (e) {
-      final message = e.toString().replaceFirst('Exception: ', '');
-      showMessage(message);
+      if (!mounted) return;
+      showMessage(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) {
         setState(() => isPairing = false);

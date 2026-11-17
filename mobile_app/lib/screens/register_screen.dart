@@ -44,9 +44,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       showMessage('Please complete all required fields.');
       return;
     }
-
-    if (password.length < 6) {
-      showMessage('Password must be at least 6 characters.');
+    if (password.length < 8) {
+      showMessage('Password must be at least 8 characters.');
       return;
     }
 

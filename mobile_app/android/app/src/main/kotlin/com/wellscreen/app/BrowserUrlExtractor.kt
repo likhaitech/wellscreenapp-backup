@@ -39,23 +39,42 @@ object BrowserUrlExtractor {
     // package name -> address bar resource-id, in the order to try (some
     // browsers have shipped more than one over the years).
     private val ADDRESS_BAR_VIEW_IDS: Map<String, List<String>> = mapOf(
-        "com.android.chrome" to listOf("com.android.chrome:id/url_bar"),
-        "com.chrome.beta" to listOf("com.chrome.beta:id/url_bar"),
-        "org.mozilla.firefox" to listOf(
-            "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
-        ),
-        "com.sec.android.app.sbrowser" to listOf(
-            "com.sec.android.app.sbrowser:id/location_bar_edit_text",
-        ),
-        "com.opera.browser" to listOf("com.opera.browser:id/url_field"),
-        "com.opera.mini.native" to listOf("com.opera.mini.native:id/url_field"),
-        "com.microsoft.emmx" to listOf("com.microsoft.emmx:id/url_bar"),
-        "com.duckduckgo.mobile.android" to listOf(
-            "com.duckduckgo.mobile.android:id/omnibarTextInput",
-        ),
-        "com.android.browser" to listOf("com.android.browser:id/url"),
-    )
+    "com.android.chrome" to listOf(
+        "com.android.chrome:id/url_bar",
+    ),
+    "com.chrome.beta" to listOf(
+        "com.chrome.beta:id/url_bar",
+    ),
+    "org.mozilla.firefox" to listOf(
+        "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
+    ),
+    "com.sec.android.app.sbrowser" to listOf(
+        "com.sec.android.app.sbrowser:id/location_bar_edit_text",
+    ),
+    "com.opera.browser" to listOf(
+        "com.opera.browser:id/url_field",
+    ),
+    "com.opera.mini.native" to listOf(
+        "com.opera.mini.native:id/url_field",
+    ),
+    "com.microsoft.emmx" to listOf(
+        "com.microsoft.emmx:id/url_bar",
+    ),
+    "com.duckduckgo.mobile.android" to listOf(
+        "com.duckduckgo.mobile.android:id/omnibarTextInput",
+    ),
+    "com.android.browser" to listOf(
+        "com.android.browser:id/url",
+    ),
 
+    // Task 3: Additional browsers
+    "com.brave.browser" to listOf(
+        "com.brave.browser:id/url_bar",
+    ),
+    "com.vivaldi.browser" to listOf(
+        "com.vivaldi.browser:id/url_bar",
+    ),
+)
     fun isKnownBrowser(packageName: String): Boolean =
         ADDRESS_BAR_VIEW_IDS.containsKey(packageName)
 

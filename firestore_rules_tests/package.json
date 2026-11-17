@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "pretest": "cp ../firestore.rules ./firestore.rules",
+    "pretest": "node -e \"require('fs').copyFileSync('../firestore.rules', './firestore.rules')\"",
     "test": "firebase emulators:exec --project wellscreen-rules-test --only firestore \"vitest run\""
   },
   "keywords": [],

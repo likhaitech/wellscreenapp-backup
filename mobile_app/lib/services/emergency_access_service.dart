@@ -31,51 +31,129 @@ class EmergencyAccessService {
   /// The Firestore write is what actually creates the pending request -
   /// the push notification is a convenience on top, same tradeoff
   /// AlertNotificationClient already documents for every other alert type.
-  Future<void> requestAccess({
-    required String childProfileId,
-    required String parentId,
-    String reason = '',
-  }) async {
-    if (childProfileId.isEmpty) {
-      throw StateError('Not paired with a parent yet.');
-    }
+ Future<void> requestAccess({
+  required String childProfileId,
+  required String parentId,
+  String reason = '',
+}) async {
+  const requestCooldown = Duration(minutes: 5);
+  const dailyRequestLimit = 5;
 
-    final trimmedReason = reason.trim();
+  if (childProfileId.isEmpty) {
+    throw StateError('Not paired with a parent yet.');
+  }
 
-    await FirebaseFirestore.instance
-        .collection('child_profiles')
-        .doc(childProfileId)
-        .set({
+  final trimmedReason = reason.trim();
+  final firestore = FirebaseFirestore.instance;
+
+  final childRef = firestore
+      .collection('child_profiles')
+      .doc(childProfileId);
+
+  final rejectionMessage = await firestore.runTransaction<String?>(
+    (transaction) async {
+      final snapshot = await transaction.get(childRef);
+
+      if (!snapshot.exists) {
+        return 'Child profile not found.';
+      }
+
+      final raw = snapshot.data()?['emergencyAccess'];
+
+      final emergencyAccess = raw is Map
+          ? Map<String, dynamic>.from(raw)
+          : <String, dynamic>{};
+
+      final now = DateTime.now();
+
+      final previousTimestamp = emergencyAccess['requestedAt'];
+
+      final lastRequestedAt = previousTimestamp is Timestamp
+          ? previousTimestamp.toDate().toLocal()
+          : null;
+
+      final storedCount = emergencyAccess['dailyRequestCount'];
+
+      final isSameDay = lastRequestedAt != null &&
+          lastRequestedAt.year == now.year &&
+          lastRequestedAt.month == now.month &&
+          lastRequestedAt.day == now.day;
+
+      final dailyCount = isSameDay
+          ? (storedCount is int && storedCount > 0
+              ? storedCount
+              : 1)
+          : 0;
+
+      // Enforce the daily request limit.
+      if (dailyCount >= dailyRequestLimit) {
+        return 'Daily emergency access limit reached. '
+            'You can request again tomorrow.';
+      }
+
+      // Enforce the cooldown between requests.
+      if (lastRequestedAt != null) {
+        if (now.isBefore(lastRequestedAt)) {
+          return 'Please check your device date and time.';
+        }
+
+        final elapsed = now.difference(lastRequestedAt);
+
+        if (elapsed < requestCooldown) {
+          final remaining = requestCooldown - elapsed;
+
+          final minutesRemaining =
+              (remaining.inMilliseconds /
+                      Duration.millisecondsPerMinute)
+                  .ceil();
+
+          return 'Please wait $minutesRemaining minute(s) '
+              'before sending another emergency access request.';
+        }
+      }
+
+      // Store the accepted request and updated counter together.
+      transaction.set(
+        childRef,
+        {
           'emergencyAccess': {
             'status': 'requested',
             'reason': trimmedReason,
             'requestedAt': FieldValue.serverTimestamp(),
             'respondedAt': null,
             'grantedUntil': null,
+            'dailyRequestCount': dailyCount + 1,
           },
-        }, SetOptions(merge: true));
-
-    if (parentId.isEmpty) return;
-
-    try {
-      await AlertNotificationClient().notifyParent(
-        parentUid: parentId,
-        title: 'Emergency access requested',
-        body: trimmedReason.isEmpty
-            ? 'Your child is requesting temporary emergency access.'
-            : 'Your child is requesting temporary emergency access: '
-                  '$trimmedReason',
-        alertType: 'emergency_access_request',
-        childProfileId: childProfileId,
+        },
+        SetOptions(merge: true),
       );
-    } catch (_) {
-      // Firestore write above already went through - the parent still sees
-      // the pending request live on their dashboard even if this push
-      // notification itself fails (e.g. backend not deployed, no fcmToken
-      // yet). Same best-effort tradeoff AlertNotificationClient documents.
-    }
+
+      return null;
+    },
+  );
+
+  if (rejectionMessage != null) {
+    throw StateError(rejectionMessage);
   }
 
+  if (parentId.isEmpty) return;
+
+  try {
+    await AlertNotificationClient().notifyParent(
+      parentUid: parentId,
+      title: 'Emergency access requested',
+      body: trimmedReason.isEmpty
+          ? 'Your child is requesting temporary emergency access.'
+          : 'Your child is requesting temporary emergency access: '
+                '$trimmedReason',
+      alertType: 'emergency_access_request',
+      childProfileId: childProfileId,
+    );
+  } catch (_) {
+    // The request is already saved in Firestore.
+    // Notification remains best-effort.
+  }
+}
   /// Parent side: approves (for [duration], default 30 minutes) or denies
   /// the currently pending request for this child.
   Future<void> respondToRequest({

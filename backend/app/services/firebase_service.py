@@ -6,31 +6,53 @@ from pathlib import Path
 
 import firebase_admin
 from firebase_admin import auth, credentials, firestore
+from google.auth.credentials import AnonymousCredentials
 
 
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
 _DEFAULT_SERVICE_ACCOUNT = _BACKEND_DIR / "firebase-service-account.json"
+
 _init_lock = threading.Lock()
 
 
+class EmulatorCredential(credentials.Base):
+    """Anonymous credentials for local Firestore Emulator testing."""
+
+    def get_credential(self):
+        return AnonymousCredentials()
+
+
 def initialize_firebase() -> firebase_admin.App:
-    """Initialize Firebase Admin once and return the default app."""
+    """Initialize Firebase Admin once.
+
+    Supports local Firestore Emulator testing and production Firebase.
+    """
 
     if firebase_admin._apps:
         return firebase_admin.get_app()
 
-    # FIX: FastAPI runs sync dependencies (require_admin/require_user, both
-    # of which call this) in a real thread pool, not just interleaved async
-    # tasks. On cold start, two concurrent requests can both see
-    # firebase_admin._apps as empty and both reach initialize_app() below;
-    # the loser raises ValueError("The default Firebase app already
-    # exists") outside any try/except in the callers, surfacing as an
-    # unhandled 500 instead of a normal 401/403. Double-checked locking
-    # closes that window.
     with _init_lock:
         if firebase_admin._apps:
             return firebase_admin.get_app()
 
+        # LOCAL TESTING: Firestore Emulator
+        emulator_host = os.getenv("FIRESTORE_EMULATOR_HOST")
+
+        if emulator_host:
+            project_id = (
+                os.getenv("GOOGLE_CLOUD_PROJECT")
+                or os.getenv("GCLOUD_PROJECT")
+                or "wellscreen-rules-test"
+            )
+
+            emulator_credential = EmulatorCredential()
+
+            return firebase_admin.initialize_app(
+                emulator_credential,
+                options={"projectId": project_id},
+            )
+
+        # PRODUCTION: Service account credentials
         configured_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
 
         service_account_path = (
@@ -46,6 +68,7 @@ def initialize_firebase() -> firebase_admin.App:
 
             return firebase_admin.initialize_app(credential)
 
+        # PRODUCTION: Application Default Credentials
         try:
             return firebase_admin.initialize_app()
 
