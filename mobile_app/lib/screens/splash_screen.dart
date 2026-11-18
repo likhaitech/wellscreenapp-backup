@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+import '../services/email_verification_policy.dart';
 import '../theme/app_theme.dart';
 import 'admin_settings_screen.dart';
 import 'child_home_screen.dart';
@@ -61,6 +62,21 @@ class _SplashScreenState extends State<SplashScreen> {
           context,
           MaterialPageRoute(builder: (_) => const AdminSettingsScreen()),
         );
+        return;
+      }
+
+      // An unverified new account is sent back to Login, which shows the
+      // "Verify your email" dialog.
+      await user.reload();
+      final current = FirebaseAuth.instance.currentUser ?? user;
+      if (EmailVerificationPolicy.mustVerify(
+        emailVerified: current.emailVerified,
+        isAdmin: false,
+        accountCreatedAt: current.metadata.creationTime,
+      )) {
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+        goToLogin();
         return;
       }
 

@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../services/password_policy.dart';
 import '../theme/app_theme.dart';
+import '../widgets/verify_email_dialog.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'child_home_screen.dart';
+import 'login_screen.dart';
 import 'parent_dashboard_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -106,26 +108,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
         rethrow;
       }
 
-      // Soft verification: send Firebase's built-in verification email so
-      // a mistyped or fake address is noticed, without blocking sign-in
-      // (enforcing it would lock out accounts created before this change).
-      // Best-effort - a failure here never undoes the registration.
-      var verificationSent = false;
+      // Email verification is required for new accounts (see
+      // EmailVerificationPolicy). Sending can fail (network); the dialog
+      // below has a Resend button, so registration still completes.
       try {
         await user.sendEmailVerification();
-        verificationSent = true;
       } catch (_) {
-        // The account works without it; the user can still reset password
-        // only if the address is real.
+        // Best-effort - the user can tap Resend in the dialog.
       }
 
       if (!mounted) return;
 
-      showMessage(
-        verificationSent
-            ? 'Account created. We sent a verification link to $email.'
-            : 'Account created.',
-      );
+      final verified = await showVerifyEmailDialogFor(context, user);
+
+      if (!mounted) return;
+
+      if (!verified) {
+        // The account exists but stays locked until the link is opened.
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+        );
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Account created. Open the link sent to $email, then sign in.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      showMessage('Email verified. Welcome to WellScreen!');
 
       if (selectedRole == 'parent') {
         Navigator.pushAndRemoveUntil(

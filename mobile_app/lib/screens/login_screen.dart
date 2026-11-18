@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/email_verification_policy.dart';
 import '../theme/app_theme.dart';
+import '../widgets/verify_email_dialog.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'admin_settings_screen.dart';
 import 'child_home_screen.dart';
@@ -73,6 +75,25 @@ class _LoginScreenState extends State<LoginScreen> {
 
         return;
       }
+
+      // New parent / child accounts must verify their email first.
+      await user.reload();
+      final current = FirebaseAuth.instance.currentUser ?? user;
+      if (EmailVerificationPolicy.mustVerify(
+        emailVerified: current.emailVerified,
+        isAdmin: false,
+        accountCreatedAt: current.metadata.creationTime,
+      )) {
+        if (!mounted) return;
+        final verified = await showVerifyEmailDialogFor(context, current);
+        if (!verified) {
+          await FirebaseAuth.instance.signOut();
+          showMessage('Verify your email to sign in.');
+          return;
+        }
+      }
+
+      if (!mounted) return;
 
       // Normal parent / child accounts use their Firestore role.
       final userDoc = await FirebaseFirestore.instance
