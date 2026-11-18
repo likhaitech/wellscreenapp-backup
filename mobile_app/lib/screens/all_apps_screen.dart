@@ -59,17 +59,6 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
     _limitsStream = _appTimeLimitService.watchLimits(widget.childProfileId);
   }
 
-  void _openPeriodInfo() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Previous days are not stored by the current child sync. '
-          '7 Days, 30 Days, and Custom will be available once daily history is added.',
-        ),
-      ),
-    );
-  }
-
   void _onBottomNavTap(int index) {
     if (index == 0) {
       Navigator.pop(context);
@@ -288,48 +277,29 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
     );
   }
 
+  /// Only today's usage is synced from the child's phone, so this shows a
+  /// single "Today" label instead of period tabs that had nothing behind
+  /// them.
   Widget _periodSwitcher() {
-    const tabs = ['Today', '7 Days', '30 Days', 'Custom'];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-      child: Container(
-        height: 44,
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: const Color(0xFFDCE5F2)),
-        ),
-        child: Row(
-          children: [
-            for (var i = 0; i < tabs.length; i++) ...[
-              if (i != 0)
-                Container(width: 1, height: 16, color: const Color(0xFFE6EDF6)),
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap: i == 0 ? null : _openPeriodInfo,
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: i == 0 ? AppColors.primary : Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      tabs[i],
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: i == 0 ? Colors.white : AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(18, 14, 18, 18),
+      child: Row(
+        children: [
+          StatusPill(
+            label: 'Today',
+            tone: StatusTone.info,
+            icon: Icons.today_rounded,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Usage since midnight on the child\'s phone',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }
