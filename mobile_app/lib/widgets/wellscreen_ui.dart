@@ -4,6 +4,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../services/password_policy.dart';
 import '../theme/app_theme.dart';
 
 /// Numerals that keep the same width, for timers, counters and KPIs.
@@ -589,4 +590,89 @@ class WellScreenField extends StatelessWidget {
       ],
     );
   }
+}
+
+// --------------------------------------------------------- password rules
+
+/// Error dialog listing every password requirement, with a check for the
+/// ones already met and a cross for the ones still missing.
+Future<void> showPasswordRequirementsDialog(
+  BuildContext context,
+  String password,
+) {
+  final rules = PasswordPolicy.evaluate(password);
+
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      icon: const Icon(
+        Icons.lock_outline_rounded,
+        color: AppColors.danger,
+        size: 32,
+      ),
+      title: const Text(
+        'Password is too weak',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Your password must have:',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          for (final rule in rules)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    rule.met
+                        ? Icons.check_circle_rounded
+                        : Icons.cancel_rounded,
+                    size: 18,
+                    color: rule.met ? AppColors.success : AppColors.danger,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      rule.label,
+                      style: TextStyle(
+                        color: rule.met
+                            ? AppColors.textSecondary
+                            : AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: rule.met
+                            ? FontWeight.w400
+                            : FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        AppPillButton(
+          label: 'OK',
+          expand: true,
+          onPressed: () => Navigator.pop(dialogContext),
+        ),
+      ],
+    ),
+  );
 }

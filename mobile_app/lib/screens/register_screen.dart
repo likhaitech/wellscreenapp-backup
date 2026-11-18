@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/password_policy.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'child_home_screen.dart';
@@ -41,8 +42,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       showMessage('Please complete all required fields.');
       return;
     }
-    if (password.length < 8) {
-      showMessage('Password must be at least 8 characters.');
+    if (!PasswordPolicy.isStrong(password)) {
+      await showPasswordRequirementsDialog(context, password);
       return;
     }
 
@@ -287,6 +288,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       onPressed: () {
                         setState(() => obscurePassword = !obscurePassword);
                       },
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    PasswordPolicy.hint,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      height: 1.35,
                     ),
                   ),
                 ],

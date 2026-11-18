@@ -5,6 +5,7 @@ import '../widgets/wellscreen_ui.dart';
 
 import '../theme/app_theme.dart';
 import '../services/app_rules_service.dart';
+import '../services/password_policy.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
 import 'login_screen.dart';
@@ -167,8 +168,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       return;
     }
 
-    if (newPassword.length < 8) {
-      showMessage('New password must be at least 8 characters.');
+    if (!PasswordPolicy.isStrong(newPassword)) {
+      await showPasswordRequirementsDialog(context, newPassword);
       return;
     }
 
@@ -292,9 +293,18 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       const SizedBox(height: 12),
                       _textField(
                         controller: newPasswordController,
-                        label: 'New Password (min. 8 characters)',
+                        label: 'New Password',
                         icon: Icons.lock_rounded,
                         obscureText: true,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        PasswordPolicy.hint,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       _textField(
