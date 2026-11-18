@@ -254,6 +254,7 @@ class WellScreenAccessibilityService : AccessibilityService() {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             intent.putExtra("blocked_domain", domain)
+            intent.putExtra("blocked_browser", browserPackage)
             startActivity(intent)
             RestrictionLogger.recordOutcome(this, domain, "blocked", now)
         } catch (_: Exception) {

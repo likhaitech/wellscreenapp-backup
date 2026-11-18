@@ -42,6 +42,8 @@ class BlockedAppActivity : Activity() {
     }
 
     private var isDailyTimeLimitBlock = false
+    private var isWebsiteBlock = false
+    private var blockedBrowser: String? = null
     private var dailyBlockedPackage: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val statusExecutor = Executors.newSingleThreadExecutor()
@@ -69,6 +71,8 @@ class BlockedAppActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         val blockedDomain = intent.getStringExtra("blocked_domain")
+        blockedBrowser = intent.getStringExtra("blocked_browser")
+        isWebsiteBlock = blockedDomain != null
         val blockedPackage = intent.getStringExtra("blocked_package") ?: "Restricted app"
         isDailyTimeLimitBlock = blockedDomain == null &&
             intent.getBooleanExtra("time_limit_reached", false)
@@ -242,7 +246,11 @@ class BlockedAppActivity : Activity() {
         card.addView(requestButton)
 
         val backButton = TextView(this).apply {
-            text = if (isDailyTimeLimitBlock || blockedDomain != null) "Go Home" else "Go Back"
+            text = when {
+                blockedDomain != null -> "Go to Google"
+                isDailyTimeLimitBlock -> "Go Home"
+                else -> "Go Back"
+            }
             textSize = 15f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(ink)
@@ -256,7 +264,7 @@ class BlockedAppActivity : Activity() {
             ).apply { topMargin = dp(12) }
             setOnClickListener {
                 when {
-                    blockedDomain != null -> returnToHome()
+                    blockedDomain != null -> leaveToSafePage()
                     isDailyTimeLimitBlock -> returnToHome()
                     else -> finish()
                 }
@@ -267,7 +275,9 @@ class BlockedAppActivity : Activity() {
         root.addView(badge)
         root.addView(title)
         root.addView(message)
-        root.addView(card)
+        // No "request access" for blocked websites: they are harmful-category
+        // or guardian-blocked sites, and time requests are for apps only.
+        if (blockedDomain == null) root.addView(card)
         root.addView(backButton)
         setContentView(root)
     }
@@ -349,6 +359,27 @@ class BlockedAppActivity : Activity() {
         }
     }
 
+    /**
+     * Website blocks: open a safe page in the same browser, so the blocked
+     * page is no longer what the browser shows. Going home or back instead
+     * left the blocked page open, and the child was blocked again every time
+     * the browser came back (an endless loop). Started from this visible
+     * screen, so Android always allows it.
+     */
+    private fun leaveToSafePage() {
+        val browser = blockedBrowser
+        if (browser.isNullOrBlank()) {
+            returnToHome()
+            return
+        }
+        try {
+            startActivity(SafePageRedirect.intentFor(this, browser))
+            finish()
+        } catch (_: Exception) {
+            returnToHome()
+        }
+    }
+
     private fun returnToHome() {
         val homeIntent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_HOME)
@@ -359,7 +390,9 @@ class BlockedAppActivity : Activity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (isDailyTimeLimitBlock) {
+        if (isWebsiteBlock) {
+            leaveToSafePage()
+        } else if (isDailyTimeLimitBlock) {
             returnToHome()
         } else {
             super.onBackPressed()

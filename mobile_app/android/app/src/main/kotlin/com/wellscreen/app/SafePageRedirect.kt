@@ -17,7 +17,8 @@ import android.provider.Browser
  * blocked if it is opened again.
  */
 object SafePageRedirect {
-    const val SAFE_PAGE_URL = "https://www.google.com/"
+    // Google with SafeSearch requested, so the child lands on filtered search.
+    const val SAFE_PAGE_URL = "https://www.google.com/?safe=active"
 
     fun intentFor(context: Context, browserPackage: String): Intent =
         Intent(Intent.ACTION_VIEW, Uri.parse(SAFE_PAGE_URL)).apply {
