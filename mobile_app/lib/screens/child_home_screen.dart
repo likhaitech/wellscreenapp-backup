@@ -34,7 +34,7 @@ import '../services/temporary_app_grant_service.dart';
 import '../services/chat_notifications_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/wellscreen_bottom_nav.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'capture_debug_screen.dart';
 import 'login_screen.dart';
 import 'parent_child_chat_screen.dart';
@@ -73,7 +73,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
-  static const Color pageBg = Color(0xFFF8F9FC);
+  static const Color pageBg = AppColors.background;
   static const Color softGreen = AppColors.successBg;
   static const Color softBlue = AppColors.infoBg;
   static const Color softRed = Color(0xFFFFEFEF);
@@ -179,11 +179,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   // Nothing below changes what is written to Firestore, SharedPreferences,
   // or the native layer - it only decides how existing data is drawn.
   // ---------------------------------------------------------------------
-  static const Color _brandIndigo = Color(0xFF254EDB);
-  static const Color _brandViolet = Color(0xFF4C2A9B);
-  static const Color _ink = Color(0xFF0F172A);
-  static const Color _slate = Color(0xFF64748B);
-  static const Color _hairline = Color(0xFFE2E8F0);
+  static const Color _brandIndigo = AppColors.primary;
+  static const Color _ink = AppColors.textPrimary;
+  static const Color _slate = AppColors.textSecondary;
+  static const Color _hairline = AppColors.border;
   static const Color _emerald = Color(0xFF10B981);
   static const Color _emeraldTint = Color(0xFFECFDF5);
   static const Color _amber = Color(0xFFF59E0B);
@@ -1576,7 +1575,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: const Color(0xFFECF4FF),
-                              borderRadius: BorderRadius.circular(18),
+                              borderRadius: BorderRadius.circular(20),
                               border: Border.all(
                                 color: const Color(0xFFD2E4FC),
                               ),
@@ -1590,7 +1589,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                   child: Icon(
                                     Icons.person_rounded,
                                     size: 36,
-                                    color: Color(0xFF2665C4),
+                                    color: Color(0xFF2563EB),
                                   ),
                                 ),
                                 const SizedBox(width: 13),
@@ -1677,13 +1676,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               onPressed: () =>
                                   Navigator.of(dialogContext).pop(),
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF2963C3),
+                                backgroundColor: const Color(0xFF2563EB),
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 15,
                                 ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
+                                shape: const StadiumBorder(),
                               ),
                               child: const Text(
                                 'Continue',
@@ -1930,10 +1927,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
             return Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-                  child: _topBar(data),
-                ),
+                _topBar(data),
                 Expanded(
                   child: ListView(
                     key: ValueKey<int>(currentIndex),
@@ -2009,9 +2003,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
               onPressed: isPairing ? null : pairWithParent,
               style: FilledButton.styleFrom(
                 backgroundColor: purple,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: const StadiumBorder(),
               ),
               icon: const Icon(Icons.verified_rounded),
               label: Text(
@@ -2029,9 +2021,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
               style: OutlinedButton.styleFrom(
                 foregroundColor: purple,
                 side: const BorderSide(color: purple, width: 1.4),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: const StadiumBorder(),
               ),
               icon: const Icon(Icons.qr_code_scanner_rounded),
               label: const Text(
@@ -2067,7 +2057,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         children: [
           const CircleAvatar(
             radius: 22,
-            backgroundColor: Color(0xFFE7F0FF),
+            backgroundColor: Color(0xFFDBEAFE),
             child: Icon(Icons.bar_chart_rounded, color: purple, size: 24),
           ),
           const SizedBox(width: 12),
@@ -2104,9 +2094,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
               style: FilledButton.styleFrom(
                 backgroundColor: purple,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
+                shape: const StadiumBorder(),
               ),
               child: const Text(
                 'Allow',
@@ -2286,7 +2274,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     height: 52,
                     decoration: BoxDecoration(
                       color: softBlue,
-                      borderRadius: BorderRadius.circular(18),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Icon(
                       Icons.admin_panel_settings_rounded,
@@ -2378,7 +2366,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             height: 54,
             decoration: BoxDecoration(
               color: softBlue,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Icon(icon, color: purple, size: 31),
           ),
@@ -2422,7 +2410,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
@@ -2487,7 +2475,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: pageBg,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         children: [
@@ -2684,7 +2672,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   Widget _initialAvatar(String name, double size) {
     const palette = <Color>[
-      Color(0xFF254EDB),
+      Color(0xFF2563EB),
       Color(0xFF0D9488),
       Color(0xFFDB2777),
       Color(0xFFD97706),
@@ -2822,7 +2810,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   Widget _whiteCard({
     required Widget child,
     EdgeInsets padding = const EdgeInsets.all(16),
-    double radius = 18,
+    double radius = AppRadius.card,
   }) {
     return Container(
       padding: padding,
@@ -2832,32 +2820,13 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         border: Border.all(color: _hairline),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 12,
+            color: Color(0x0A111827),
+            blurRadius: 16,
             offset: Offset(0, 4),
           ),
         ],
       ),
       child: child,
-    );
-  }
-
-  Widget _roundIconButton({
-    required Widget icon,
-    required String tooltip,
-    required VoidCallback onTap,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.white,
-        shape: const CircleBorder(side: BorderSide(color: _hairline)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(width: 40, height: 40, child: Center(child: icon)),
-        ),
-      ),
     );
   }
 
@@ -2939,66 +2908,106 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   // ------------------------------- top bar -------------------------------
 
-  Widget _topBar(Map<String, dynamic> data) {
+  PreferredSizeWidget _topBar(Map<String, dynamic> data) {
     final user = FirebaseAuth.instance.currentUser;
     final photoUrl = (data['profilePhotoUrl'] ?? user?.photoURL ?? '')
         .toString();
 
-    return Row(
-      children: [
-        Expanded(
-          // Long-press (not a visible button) opens the raw capture debug
-          // log - this screen is rendered on the CHILD's device, and that
-          // log is the child's own monitored browsing/usage data, so it
-          // must not be one visible tap away from the child themselves.
-          child: GestureDetector(
-            onLongPress: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CaptureDebugScreen()),
-              );
-            },
-            child: const Text(
-              'WellScreen',
-              style: TextStyle(
-                color: _ink,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
+    return WellScreenAppBar.primary(
+      onMenu: () => _showMenuSheet(data),
+      // Long-press (not a visible button) opens the raw capture debug log -
+      // this screen is rendered on the CHILD's device, and that log is the
+      // child's own monitored browsing/usage data, so it must not be one
+      // visible tap away from the child themselves.
+      onTitleLongPress: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CaptureDebugScreen()),
+        );
+      },
+      onAvatar: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
+      ),
+      avatar: photoUrl.isEmpty
+          ? null
+          : Image.network(
+              photoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => const ColoredBox(
+                color: AppColors.primaryLight,
+                child: Icon(
+                  Icons.person_rounded,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
               ),
             ),
-          ),
-        ),
-        _roundIconButton(
+      actions: [
+        IconButton(
           tooltip: 'Notifications',
-          onTap: () => Navigator.push(
+          onPressed: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const ChatNotificationsScreen()),
           ),
           icon: _notificationBell(),
         ),
-        const SizedBox(width: 10),
-        _roundIconButton(
-          tooltip: 'Profile',
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
-          ),
-          icon: photoUrl.isEmpty
-              ? const Icon(Icons.person_rounded, color: _ink, size: 22)
-              : Image.network(
-                  photoUrl,
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.person_rounded,
-                    color: _ink,
-                    size: 22,
-                  ),
-                ),
-        ),
       ],
+    );
+  }
+
+  /// The two-line menu: only actions that fit here and are not already on
+  /// the dock's own tabs.
+  void _showMenuSheet(Map<String, dynamic> data) {
+    final connected = isConnected(data);
+
+    Widget tile(IconData icon, String label, VoidCallback? onTap) {
+      return ListTile(
+        enabled: onTap != null,
+        leading: Icon(icon, color: _ink, size: 22),
+        title: Text(
+          label,
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        trailing: const Icon(
+          Icons.chevron_right_rounded,
+          color: AppColors.textDisabled,
+        ),
+        onTap: onTap == null
+            ? null
+            : () {
+                Navigator.pop(context);
+                onTap();
+              },
+      );
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            tile(Icons.chat_bubble_outline_rounded, 'Chat', openFamilyChat),
+            tile(
+              Icons.my_location_rounded,
+              'Share GPS',
+              connected ? () => shareCurrentLocation(data) : null,
+            ),
+            tile(
+              Icons.sync_rounded,
+              'Sync usage',
+              connected ? () => syncUsageReport(data) : null,
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3043,20 +3052,20 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             docs != null &&
             docs.any((doc) => doc.data()['type'] == 'parent_child_chat');
 
-        return WellScreenBottomNav(
+        return FloatingPillDock(
           currentIndex: currentIndex,
           items: [
-            const WellScreenNavItem(icon: Icons.home_rounded, label: 'Home'),
-            WellScreenNavItem(
-              icon: Icons.chat_bubble_rounded,
+            const DockItem(icon: Icons.home_outlined, label: 'Home'),
+            DockItem(
+              icon: Icons.chat_bubble_outline_rounded,
               label: 'Chat',
               showBadge: hasUnreadChat,
             ),
-            const WellScreenNavItem(
-              icon: Icons.shield_outlined,
-              label: 'Safety',
+            const DockItem(
+              icon: Icons.qr_code_scanner_rounded,
+              label: 'Pair',
             ),
-            const WellScreenNavItem(
+            const DockItem(
               icon: Icons.settings_outlined,
               label: 'Settings',
             ),
@@ -3071,13 +3080,14 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   List<Widget> _homeTab(Map<String, dynamic> data, bool connected) {
     return [
+      if (connected) ...[_monitoringStrip(), const SizedBox(height: 12)],
       _deviceStatusCard(data, connected),
       const SizedBox(height: 14),
       if (!connected) ...[_pairPromptBanner(), const SizedBox(height: 14)],
       _heroCard(),
       if (connected) ...[
         const SizedBox(height: 14),
-        _activeRulesRow(data),
+        _activeRulesBento(data),
         const SizedBox(height: 14),
         _emergencyAccessBanner(data),
       ],
@@ -3097,8 +3107,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         : 'Waiting for parent pairing';
 
     return _whiteCard(
-      radius: 16,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       child: Row(
         children: [
           Expanded(
@@ -3116,12 +3125,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     width: 38,
                     height: 38,
                     decoration: const BoxDecoration(
-                      color: Color(0xFFE0F2FE),
+                      color: AppColors.successBg,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.person_rounded,
-                      color: Color(0xFF0D9488),
+                      color: AppColors.success,
                       size: 22,
                     ),
                   ),
@@ -3159,42 +3168,18 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             ),
           ),
           const SizedBox(width: 8),
-          Material(
-            color: connected ? _emerald : _amber,
-            borderRadius: BorderRadius.circular(20),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: connected
-                  ? _showMonitoringSheet
-                  : () => _goToSafetyTab(scrollToPairing: true),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      connected ? 'Monitoring On' : 'Setup Needed',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            onTap: connected
+                ? _showMonitoringSheet
+                : () => _goToSafetyTab(scrollToPairing: true),
+            child: StatusPill(
+              label: !connected
+                  ? 'Setup Needed'
+                  : (_isOnline ? 'Synced' : 'Offline'),
+              tone: !connected
+                  ? StatusTone.warning
+                  : (_isOnline ? StatusTone.success : StatusTone.neutral),
             ),
           ),
         ],
@@ -3320,9 +3305,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       style: FilledButton.styleFrom(
                         backgroundColor: _brandIndigo,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                        shape: const StadiumBorder(),
                       ),
                       child: const Text(
                         'Got it',
@@ -3344,7 +3327,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: _amberTint,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFFDE68A)),
       ),
       child: Row(
@@ -3366,7 +3349,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 SizedBox(height: 2),
                 Text(
                   'Connect this phone to a parent account.',
-                  style: TextStyle(color: Color(0xFF334155), fontSize: 12),
+                  style: TextStyle(color: Color(0xFF374151), fontSize: 12),
                 ),
               ],
             ),
@@ -3378,9 +3361,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
               backgroundColor: _amber,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22),
-              ),
+              shape: const StadiumBorder(),
             ),
             child: const Text(
               'Pair Device',
@@ -3394,6 +3375,42 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   // --------------------- screen time + usage pattern ---------------------
 
+  /// "Device monitored by your guardian" strip. Tapping it opens the full
+  /// monitoring and privacy explanation.
+  Widget _monitoringStrip() {
+    return Material(
+      color: AppColors.primaryLight,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: _showMonitoringSheet,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: AppColors.primaryDark,
+                size: 18,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Device monitored by your guardian',
+                  style: TextStyle(
+                    color: AppColors.primaryDark,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _heroCard() {
     final state = _usageDashboardState;
 
@@ -3402,58 +3419,51 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       return _usageAccessPrompt(state);
     }
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_brandIndigo, _brandViolet],
+    if (state == null) {
+      return _whiteCard(
+        child: const SizedBox(
+          height: 150,
+          child: Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ),
         ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33254EDB),
-            blurRadius: 18,
-            offset: Offset(0, 8),
+      );
+    }
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _whiteCard(
+              padding: const EdgeInsets.all(14),
+              child: _heroScreenTime(state),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _whiteCard(
+              padding: const EdgeInsets.all(14),
+              child: _heroUsagePattern(state),
+            ),
           ),
         ],
       ),
-      child: state == null
-          ? const SizedBox(
-              height: 150,
-              child: Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              ),
-            )
-          : IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(child: _heroScreenTime(state)),
-                  Container(
-                    width: 1,
-                    margin: const EdgeInsets.symmetric(horizontal: 14),
-                    color: Colors.white24,
-                  ),
-                  Expanded(child: _heroUsagePattern(state)),
-                ],
-              ),
-            ),
     );
   }
 
   Widget _heroLabel(String text) {
-    return Text(
-      text,
-      textAlign: TextAlign.center,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: Colors.white70,
-        fontSize: 10,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.8,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        maxLines: 2,
+        style: const TextStyle(
+          color: _ink,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          height: 1.2,
+        ),
       ),
     );
   }
@@ -3467,24 +3477,23 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         : 'No daily limit set';
 
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _heroLabel('SCREEN TIME TODAY'),
-        const SizedBox(height: 14),
+        _heroLabel('Screen Time Today'),
+        const SizedBox(height: 12),
         SizedBox(
-          width: 96,
-          height: 96,
+          width: 104,
+          height: 104,
           child: Stack(
             alignment: Alignment.center,
             children: [
               SizedBox.expand(
                 child: CircularProgressIndicator(
                   value: progress,
-                  strokeWidth: 8,
+                  strokeWidth: 6,
                   strokeCap: StrokeCap.round,
-                  backgroundColor: Colors.white24,
+                  backgroundColor: _hairline,
                   valueColor: const AlwaysStoppedAnimation<Color>(
-                    Colors.white,
+                    AppColors.primary,
                   ),
                 ),
               ),
@@ -3498,8 +3507,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       child: Text(
                         state.viewModel.totalUsageLabel,
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
+                          color: _ink,
+                          fontSize: 22,
                           fontWeight: FontWeight.w800,
                           height: 1.1,
                           fontFeatures: _tabular,
@@ -3512,7 +3521,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       child: Text(
                         limitLabel,
                         style: const TextStyle(
-                          color: Color(0xD9FFFFFF),
+                          color: _slate,
                           fontSize: 11,
                           fontFeatures: _tabular,
                         ),
@@ -3533,81 +3542,89 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
     Color tint;
     IconData icon;
+    StatusTone tone;
     switch (status) {
       case 'Unhealthy':
-        tint = const Color(0xFFFCA5A5);
-        icon = Icons.warning_rounded;
+        tint = AppColors.danger;
+        icon = Icons.gpp_maybe_rounded;
+        tone = StatusTone.danger;
         break;
       case 'Warning':
-        tint = const Color(0xFFFBBF24);
-        icon = Icons.shield_moon_rounded;
+        tint = AppColors.warning;
+        icon = Icons.gpp_maybe_rounded;
+        tone = StatusTone.warning;
         break;
       case 'Healthy':
-        tint = const Color(0xFF34D399);
-        icon = Icons.shield_rounded;
+        tint = AppColors.success;
+        icon = Icons.verified_user_rounded;
+        tone = StatusTone.success;
         break;
       default:
-        tint = Colors.white70;
+        tint = AppColors.textDisabled;
         icon = Icons.shield_outlined;
+        tone = StatusTone.neutral;
     }
 
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        _heroLabel('USAGE PATTERN'),
-        const SizedBox(height: 14),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-          decoration: BoxDecoration(
-            color: const Color(0x24FFFFFF),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0x29FFFFFF)),
+        _heroLabel('Risk Level'),
+        const SizedBox(height: 12),
+        Icon(icon, color: tint, size: 58),
+        const SizedBox(height: 10),
+        StatusPill(label: status, tone: tone),
+        const SizedBox(height: 6),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            state.viewModel.unhealthyAppCountLabel,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: _slate,
+              fontSize: 11,
+              fontFeatures: _tabular,
+            ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        ),
+      ],
+    );
+  }
+
+  /// Active Rules card: the rule chips plus the two quick actions.
+  Widget _activeRulesBento(Map<String, dynamic> data) {
+    return _whiteCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _activeRulesRow(data),
+          const SizedBox(height: 14),
+          Row(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: tint.withValues(alpha: 0.35),
-                      blurRadius: 18,
-                    ),
-                  ],
-                ),
-                child: Icon(icon, color: tint, size: 34),
-              ),
-              const SizedBox(height: 6),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  status,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
+              Expanded(
+                child: AppPillButton(
+                  label: isSharingLocation ? 'Sharing...' : 'Share GPS',
+                  compact: true,
+                  style: AppPillStyle.soft,
+                  softTint: true,
+                  onPressed: isSharingLocation
+                      ? null
+                      : () => shareCurrentLocation(data),
                 ),
               ),
-              const SizedBox(height: 2),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  state.viewModel.unhealthyAppCountLabel,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                    fontFeatures: _tabular,
-                  ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: AppPillButton(
+                  label: 'Request Access',
+                  compact: true,
+                  style: AppPillStyle.soft,
+                  softTint: true,
+                  onPressed: openFamilyChat,
                 ),
               ),
             ],
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -3621,7 +3638,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(
-          'Active App Rules',
+          'Active Rules',
           actionLabel: 'View All',
           onAction: () => _showRulesSheet(data),
         ),
@@ -3736,7 +3753,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           name: limit.appName.trim().isEmpty ? limit.packageName : limit.appName,
           status: _durationLabel(Duration(minutes: limit.limitMinutes)),
           statusBackground: const Color(0xFFF1F5F9),
-          statusForeground: const Color(0xFF475569),
+          statusForeground: const Color(0xFF4B5563),
         ),
       for (final rule in monitored)
         _ruleChip(
@@ -3744,7 +3761,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           name: appTitle(rule),
           status: 'Monitored',
           statusBackground: const Color(0xFFDBEAFE),
-          statusForeground: const Color(0xFF1E40AF),
+          statusForeground: const Color(0xFF2563EB),
         ),
     ];
   }
@@ -3901,7 +3918,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                         Duration(minutes: limit.limitMinutes),
                                       ),
                                       background: const Color(0xFFF1F5F9),
-                                      foreground: const Color(0xFF475569),
+                                      foreground: const Color(0xFF4B5563),
                                       fontSize: 12,
                                     ),
                                   ],
@@ -3952,7 +3969,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: _emeraldTint,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: const Color(0xFFA7F3D0)),
             ),
             child: Row(
@@ -3979,7 +3996,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       Text(
                         'Restrictions are lifted until $hh:$mm.',
                         style: const TextStyle(
-                          color: Color(0xFF334155),
+                          color: Color(0xFF374151),
                           fontSize: 12,
                           fontFeatures: _tabular,
                         ),
@@ -4009,12 +4026,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [Color(0xFFFDBA9B), Color(0xFFFCA5A5)],
-            ),
-            borderRadius: BorderRadius.circular(18),
+            color: const Color(0xFFFDF6EC),
+            border: Border.all(color: const Color(0xFFFDE9C8)),
+            borderRadius: BorderRadius.circular(AppRadius.card),
           ),
           child: Row(
             children: [
@@ -4034,7 +4048,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Color(0xFF334155),
+                        color: Color(0xFF374151),
                         fontSize: 12,
                       ),
                     ),
@@ -4050,17 +4064,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                         parentId,
                       ),
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFDC2626),
+                  backgroundColor: AppColors.ink,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0x66DC2626),
+                  disabledBackgroundColor: const Color(0x66111827),
                   disabledForegroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 18,
                     vertical: 10,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22),
-                  ),
+                  shape: const StadiumBorder(),
                 ),
                 child: Text(
                   pending ? 'Pending' : 'Request',
@@ -4142,7 +4154,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               ),
                               labelStyle: TextStyle(
                                 color: selectedPreset == preset
-                                    ? const Color(0xFF1E40AF)
+                                    ? const Color(0xFF2563EB)
                                     : _ink,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -4197,9 +4209,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                             backgroundColor: const Color(0xFFDC2626),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                            shape: const StadiumBorder(),
                           ),
                           child: Text(
                             sending ? 'Sending...' : 'Send Request',
@@ -4560,13 +4570,13 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     if (connected) _ensureGeocodedAddress(data);
 
     return [
+      if (!connected) ...[
+        KeyedSubtree(key: _pairingSectionKey, child: _pairingCard()),
+        const SizedBox(height: 14),
+      ],
       _gpsCard(data, connected),
       const SizedBox(height: 14),
       _protectionChecklistCard(connected),
-      if (!connected) ...[
-        const SizedBox(height: 14),
-        KeyedSubtree(key: _pairingSectionKey, child: _pairingCard()),
-      ],
     ];
   }
 
@@ -4904,9 +4914,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   minimumSize: const Size(0, 34),
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
+                  shape: const StadiumBorder(),
                 ),
                 child: Text(
                   actionLabel,
@@ -5027,7 +5035,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           color: Colors.white,
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
             side: const BorderSide(color: _hairline),
           ),
           child: Column(

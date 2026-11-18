@@ -9,7 +9,7 @@ import '../widgets/app_usage_icon.dart';
 import '../services/pattern_detection_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
-import '../widgets/wellscreen_bottom_nav.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'all_apps_screen.dart';
 import 'device_pairing_screen.dart';
 import 'gps_map_screen.dart';
@@ -38,7 +38,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
-  static const Color pageBg = Color(0xFFF0F2F5);
+  static const Color pageBg = AppColors.background;
+  static const Color _amberFill = Color(0xFFFDF6EC);
+  static const Color _amberBorder = Color(0xFFFDE9C8);
   static const Color softGreen = AppColors.successBg;
   static const Color softBlue = AppColors.infoBg;
 
@@ -60,6 +62,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   // Guards the Approve/Deny buttons so a double-tap can't fire
   // respondToRequest() twice for the same request.
   bool _isRespondingToEmergencyAccess = false;
+  // Cached so the dock's unread dot does not resubscribe on every rebuild.
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _unreadStream;
   Timer? _presenceRefreshTimer;
   // Android periodically checks in while online; this is an inference,
   // not an instantaneous network-disconnect signal.
@@ -411,7 +415,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       key: _scaffoldKey,
       drawer: _menuDrawer(),
       backgroundColor: pageBg,
+      appBar: _topBar(),
       body: SafeArea(
+        top: false,
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: childProfilesStream(parentUser.uid),
           builder: (context, snapshot) {
@@ -446,10 +452,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             _primaryChildId = primaryChildDoc?.id;
 
             return ListView(
-              padding: const EdgeInsets.fromLTRB(14, 24, 14, 28),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
-                _topBar(),
-                const SizedBox(height: 14),
                 _deviceProfileCard(primaryChild),
                 if (_isMonitoringSecurityAlertActive(primaryChild)) ...[
                   const SizedBox(height: 14),
@@ -465,89 +469,74 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 const SizedBox(height: 14),
                 _screenTimeAndRiskSection(primaryChild),
                 const SizedBox(height: 14),
-                _gpsMapCard(primaryChild),
+                _weeklyTrendSection(),
                 const SizedBox(height: 14),
                 _topAppsSection(primaryChild),
-                const SizedBox(height: 14),
-                _weeklyTrendSection(),
               ],
             );
           },
         ),
       ),
-      bottomNavigationBar: WellScreenBottomNav(
+      bottomNavigationBar: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _unreadStream ??= ChatNotificationsService.instance
+            .unreadStream(parentUser.uid),
+        builder: (context, unread) => FloatingPillDock(
         currentIndex: currentIndex,
-        items: const [
-          WellScreenNavItem(icon: Icons.home_rounded, label: 'Home'),
-          WellScreenNavItem(icon: Icons.chat_bubble_rounded, label: 'Chat'),
-          WellScreenNavItem(
-            icon: Icons.phone_android_rounded,
-            label: 'Devices',
+        items: [
+          const DockItem(icon: Icons.home_outlined, label: 'Home'),
+          DockItem(
+            icon: Icons.chat_bubble_outline_rounded,
+            label: 'Chat',
+            showBadge:
+                (unread.data?.docs.any(
+                  (doc) => doc.data()['type'] == 'parent_child_chat',
+                ) ??
+                false),
           ),
-          WellScreenNavItem(icon: Icons.analytics_rounded, label: 'Reports'),
-          WellScreenNavItem(icon: Icons.settings_rounded, label: 'Settings'),
+          const DockItem(icon: Icons.link_rounded, label: 'Devices'),
+          const DockItem(icon: Icons.bar_chart_rounded, label: 'Reports'),
+          const DockItem(icon: Icons.settings_outlined, label: 'Settings'),
         ],
         onTap: handleBottomNavTap,
+        ),
       ),
     );
   }
 
-  Widget _topBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-      child: Row(
-        children: [
-          _roundIconButton(
-            tooltip: 'Menu',
-            onTap: () => _scaffoldKey.currentState?.openDrawer(),
-            icon: const Icon(Icons.menu_rounded, color: darkText, size: 22),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Text(
-              'WellScreen',
-              style: TextStyle(
-                color: purple,
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
+  PreferredSizeWidget _topBar() {
+    final photoUrl = FirebaseAuth.instance.currentUser?.photoURL;
+
+    return WellScreenAppBar.primary(
+      onMenu: () => _scaffoldKey.currentState?.openDrawer(),
+      onAvatar: () => handleBottomNavTap(4),
+      avatar: photoUrl == null || photoUrl.isEmpty
+          ? null
+          : Image.network(
+              photoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => const ColoredBox(
+                color: AppColors.primaryLight,
+                child: Icon(
+                  Icons.person_rounded,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
               ),
             ),
-          ),
-          _roundIconButton(
-            tooltip: 'Notifications',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const ParentNotificationsScreen(),
-                ),
-              );
-            },
-            icon: const ChatUnreadBell(color: darkText, size: 22),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _roundIconButton({
-    required Widget icon,
-    required String tooltip,
-    required VoidCallback onTap,
-  }) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: const BoxDecoration(
-        color: Color(0xFFE4E6EB),
-        shape: BoxShape.circle,
-      ),
-      child: IconButton(
-        tooltip: tooltip,
-        padding: EdgeInsets.zero,
-        onPressed: onTap,
-        icon: icon,
-      ),
+      actions: [
+        IconButton(
+          tooltip: 'Notifications',
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const ParentNotificationsScreen(),
+              ),
+            );
+          },
+          icon: const ChatUnreadBell(color: darkText, size: 24),
+        ),
+      ],
     );
   }
 
@@ -569,39 +558,42 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 'Menu',
                 style: TextStyle(
                   color: darkText,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 1.45,
-              children: [
-                _menuTile(
-                  Icons.chat_bubble_rounded,
-                  'Chat',
-                  () => closeAnd(openFamilyChat),
-                ),
-                _menuTile(
-                  Icons.notifications_rounded,
-                  'Notifications',
-                  () => closeAnd(() {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ParentNotificationsScreen(),
-                      ),
-                    );
-                  }),
-                ),
-              ],
+            BentoCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  _menuTile(
+                    Icons.chat_bubble_outline_rounded,
+                    'Chat',
+                    () => closeAnd(openFamilyChat),
+                  ),
+                  const Divider(indent: 56),
+                  _menuTile(
+                    Icons.notifications_none_rounded,
+                    'Notifications',
+                    () => closeAnd(() {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ParentNotificationsScreen(),
+                        ),
+                      );
+                    }),
+                  ),
+                  const Divider(indent: 56),
+                  _menuTile(
+                    Icons.tune_rounded,
+                    'App Rules',
+                    () => closeAnd(openRulesScreen),
+                  ),
+                ],
+              ),
             ),
-
           ],
         ),
       ),
@@ -609,33 +601,21 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _menuTile(IconData icon, String label, VoidCallback? onTap) {
-    return Opacity(
-      opacity: onTap == null ? 0.5 : 1,
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(icon, color: purple, size: 26),
-                const Spacer(),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: darkText,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
+    return ListTile(
+      enabled: onTap != null,
+      onTap: onTap,
+      leading: Icon(icon, color: darkText, size: 22),
+      title: Text(
+        label,
+        style: const TextStyle(
+          color: darkText,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
         ),
+      ),
+      trailing: const Icon(
+        Icons.chevron_right_rounded,
+        color: AppColors.textDisabled,
       ),
     );
   }
@@ -666,14 +646,16 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final name = (alert['deviceName'] ?? child['name'] ?? 'Child device')
         .toString();
     final seen = alert['lastSeenAt'];
-    return _whiteCard(
+    return BentoCard(
+      color: _amberFill,
+      borderColor: _amberBorder,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Icon(
             Icons.warning_amber_rounded,
             color: AppColors.warning,
-            size: 30,
+            size: 24,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -681,18 +663,23 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'No Recent Connection',
+                  'No recent connection',
                   style: TextStyle(
-                    fontWeight: FontWeight.w900,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
                     color: darkText,
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Text(
                   '$name has stopped reporting. The device may be offline, '
                   'powered off, or monitoring may be disabled or removed. '
                   'Last seen: ${formatDate(seen)}',
-                  style: const TextStyle(color: grayText, height: 1.35),
+                  style: const TextStyle(
+                    color: grayText,
+                    fontSize: 13,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -711,7 +698,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   /// Parent-side approve/deny surface for a pending Emergency Access
   /// request. Only rendered by build() while status == 'requested', so it
-  /// reads as a real "action needed" card rather than a permanent fixture.
+  /// reads as a real "action needed" banner rather than a permanent fixture.
   Widget _emergencyAccessRequestCard(
     String childProfileId,
     Map<String, dynamic> child,
@@ -722,49 +709,40 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         : '';
     final childName = (child['name'] ?? 'Your child').toString();
 
-    return _whiteCard(
+    return BentoCard(
+      color: _amberFill,
+      borderColor: _amberBorder,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: AppColors.dangerBg,
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.lock_open_rounded,
-                  color: AppColors.danger,
-                  size: 29,
-                ),
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: AppColors.warning,
+                size: 24,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Emergency Access Requested',
-                      style: TextStyle(
-                        color: darkText,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
                     Text(
-                      reason.isEmpty
-                          ? '$childName wants restrictions temporarily lifted.'
-                          : '$childName: "$reason"',
+                      '$childName requested emergency access',
                       style: const TextStyle(
-                        color: grayText,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                        color: darkText,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
                       ),
                     ),
+                    if (reason.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        '"$reason"',
+                        style: const TextStyle(color: grayText, fontSize: 13),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -774,41 +752,29 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
-                  onPressed: _isRespondingToEmergencyAccess
-                      ? null
-                      : () => _respondToEmergencyAccess(
-                          childProfileId,
-                          approve: false,
-                        ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.danger,
-                    side: const BorderSide(color: AppColors.danger),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: const Text('Deny'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
+                child: AppPillButton(
+                  label: 'Approve (30 min)',
+                  compact: true,
                   onPressed: _isRespondingToEmergencyAccess
                       ? null
                       : () => _respondToEmergencyAccess(
                           childProfileId,
                           approve: true,
                         ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: purple,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: const Text('Approve (30 min)'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: AppPillButton(
+                  label: 'Deny',
+                  compact: true,
+                  style: AppPillStyle.soft,
+                  onPressed: _isRespondingToEmergencyAccess
+                      ? null
+                      : () => _respondToEmergencyAccess(
+                          childProfileId,
+                          approve: false,
+                        ),
                 ),
               ),
             ],
@@ -848,119 +814,32 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         .toString();
     final connected = child != null && isChildConnected(child);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 430;
-
-        return _whiteCard(
-          padding: const EdgeInsets.all(18),
-          child: compact
-              ? Column(
-                  children: [
-                    Row(
-                      children: [
-                        _profileAvatar(connected),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: _profileInfo(
-                            childName: childName,
-                            childEmail: childEmail,
-                            connected: connected,
-                            presenceText: _childPresenceLabel(
-                              child,
-                              connected,
-                              childEmail,
-                            ),
-                            presenceColor: _childPresenceColor(
-                              child,
-                              connected,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _smallPurpleButton(
-                            label: 'View Map',
-                            onTap: () => openGpsMap(child),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _smallPurpleButton(
-                            label: 'View Rules',
-                            onTap: openRulesScreen,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    // Same width/height as View Map, centered directly below.
-                    LayoutBuilder(
-                      builder: (context, available) => Center(
-                        child: SizedBox(
-                          width: (available.maxWidth - 10) / 2,
-                          child: _smallPurpleButton(
-                            label: 'Chatbox',
-                            onTap: openFamilyChat,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : Row(
-                  children: [
-                    _profileAvatar(connected),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _profileInfo(
-                        childName: childName,
-                        childEmail: childEmail,
-                        connected: connected,
-                        presenceText: _childPresenceLabel(
-                          child,
-                          connected,
-                          childEmail,
-                        ),
-                        presenceColor: _childPresenceColor(child, connected),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      children: [
-                        SizedBox(
-                          width: 130,
-                          child: _smallPurpleButton(
-                            label: 'View Map',
-                            onTap: () => openGpsMap(child),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: 130,
-                          child: _smallPurpleButton(
-                            label: 'View Rules',
-                            onTap: openRulesScreen,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: 130,
-                          child: _smallPurpleButton(
-                            label: 'Chatbox',
-                            onTap: openFamilyChat,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-        );
-      },
+    return BentoCard(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          _profileAvatar(connected),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _profileInfo(
+              childName: childName,
+              childEmail: childEmail,
+              connected: connected,
+              presenceText: _childPresenceLabel(child, connected, childEmail),
+              presenceColor: _childPresenceColor(child, connected),
+            ),
+          ),
+          const SizedBox(width: 10),
+          AppPillButton(
+            label: connected ? 'App Rules' : 'Pair',
+            compact: true,
+            style: AppPillStyle.brand,
+            onPressed: connected
+                ? openRulesScreen
+                : () => handleBottomNavTap(2),
+          ),
+        ],
+      ),
     );
   }
 
@@ -981,29 +860,37 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   ) {
     if (!paired) return 'Waiting for pairing';
     final online = _childRecentlyOnline(child);
-    if (online == null) return 'Status unknown - awaiting device check-in';
-    if (online) return 'Online - $childEmail';
+    if (online == null) return 'Awaiting device check-in';
     final seen = child?['lastSeenAt'];
-    return seen is Timestamp
-        ? 'Offline / not recently seen - last check-in: ${formatDate(seen)}'
-        : 'Offline / not recently seen';
+    final when = seen is Timestamp ? _relativeTime(seen.toDate()) : '';
+    if (online) return when.isEmpty ? 'Online' : 'Online • $when';
+    return when.isEmpty ? 'Offline' : 'Offline • $when';
+  }
+
+  /// "2m ago" style label for the device card and the location footer.
+  String _relativeTime(DateTime time) {
+    final elapsed = DateTime.now().difference(time);
+    if (elapsed.isNegative || elapsed.inMinutes < 1) return 'just now';
+    if (elapsed.inMinutes < 60) return '${elapsed.inMinutes}m ago';
+    if (elapsed.inHours < 24) return '${elapsed.inHours}h ago';
+    return '${elapsed.inDays}d ago';
   }
 
   Color _childPresenceColor(Map<String, dynamic>? child, bool paired) {
-    if (!paired) return Colors.orange;
+    if (!paired) return AppColors.warning;
     final online = _childRecentlyOnline(child);
     if (online == null) return AppColors.warning;
-    return online ? teal : AppColors.danger;
+    return online ? AppColors.success : AppColors.danger;
   }
 
   Widget _profileAvatar(bool connected) {
     return CircleAvatar(
-      radius: 40,
+      radius: 24,
       backgroundColor: connected ? softGreen : softBlue,
       child: Icon(
         connected ? Icons.person_rounded : Icons.person_add_alt_rounded,
-        color: connected ? teal : purple,
-        size: 45,
+        color: connected ? AppColors.success : purple,
+        size: 26,
       ),
     );
   }
@@ -1020,35 +907,32 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       children: [
         Text(
           connected ? "$childName's Phone" : childName,
-          maxLines: 2,
+          maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: darkText,
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 3),
         Row(
           children: [
             Container(
-              width: 11,
-              height: 11,
+              width: 8,
+              height: 8,
               decoration: BoxDecoration(
                 color: presenceColor,
-                borderRadius: BorderRadius.circular(20),
+                shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 7),
+            const SizedBox(width: 6),
             Expanded(
               child: Text(
                 presenceText,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: grayText,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: const TextStyle(color: grayText, fontSize: 13),
               ),
             ),
           ],
@@ -1057,40 +941,27 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
-  Widget _smallPurpleButton({
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return SizedBox(
-      height: 40,
-      child: FilledButton(
-        onPressed: onTap,
-        style: FilledButton.styleFrom(
-          backgroundColor: purple,
-          padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
-          ),
-        ),
+  Widget _screenTimeAndRiskSection(Map<String, dynamic>? child) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: _screenTimeCard(child)),
+          const SizedBox(width: 12),
+          Expanded(child: _riskCard(child)),
+        ],
       ),
     );
   }
 
-  Widget _screenTimeAndRiskSection(Map<String, dynamic>? child) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: _screenTimeCard(child)),
-        const SizedBox(width: 14),
-        Expanded(child: _riskCard(child)),
-      ],
+  Widget _cardTitle(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: darkText,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+      ),
     );
   }
 
@@ -1111,91 +982,65 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         : 0.0;
     final hours = totalDuration.inHours;
     final minutes = totalDuration.inMinutes.remainder(60);
+    final limitHours = warningLimit.inHours;
+    final limitMinutes = warningLimit.inMinutes
+        .remainder(60)
+        .toString()
+        .padLeft(2, '0');
 
-    return _whiteCard(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 170),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Screen Time\nToday',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: darkText,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                height: 1.25,
-              ),
-            ),
-            const SizedBox(height: 18),
-            hasReport
-                ? FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '$hours',
-                            style: const TextStyle(
-                              fontSize: 43,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const TextSpan(
-                            text: 'h ',
-                            style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          TextSpan(
-                            text: '$minutes',
-                            style: const TextStyle(
-                              fontSize: 43,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const TextSpan(
-                            text: 'm',
-                            style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : const FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      'No data yet',
-                      style: TextStyle(
-                        color: grayText,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
+    return BentoCard(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _cardTitle('Screen Time'),
+          const SizedBox(height: 12),
+          Center(
+            child: SizedBox(
+              width: 112,
+              height: 112,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 112,
+                    height: 112,
+                    child: CircularProgressIndicator(
+                      value: progress,
+                      strokeWidth: 6,
+                      strokeCap: StrokeCap.round,
+                      color: purple,
+                      backgroundColor: AppColors.border,
                     ),
                   ),
-            const SizedBox(height: 8),
-            const Text(
-              'Warning threshold: 3h',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: grayText, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 7,
-                color: purple,
-                backgroundColor: AppColors.track,
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        hasReport ? '${hours}h ${minutes}m' : 'No data',
+                        style: TextStyle(
+                          color: hasReport ? darkText : grayText,
+                          fontSize: hasReport ? 20 : 15,
+                          fontWeight: FontWeight.w800,
+                          fontFeatures: kTabularFigures,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'of ${limitHours}h ${limitMinutes}m',
+                        style: const TextStyle(
+                          color: grayText,
+                          fontSize: 12,
+                          fontFeatures: kTabularFigures,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1203,8 +1048,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   /// Real pattern status synced from the child device. There is no 0-100
   /// numeric "risk score" anywhere in the real detection logic
   /// ([PatternDetectionService] only produces healthy/warning/unhealthy),
-  /// so this intentionally does not fabricate one - the previous "32/100"
-  /// here was a hardcoded placeholder, not a real computed score.
+  /// so this intentionally does not fabricate one.
   Widget _riskCard(Map<String, dynamic>? child) {
     final hasReport = hasSyncedUsageReport(child);
     final statusRaw = usagePatternStatus(child);
@@ -1213,147 +1057,52 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     Color statusColor;
     String statusLabel;
     IconData statusIcon;
+    StatusTone tone;
 
     if (!hasReport) {
-      statusColor = grayText;
+      statusColor = AppColors.textDisabled;
       statusLabel = 'No Data';
-      statusIcon = Icons.hourglass_empty_rounded;
+      statusIcon = Icons.shield_outlined;
+      tone = StatusTone.neutral;
     } else if (statusRaw == 'unhealthy') {
       statusColor = AppColors.danger;
       statusLabel = 'Unhealthy';
-      statusIcon = Icons.warning_rounded;
+      statusIcon = Icons.gpp_maybe_rounded;
+      tone = StatusTone.danger;
     } else if (statusRaw == 'warning') {
       statusColor = AppColors.warning;
       statusLabel = 'Warning';
-      statusIcon = Icons.shield_moon_rounded;
+      statusIcon = Icons.gpp_maybe_rounded;
+      tone = StatusTone.warning;
     } else {
-      statusColor = teal;
+      statusColor = AppColors.success;
       statusLabel = 'Healthy';
-      statusIcon = Icons.shield_rounded;
+      statusIcon = Icons.verified_user_rounded;
+      tone = StatusTone.success;
     }
 
-    return _whiteCard(
-      // Keep the existing visual height as a minimum, but let the card grow
-      // when a status label wraps or Android uses larger text scaling.
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 170),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Usage Pattern',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: darkText,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            // A fixed minimum gap works even with unbounded vertical space;
-            // Spacer inside the former fixed-height column caused overflow.
-            const SizedBox(height: 18),
-            Icon(statusIcon, color: statusColor, size: 62),
-            const SizedBox(height: 6),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                statusLabel,
-                style: TextStyle(
-                  color: statusColor,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-            const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                hasReport
-                    ? '$unhealthyCount app${unhealthyCount == 1 ? '' : 's'} flagged'
-                    : 'Awaiting sync',
-                style: const TextStyle(
-                  color: darkText,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _gpsMapCard(Map<String, dynamic>? child) {
-    final location = locationText(child);
-    final updated = locationUpdatedText(child);
-    final hasLocation = hasSharedLocation(child);
-    final latitude = locationLatitude(child);
-    final longitude = locationLongitude(child);
-
-    return _whiteCard(
+    return BentoCard(
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 28,
-                backgroundColor: softGreen,
-                child: Icon(Icons.location_on_rounded, color: teal, size: 34),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'GPS Location Map',
-                      style: TextStyle(
-                        color: darkText,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 19,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      hasLocation ? location : 'Waiting for child GPS update',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: grayText,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Updated: $updated',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: grayText, fontSize: 12),
-                    ),
-                  ],
+          _cardTitle('Safety Status'),
+          const SizedBox(height: 12),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(statusIcon, color: statusColor, size: 60),
+                const SizedBox(height: 10),
+                StatusPill(label: statusLabel, tone: tone),
+                const SizedBox(height: 6),
+                Text(
+                  hasReport
+                      ? '$unhealthyCount app${unhealthyCount == 1 ? '' : 's'} flagged'
+                      : 'Awaiting sync',
+                  style: const TextStyle(color: grayText, fontSize: 12),
                 ),
-              ),
-              IconButton(
-                onPressed: () => openGpsMap(child),
-                icon: const Icon(
-                  Icons.open_in_full_rounded,
-                  color: purple,
-                  size: 28,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          InkWell(
-            borderRadius: BorderRadius.circular(22),
-            onTap: () => openGpsMap(child),
-            child: GpsMapPreview(
-              latitude: latitude,
-              longitude: longitude,
-              hasLocation: hasLocation,
+              ],
             ),
           ),
         ],
@@ -1361,30 +1110,54 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  /// Location footer shown under Top Apps: pin, place name and a
+  /// "View Map" link. The full map lives on the Live Location screen.
+  Widget _locationFooter(Map<String, dynamic>? child) {
+    final hasLocation = hasSharedLocation(child);
+    final location = locationText(child);
+
+    return Row(
+      children: [
+        const Icon(Icons.location_on_outlined, color: grayText, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            hasLocation
+                ? 'Location • $location'
+                : 'Location • waiting for GPS update',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: darkText, fontSize: 13),
+          ),
+        ),
+        TextButton(
+          onPressed: () => openGpsMap(child),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: const Size(0, 36),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text('View Map'),
+        ),
+      ],
+    );
+  }
+
   /// Real per-app usage synced from the child device (see
   /// child_home_screen.dart's syncUsageReport, which writes
   /// child_profiles/{id}.latestUsageReport.topApps from
-  /// UsageTrackingService.getTodayUsage()). Previously this rendered four
-  /// hardcoded rows (YouTube/TikTok/Facebook/Mobile Game) with no data
-  /// source at all.
+  /// UsageTrackingService.getTodayUsage()).
   Widget _topAppsSection(Map<String, dynamic>? child) {
     final apps = usageTopApps(child).take(4).toList();
 
-    return _whiteCard(
+    return BentoCard(
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Expanded(
-                child: Text(
-                  'Top Apps Today',
-                  style: TextStyle(
-                    color: darkText,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
+              Expanded(child: _cardTitle('Top Apps')),
               TextButton(
                 onPressed: () {
                   Navigator.push(
@@ -1395,25 +1168,31 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     ),
                   );
                 },
-                child: const Text(
-                  'View All',
-                  style: TextStyle(color: purple, fontWeight: FontWeight.w900),
-                ),
+                child: const Text('See All'),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          if (apps.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Text(
-                'No usage data synced yet. Ask your child to open WellScreen '
-                'and tap "Sync Usage".',
-                style: TextStyle(color: grayText, fontWeight: FontWeight.w600),
-              ),
-            )
-          else
-            ..._buildTopAppRows(apps, child),
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (apps.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Text(
+                      'No usage data synced yet. Ask your child to open '
+                      'WellScreen so today\'s usage can sync.',
+                      style: TextStyle(color: grayText, fontSize: 13),
+                    ),
+                  )
+                else
+                  ..._buildTopAppRows(apps, child),
+                const Divider(height: 18),
+              ],
+            ),
+          ),
+          _locationFooter(child),
         ],
       ),
     );
@@ -1479,125 +1258,114 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     required double value,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 17),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           AppUsageIcon(
             encoded: iconBase64,
             fallback: icon,
             fallbackColor: iconColor,
+            size: 34,
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  appName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: darkText,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        appName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: darkText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      time,
+                      style: const TextStyle(
+                        color: grayText,
+                        fontSize: 13,
+                        fontFeatures: kTabularFigures,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                   child: LinearProgressIndicator(
                     value: value,
-                    minHeight: 5,
+                    minHeight: 4,
                     color: purple,
-                    backgroundColor: AppColors.track,
+                    backgroundColor: AppColors.border,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 52,
-            child: Text(
-              time,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: darkText,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  /// Was a hardcoded bar chart (Mon-Sun, made-up hour values) with no data
-  /// source. Only today's report is currently synced/stored (see
-  /// syncUsageReport in child_home_screen.dart) - there is no per-day
-  /// history collection yet, so a real weekly trend can't be computed
-  /// honestly. Showing a placeholder instead of fabricated numbers until
-  /// daily history storage is built.
+  /// Only today's report is synced and stored (see syncUsageReport in
+  /// child_home_screen.dart) - there is no per-day history collection, so
+  /// a real weekly chart can't be drawn honestly. Shows the card in the new
+  /// style with an empty state instead of made-up bars.
   Widget _weeklyTrendSection() {
-    return _whiteCard(
+    const warningLimit = PatternDetectionService.warningTotalUsageLimit;
+
+    return BentoCard(
+      padding: const EdgeInsets.all(14),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Expanded(
-                child: Text(
-                  'Weekly Trend',
-                  style: TextStyle(
-                    color: darkText,
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+              Expanded(child: _cardTitle('Weekly Screen Time')),
+              Text(
+                '${warningLimit.inHours}h Limit',
+                style: const TextStyle(color: grayText, fontSize: 12),
               ),
             ],
           ),
           const SizedBox(height: 14),
-          const Icon(Icons.bar_chart_rounded, color: grayText, size: 42),
-          const SizedBox(height: 10),
-          const Text(
-            'Weekly trends aren\'t available yet',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: darkText, fontWeight: FontWeight.w800),
+          const Center(
+            child: Icon(
+              Icons.bar_chart_rounded,
+              color: AppColors.textDisabled,
+              size: 40,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Center(
+            child: Text(
+              'Weekly trends aren\'t available yet',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: darkText,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'This needs several days of synced usage reports stored per '
-            'day. Today\'s report only.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: grayText, fontSize: 12),
+          const Center(
+            child: Text(
+              'Only today\'s report is stored so far.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: grayText, fontSize: 12),
+            ),
           ),
         ],
       ),
-    );
-  }
-
-  // Delegates to the shared AppCard (theme/app_theme.dart) instead of a
-  // screen-local Container+BoxDecoration - this was the one competing card
-  // style AppCard's doc comment calls out by name. Kept as a thin wrapper
-  // (same name/signature) so none of the ~15 call sites above needed to
-  // change.
-  Widget _whiteCard({
-    required Widget child,
-    EdgeInsets padding = const EdgeInsets.all(18),
-  }) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 6,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: child,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/admin_users_api_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 
 enum _UserFilter { all, guardians, children, admins, deactivated }
 
@@ -540,13 +541,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final visible = _visibleUsers;
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text(
-          'Manage Users',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: darkText,
+      appBar: WellScreenAppBar.subPage(
+        title: 'Manage Users',
         actions: [
           IconButton(
             tooltip: 'Refresh',

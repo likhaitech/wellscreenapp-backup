@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
@@ -381,6 +382,76 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
     }
   }
 
+  /// Six rounded digit boxes drawn over one hidden text field, so the
+  /// existing single [_codeController] (and SMS autofill) keeps working.
+  Widget _otpBoxes() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _codeController,
+          builder: (context, value, _) {
+            final code = value.text;
+
+            return Row(
+              children: [
+                for (var i = 0; i < 6; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      height: 54,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: i == code.length
+                              ? AppColors.primary
+                              : AppColors.border,
+                          width: i == code.length ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Text(
+                        i < code.length ? code[i] : '',
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          fontFeatures: kTabularFigures,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
+        ),
+        Positioned.fill(
+          child: Opacity(
+            opacity: 0,
+            child: TextField(
+              controller: _codeController,
+              enabled: !_busy,
+              maxLength: 6,
+              showCursor: false,
+              enableInteractiveSelection: false,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              autofillHints: const [AutofillHints.oneTimeCode],
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                counterText: '',
+                labelText: '6-digit verification code',
+              ),
+              onSubmitted: (_) => _confirmCode(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final waitingForCode = _verificationId != null && !_completed;
@@ -388,145 +459,138 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Mobile Number Verification'),
-        backgroundColor: AppColors.background,
-        foregroundColor: AppColors.textPrimary,
-      ),
+      appBar: const WellScreenAppBar.subPage(title: 'Verify Mobile Number'),
       body: SafeArea(
+        top: false,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-              ),
+            BentoCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        hasVerifiedPhone
-                            ? Icons.verified_rounded
-                            : Icons.phonelink_lock_rounded,
-                        color: hasVerifiedPhone
-                            ? const Color(0xFF177245)
-                            : AppColors.primary,
-                        size: 30,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
+                      const Expanded(
                         child: Text(
-                          hasVerifiedPhone
-                              ? 'Verified phone'
-                              : 'Phone not verified',
-                          style: const TextStyle(
+                          'Mobile number',
+                          style: TextStyle(
                             color: AppColors.textPrimary,
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
+                      StatusPill(
+                        label: hasVerifiedPhone ? 'Verified' : 'Not verified',
+                        tone: hasVerifiedPhone
+                            ? StatusTone.success
+                            : StatusTone.neutral,
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 6),
                   Text(
                     hasVerifiedPhone
                         ? _verifiedPhone!
-                        : 'Add a mobile number and verify it with the SMS code sent by Firebase.',
-                    style: const TextStyle(color: AppColors.textSecondary),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'A verified phone does not automatically enable SMS alerts. '
-                    'Parental alerts will require separate SMS consent and backend setup.',
-                    style: TextStyle(
-                      fontSize: 12,
+                        : 'Add a Philippine mobile number and verify it with '
+                              'the SMS code.',
+                    style: const TextStyle(
                       color: AppColors.textSecondary,
+                      fontSize: 13,
                     ),
                   ),
+                  if (!_loadingAccount && _accountUid != null) ...[
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _phoneController,
+                      enabled: !_busy && !waitingForCode && !_completed,
+                      keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.telephoneNumber],
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontFeatures: kTabularFigures,
+                      ),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        fillColor: AppColors.surfaceMuted,
+                        labelText: 'Philippine mobile number',
+                        floatingLabelBehavior: FloatingLabelBehavior.never,
+                        hintText: '+639171234567',
+                        prefixIcon: const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 0, 8, 0),
+                          child: Text(
+                            '\u{1F1F5}\u{1F1ED}',
+                            style: TextStyle(fontSize: 20),
+                          ),
+                        ),
+                        prefixIconConstraints: const BoxConstraints(),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          borderSide: BorderSide.none,
+                        ),
+                        disabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             if (_loadingAccount)
-              const Center(child: CircularProgressIndicator())
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(color: AppColors.primary),
+                ),
+              )
             else if (_accountUid == null)
               const Text('Please sign in before registering a mobile number.')
             else ...[
-              TextField(
-                controller: _phoneController,
-                enabled: !_busy && !waitingForCode && !_completed,
-                keyboardType: TextInputType.phone,
-                textInputAction: TextInputAction.done,
-                autofillHints: const [AutofillHints.telephoneNumber],
-                decoration: InputDecoration(
-                  labelText: 'Philippine mobile number',
-                  hintText: '+639171234567',
-                  prefixIcon: const Icon(Icons.phone_android_rounded),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
               if (!waitingForCode && !_completed)
-                SizedBox(
-                  height: 50,
-                  child: FilledButton.icon(
-                    onPressed: _busy ? null : _sendCode,
-                    icon: const Icon(Icons.sms_rounded),
-                    label: Text(
-                      _sending
-                          ? 'Requesting code...'
-                          : 'Send verification code',
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                    ),
-                  ),
+                AppPillButton(
+                  label: _sending
+                      ? 'Requesting code...'
+                      : 'Send verification code',
+                  style: AppPillStyle.brand,
+                  expand: true,
+                  onPressed: _busy ? null : _sendCode,
                 ),
               if (waitingForCode) ...[
-                const SizedBox(height: 8),
-                Text('Code sent to ${_requestedPhone ?? ''}'),
+                Text(
+                  'Enter the 6-digit code sent to ${_requestedPhone ?? ''}',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _codeController,
-                  enabled: !_busy,
-                  maxLength: 6,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.done,
-                  autofillHints: const [AutofillHints.oneTimeCode],
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(
-                    labelText: '6-digit verification code',
-                    prefixIcon: const Icon(Icons.password_rounded),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  onSubmitted: (_) => _confirmCode(),
+                _otpBoxes(),
+                const SizedBox(height: 16),
+                AppPillButton(
+                  label: _applyingCredential
+                      ? 'Verifying...'
+                      : 'Verify & Continue',
+                  style: AppPillStyle.brand,
+                  expand: true,
+                  onPressed: _busy ? null : _confirmCode,
                 ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 50,
-                  child: FilledButton(
-                    onPressed: _busy ? null : _confirmCode,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                    ),
-                    child: Text(
-                      _applyingCredential
-                          ? 'Verifying...'
-                          : 'Verify and link phone',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Wrap(
+                  alignment: WrapAlignment.center,
                   spacing: 8,
                   children: [
                     TextButton(
@@ -540,35 +604,69 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                   ],
                 ),
               ],
-              if (_completed) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 48,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Done'),
-                  ),
+              if (_completed)
+                AppPillButton(
+                  label: 'Done',
+                  expand: true,
+                  onPressed: () => Navigator.pop(context, true),
                 ),
-              ],
               if (_message != null) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   child: Text(
                     _message!,
-                    style: const TextStyle(color: AppColors.textPrimary),
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
-              const Text(
-                'This verification requires internet access and an active number '
-                'capable of receiving Firebase SMS. Codes may incur provider charges.',
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              const SizedBox(height: 14),
+              const BentoCard(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.sms_outlined,
+                      color: AppColors.textSecondary,
+                      size: 22,
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'SMS Backup Alerts',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'A verified phone does not turn on SMS alerts by '
+                            'itself. Alerts need separate SMS consent. '
+                            'Verification needs internet and a number that '
+                            'can receive SMS; provider charges may apply.',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],
