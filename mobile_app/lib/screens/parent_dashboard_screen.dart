@@ -259,9 +259,24 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return Duration.zero;
   }
 
+  /// The stored status comes from the child app's last full sync, but the
+  /// background job keeps updating the total while the app is closed. Use
+  /// whichever is worse, so 6 hours of use can never show as "Healthy".
   String usagePatternStatus(Map<String, dynamic>? data) {
     final report = latestUsageReport(data);
-    return (report?['patternStatus'] ?? '').toString();
+    final stored = (report?['patternStatus'] ?? '').toString();
+    final total = usageTotalDuration(data);
+
+    String fromTotal = 'healthy';
+    if (total >= PatternDetectionService.unhealthyTotalUsageLimit) {
+      fromTotal = 'unhealthy';
+    } else if (total >= PatternDetectionService.warningTotalUsageLimit) {
+      fromTotal = 'warning';
+    }
+
+    const rank = {'healthy': 0, 'warning': 1, 'unhealthy': 2};
+    if (!rank.containsKey(stored)) return fromTotal;
+    return rank[fromTotal]! > rank[stored]! ? fromTotal : stored;
   }
 
   int usageUnhealthyAppCount(Map<String, dynamic>? data) {
