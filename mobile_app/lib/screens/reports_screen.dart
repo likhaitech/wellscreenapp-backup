@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../widgets/wellscreen_ui.dart';
 
+import '../services/block_reason_label.dart';
 import '../services/location_geocoding_service.dart';
 import '../services/report_export_service.dart';
 import '../theme/app_theme.dart';
@@ -891,9 +892,12 @@ class ReportsScreen extends StatelessWidget {
           isSuccess: (entry) =>
               entry['outcome'] == 'blocked' ||
               entry['outcome'] == 'emergency_access_bypass',
-          entryLabel: (entry) =>
-              '${_friendlyAppName(entry['packageName'] as String?)} · '
-              '${entry['outcome'] ?? 'unknown'}',
+          entryLabel: (entry) {
+            final reason = blockReasonLabel(entry);
+            return '${_friendlyAppName(entry['packageName'] as String?)} · '
+                '${entry['outcome'] ?? 'unknown'}'
+                '${reason == null ? '' : ' · $reason'}';
+          },
         ),
       ),
       (
