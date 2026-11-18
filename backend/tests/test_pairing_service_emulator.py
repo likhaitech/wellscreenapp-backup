@@ -434,3 +434,22 @@ def test_child_cannot_unpair_own_device(pairing_context):
             parent_uid=child_uid,
             child_profile_id=generated["childProfileId"],
         )
+
+def test_global_wrong_code_limit_spans_accounts(pairing_context, monkeypatch):
+    """F13: wrong codes from MANY child accounts add up to one global limit."""
+    context = pairing_context
+    global_ref = context["track"](
+        "pairing_attempt_limits", pairing.GLOBAL_FAILURES_DOC_ID
+    )
+    global_ref.delete()
+    monkeypatch.setattr(pairing, "MAX_GLOBAL_FAILED_REDEMPTIONS", 3)
+
+    for _ in range(3):
+        child_uid = context["create_user"]("child")
+        with pytest.raises(pairing.PairingError, match="not found"):
+            pairing.redeem_pairing_code(child_uid=child_uid, code="000000")
+
+    # A brand-new account is still refused: the limit is global.
+    fresh_child = context["create_user"]("child")
+    with pytest.raises(pairing.PairingRateLimitError):
+        pairing.redeem_pairing_code(child_uid=fresh_child, code="000000")
