@@ -1276,6 +1276,24 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         // Best-effort - see above. The rule-based status still syncs.
       }
 
+      // The guardian's App Rules screen lists the apps installed on THIS
+      // phone (not the guardian's). Best-effort: an empty list is simply
+      // not sent, so a platform-channel hiccup never erases the last one.
+      List<Map<String, String>> installedApps = const [];
+      try {
+        installedApps = (await _androidAppService.getInstalledApps())
+            .where((app) => app.packageName.isNotEmpty)
+            .map(
+              (app) => {
+                'packageName': app.packageName,
+                'appName': app.appName.isEmpty ? app.packageName : app.appName,
+              },
+            )
+            .toList();
+      } catch (_) {
+        // Keep the previously synced list.
+      }
+
       // _attemptFirestoreSync handles offline detection, the write timeout
       // (cloud_firestore's set() hangs forever offline instead of throwing
       // - firebase/flutterfire#17643), local queuing for automatic retry on
@@ -1284,6 +1302,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         childProfileId: childProfileId,
         payload: {
           'latestUsageReport': usageReportData,
+          if (installedApps.isNotEmpty) 'installedApps': installedApps,
           if (smsAlertLog.isNotEmpty) 'smsAlertLog': smsAlertLog,
           if (restrictionLog.isNotEmpty) 'restrictionLog': restrictionLog,
           if (syncLog.isNotEmpty) 'syncLog': syncLog,

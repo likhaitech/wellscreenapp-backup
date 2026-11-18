@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 
 import '../../models/app_rule.dart';
 import '../../models/installed_app_info.dart';
@@ -33,6 +35,10 @@ class _RulesScreenState extends State<RulesScreen> {
   String _searchText = '';
 
   List<InstalledAppInfo> _installedApps = [];
+
+  /// True when no paired child has synced its app list yet, so the list
+  /// shown is this phone's own apps.
+  bool _usingLocalAppList = false;
   Map<String, AppRule> _rulesByPackage = {};
 
   @override
@@ -291,6 +297,64 @@ class _RulesScreenState extends State<RulesScreen> {
   /// reached and this screen was stuck on an infinite spinner with no way
   /// out except leaving it. Now surfaces a real, retryable error state
   /// instead.
+  /// Apps to show for rule editing: the apps installed on the guardian's
+  /// paired children's phones (synced as `installedApps`, plus anything
+  /// they used today from `latestUsageReport.allApps`), not the apps on
+  /// this guardian's own phone. Falls back to this phone's list only when
+  /// no child has synced yet, and says so in [_usingLocalAppList].
+  Future<List<InstalledAppInfo>> _loadChildApps() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final byPackage = <String, InstalledAppInfo>{};
+
+    if (uid != null) {
+      final children = await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .where('parentId', isEqualTo: uid)
+          .get();
+
+      void add(dynamic raw, String nameKey) {
+        if (raw is! Map) return;
+        final package = (raw['packageName'] ?? '').toString().trim();
+        if (package.isEmpty || byPackage.containsKey(package)) return;
+        final name = (raw[nameKey] ?? '').toString().trim();
+        byPackage[package] = InstalledAppInfo(
+          appName: name.isEmpty ? package : name,
+          packageName: package,
+        );
+      }
+
+      for (final child in children.docs) {
+        final data = child.data();
+        if (data['pairingStatus'] == 'unpaired') continue;
+        final installed = data['installedApps'];
+        if (installed is List) {
+          for (final app in installed) {
+            add(app, 'appName');
+          }
+        }
+        final report = data['latestUsageReport'];
+        final used = report is Map ? report['allApps'] : null;
+        if (used is List) {
+          for (final app in used) {
+            add(app, 'displayName');
+          }
+        }
+      }
+    }
+
+    if (byPackage.isEmpty) {
+      _usingLocalAppList = true;
+      return _androidAppService.getInstalledApps();
+    }
+
+    _usingLocalAppList = false;
+    final apps = byPackage.values.toList()
+      ..sort(
+        (a, b) => a.appName.toLowerCase().compareTo(b.appName.toLowerCase()),
+      );
+    return apps;
+  }
+
   Future<void> _loadAppsAndRules() async {
     setState(() {
       _loading = true;
@@ -298,7 +362,7 @@ class _RulesScreenState extends State<RulesScreen> {
     });
 
     try {
-      final apps = await _androidAppService.getInstalledApps();
+      final apps = await _loadChildApps();
       // fetchCurrentRules(), not getRules() - this screen edits and then
       // saves the FULL rule set back to Firestore (a whole-array
       // overwrite, not a per-rule merge), so it must start from whatever
@@ -567,6 +631,18 @@ class _RulesScreenState extends State<RulesScreen> {
                         ),
                         const SizedBox(height: 14),
                         _websiteRulesCard(),
+                        if (_usingLocalAppList) ...[
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Your child\'s phone has not sent its app list '
+                            'yet, so these are the apps on this phone. Open '
+                            'WellScreen on the child\'s phone to sync it.',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -581,7 +657,7 @@ class _RulesScreenState extends State<RulesScreen> {
                         icon: Icons.apps_rounded,
                         title: 'No Apps Found',
                         message: _searchText.trim().isEmpty
-                            ? 'No installed apps were detected on this device.'
+                            ? 'No apps have been reported by your child\'s phone yet.'
                             : 'No installed apps match "$_searchText".',
                       ),
                     ),

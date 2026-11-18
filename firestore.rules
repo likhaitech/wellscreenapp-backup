@@ -146,6 +146,7 @@ service cloud.firestore {
             'locationUpdatedAt',
             'limitSyncAcknowledgedAt',
             'limitSyncAcknowledgedBy',
+            'installedApps',
             'accessibilityEnabled',
             'accessibilityCheckedAt',
             'emergencyAccess'
