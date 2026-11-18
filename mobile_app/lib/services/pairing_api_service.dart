@@ -40,6 +40,17 @@ class PairingConnection {
   }
 }
 
+/// The server refused pairing because this account's email is not verified
+/// yet (see backend email_verification_service.py).
+class EmailNotVerifiedException implements Exception {
+  const EmailNotVerifiedException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class PairingApiService {
   final Dio _dio = Dio(
     BaseOptions(
@@ -94,6 +105,16 @@ class PairingApiService {
 
       if (status == 401) {
         throw Exception('Please log in again.');
+      }
+
+      if (status == 403 &&
+          error.response?.headers.value('x-wellscreen-error') ==
+              'email_not_verified') {
+        throw EmailNotVerifiedException(
+          data is Map && data['detail'] is String
+              ? data['detail'] as String
+              : 'Verify your email before linking a child.',
+        );
       }
 
       if (status != null &&

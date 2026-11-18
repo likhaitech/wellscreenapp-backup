@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../services/pairing_api_service.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/verify_email_dialog.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'login_screen.dart';
 
@@ -261,8 +262,9 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     setState(() => isGenerating = true);
 
     try {
-      final result = await PairingApiService().generateCode(
-        childName: childName,
+      final result = await runWithEmailVerification(
+        context,
+        () => PairingApiService().generateCode(childName: childName),
       );
 
       if (!mounted) return;

@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -12,6 +13,13 @@ from app.services.pairing_service import (
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _verified_email(monkeypatch):
+    """These tests cover pairing itself; the email check has its own tests
+    in test_email_verification.py."""
+    monkeypatch.setattr(pairing_routes, "ensure_email_verified", lambda uid: None)
 
 AUTH_HEADERS = {
     "Authorization": "Bearer test-firebase-token",

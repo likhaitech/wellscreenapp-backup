@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/pairing_api_service.dart';
 import '../theme/app_theme.dart';
 
 /// Asks the user to open the verification link. Returns true once the
@@ -39,6 +40,26 @@ Future<bool> showVerifyEmailDialogFor(BuildContext context, User user) {
       return fresh?.emailVerified ?? false;
     },
   );
+}
+
+/// Runs a pairing call (generating a code). If the server says this
+/// guardian's email is not verified yet, shows the verify dialog and, once
+/// verified, tries again.
+Future<T> runWithEmailVerification<T>(
+  BuildContext context,
+  Future<T> Function() action,
+) async {
+  try {
+    return await action();
+  } on EmailNotVerifiedException {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !context.mounted) rethrow;
+    final verified = await showVerifyEmailDialogFor(context, user);
+    if (!verified) {
+      throw Exception('Verify your email to link a child.');
+    }
+    return await action();
+  }
 }
 
 class _VerifyEmailDialog extends StatefulWidget {

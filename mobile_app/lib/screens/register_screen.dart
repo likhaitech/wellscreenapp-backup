@@ -4,10 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../services/password_policy.dart';
 import '../theme/app_theme.dart';
-import '../widgets/verify_email_dialog.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'child_home_screen.dart';
-import 'login_screen.dart';
 import 'parent_dashboard_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -108,42 +106,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
         rethrow;
       }
 
-      // Email verification is required for new accounts (see
-      // EmailVerificationPolicy). Sending can fail (network); the dialog
-      // below has a Resend button, so registration still completes.
+      // Send Firebase's verification email. Sign-in is not blocked, but a
+      // guardian cannot create a pairing code until their email is
+      // verified (see backend/app/services/email_verification_service.py).
+      // Best-effort - a failure here never undoes the registration.
+      var verificationSent = false;
       try {
         await user.sendEmailVerification();
+        verificationSent = true;
       } catch (_) {
-        // Best-effort - the user can tap Resend in the dialog.
+        // The account works without it; the user can still reset password
+        // only if the address is real.
       }
 
       if (!mounted) return;
 
-      final verified = await showVerifyEmailDialogFor(context, user);
-
-      if (!mounted) return;
-
-      if (!verified) {
-        // The account exists but stays locked until the link is opened.
-        await FirebaseAuth.instance.signOut();
-        if (!mounted) return;
-        final messenger = ScaffoldMessenger.of(context);
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (route) => false,
-        );
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              'Account created. Open the link sent to $email, then sign in.',
-            ),
-          ),
-        );
-        return;
-      }
-
-      showMessage('Email verified. Welcome to WellScreen!');
+      showMessage(
+        verificationSent
+            ? (selectedRole == 'parent'
+                ? 'Account created. Open the link sent to $email - you '
+                      'need a verified email to link a child.'
+                : 'Account created. We sent a verification link to $email.')
+            : 'Account created.',
+      );
 
       if (selectedRole == 'parent') {
         Navigator.pushAndRemoveUntil(

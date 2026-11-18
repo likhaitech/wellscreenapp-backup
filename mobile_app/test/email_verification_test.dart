@@ -1,97 +1,57 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:app/services/email_verification_policy.dart';
+import 'package:app/services/pairing_api_service.dart';
 import 'package:app/widgets/verify_email_dialog.dart';
 
 void main() {
-  group('EmailVerificationPolicy.mustVerify', () {
-    final cutoff = DateTime.utc(2026, 11, 18, 10);
-
-    test('new unverified account must verify', () {
-      expect(
-        EmailVerificationPolicy.mustVerify(
-          emailVerified: false,
-          isAdmin: false,
-          accountCreatedAt: DateTime.utc(2026, 11, 20),
-          cutoff: cutoff,
+  group('runWithEmailVerification', () {
+    testWidgets('returns the result when pairing succeeds', (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              ctx = context;
+              return const SizedBox();
+            },
+          ),
         ),
-        isTrue,
       );
+      final result = await runWithEmailVerification(ctx, () async => 42);
+      expect(result, 42);
     });
 
-    test('account created exactly at the cutoff must verify', () {
-      expect(
-        EmailVerificationPolicy.mustVerify(
-          emailVerified: false,
-          isAdmin: false,
-          accountCreatedAt: cutoff,
-          cutoff: cutoff,
+    testWidgets('passes other errors through unchanged', (tester) async {
+      late BuildContext ctx;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              ctx = context;
+              return const SizedBox();
+            },
+          ),
         ),
-        isTrue,
+      );
+      await expectLater(
+        runWithEmailVerification<int>(
+          ctx,
+          () async => throw Exception('Invalid pairing code.'),
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (e) => e.toString(),
+            'message',
+            contains('Invalid pairing code.'),
+          ),
+        ),
       );
     });
+  });
 
-    test('account created before the cutoff keeps working', () {
-      expect(
-        EmailVerificationPolicy.mustVerify(
-          emailVerified: false,
-          isAdmin: false,
-          accountCreatedAt: DateTime.utc(2026, 11, 14),
-          cutoff: cutoff,
-        ),
-        isFalse,
-      );
-    });
-
-    test('verified account is never asked', () {
-      expect(
-        EmailVerificationPolicy.mustVerify(
-          emailVerified: true,
-          isAdmin: false,
-          accountCreatedAt: DateTime.utc(2026, 12, 1),
-          cutoff: cutoff,
-        ),
-        isFalse,
-      );
-    });
-
-    test('admin is never blocked', () {
-      expect(
-        EmailVerificationPolicy.mustVerify(
-          emailVerified: false,
-          isAdmin: true,
-          accountCreatedAt: DateTime.utc(2026, 12, 1),
-          cutoff: cutoff,
-        ),
-        isFalse,
-      );
-    });
-
-    test('unknown creation time asks for verification', () {
-      expect(
-        EmailVerificationPolicy.mustVerify(
-          emailVerified: false,
-          isAdmin: false,
-          accountCreatedAt: null,
-          cutoff: cutoff,
-        ),
-        isTrue,
-      );
-    });
-
-    test('local-time creation dates are compared in UTC', () {
-      // 18 Nov 2026 5:59 PM in Manila (UTC+8) is before 6:00 PM.
-      final beforeInManila = DateTime.utc(2026, 11, 18, 9, 59).toLocal();
-      expect(
-        EmailVerificationPolicy.mustVerify(
-          emailVerified: false,
-          isAdmin: false,
-          accountCreatedAt: beforeInManila,
-          cutoff: cutoff,
-        ),
-        isFalse,
-      );
-    });
+  test('EmailNotVerifiedException shows the server message', () {
+    const error = EmailNotVerifiedException('Verify your email first.');
+    expect(error.toString(), 'Verify your email first.');
   });
 
   group('showVerifyEmailDialog', () {
