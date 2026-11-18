@@ -369,6 +369,128 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
+  /// What WellScreen does and does not collect, matching the code: usage
+  /// time, website domains (never full addresses or page content), shared
+  /// GPS location, and family chat - and nothing from messages, calls,
+  /// photos, passwords or files.
+  void showPrivacyBoundarySheet() {
+    Widget row(IconData icon, String title, String body, {bool no = false}) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: no ? AppColors.danger : AppColors.primary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: darkText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    body,
+                    style: const TextStyle(
+                      color: grayText,
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Privacy Boundary',
+                style: TextStyle(
+                  color: darkText,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'What WellScreen collects from a monitored phone, and what '
+                'it never touches.',
+                style: TextStyle(color: grayText, fontSize: 13),
+              ),
+              const SizedBox(height: 18),
+              row(
+                Icons.timer_outlined,
+                'App usage time',
+                'How long each app was open today, read from Android Usage '
+                    'Access.',
+              ),
+              row(
+                Icons.language_rounded,
+                'Website domains only',
+                'The site name (for example, example.com) in supported '
+                    'browsers. Never the full address, page content or '
+                    'what was typed.',
+              ),
+              row(
+                Icons.location_on_outlined,
+                'Shared location',
+                'The phone\'s location when it is shared with the guardian.',
+              ),
+              row(
+                Icons.chat_bubble_outline_rounded,
+                'Family chat and requests',
+                'Messages and access requests between the child and their '
+                    'own guardian only.',
+              ),
+              const Divider(height: 22),
+              row(
+                Icons.block_rounded,
+                'Never collected',
+                'Text messages, calls, photos, passwords, other apps\' '
+                    'content, and files on the phone.',
+                no: true,
+              ),
+              row(
+                Icons.lock_outline_rounded,
+                'Who can see it',
+                'Only the child and their paired guardian. Database rules '
+                    'block every other account.',
+              ),
+              const SizedBox(height: 4),
+              AppPillButton(
+                label: 'Got it',
+                expand: true,
+                onPressed: () => Navigator.pop(sheetContext),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void showEditProfileSheet(Map<String, dynamic> data, String role) {
     fullNameController.text =
         (data['fullName'] ??
@@ -650,7 +772,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     title: 'Privacy Boundary',
                     subtitle:
                         'WellScreen does not read messages, passwords, calls, photos, or sensitive files.',
-                    onTap: () {},
+                    onTap: showPrivacyBoundarySheet,
                   ),
                   _settingsTile(
                     icon: Icons.logout_rounded,
