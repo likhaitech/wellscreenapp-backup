@@ -1,0 +1,96 @@
+import 'package:flutter/material.dart';
+
+import '../theme/app_theme.dart';
+
+class WellScreenNavItem {
+  const WellScreenNavItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+}
+
+/// Minimal floating icon-only bar. Labels are kept for accessibility
+/// (tooltip / screen readers) but are not drawn.
+class WellScreenBottomNav extends StatelessWidget {
+  const WellScreenBottomNav({
+    super.key,
+    required this.currentIndex,
+    required this.items,
+    required this.onTap,
+  });
+
+  final int currentIndex;
+  final List<WellScreenNavItem> items;
+  final ValueChanged<int> onTap;
+
+  static const Color navBackground = Colors.white;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 6, 24, 12),
+        child: Container(
+          height: 60,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: navBackground,
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x24000000),
+                blurRadius: 14,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: List.generate(items.length, (index) {
+              final item = items[index];
+              final selected = index == currentIndex;
+
+              return Expanded(
+                child: Tooltip(
+                  message: item.label,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(26),
+                    onTap: () => onTap(index),
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOut,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? const Color(0xFFE7F0FF)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              item.icon,
+                              color: selected
+                                  ? AppColors.primary
+                                  : const Color(0xFF65676B),
+                              size: 26,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+}
