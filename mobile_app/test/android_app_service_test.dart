@@ -99,6 +99,29 @@ void main() {
     );
   });
 
+  group('AndroidAppService.isAccessibilityServiceEnabled', () {
+    test('returns the native on/off value', () async {
+      String? invokedMethod;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        invokedMethod = call.method;
+        return false;
+      });
+
+      final enabled = await AndroidAppService().isAccessibilityServiceEnabled();
+
+      expect(invokedMethod, 'isAccessibilityServiceEnabled');
+      expect(enabled, isFalse);
+    });
+
+    test('returns null (unknown) when the native call fails', () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'unavailable');
+      });
+
+      expect(await AndroidAppService().isAccessibilityServiceEnabled(), isNull);
+    });
+  });
+
   group('AndroidAppService settings shortcuts', () {
     test('openAccessibilitySettings invokes the right method name', () async {
       String? invokedMethod;
