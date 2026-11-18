@@ -6,7 +6,8 @@ import org.json.JSONObject
 import java.util.Locale
 
 /**
- * Enforces guardian website overrides before the bundled harmful-site dataset.
+ * Enforces guardian website overrides before adult keyword matching and the
+ * bundled harmful-site dataset.
  * The Flutter rules service mirrors one complete, family-scoped rules object
  * into SharedPreferences. A single JSON value avoids mixing two rule versions.
  */
@@ -102,6 +103,9 @@ object SiteBlocker {
         val customDomain = normalized.removePrefix("www.")
         if (matchesDomain(customDomain, rules.allowed)) return false
         if (matchesDomain(customDomain, rules.blocked)) return true
+
+        // Adult keywords catch porn sites missing from the bundled list.
+        if (AdultKeywordMatcher.matches(normalized)) return true
 
         return matchesDomain(normalized, loadDataset(context))
     }

@@ -86,6 +86,16 @@ SOURCES = {
     "adult": [RAW_DIR / "adult_domains_philippines.txt"],
 }
 
+# Extra sources that go ONLY into the app's bundled blocklist
+# (cleaned_site_categories.csv), never into ml_training_dataset_with_safe.csv.
+# They are added after the ML training rows are fixed, so the website
+# classifier's training data and its reported evaluation stay exactly as
+# they were. See raw/adult_domains_top_blocklists.txt for how that list was
+# derived (three independent sources must agree).
+BLOCKLIST_ONLY_SOURCES = {
+    "adult": [RAW_DIR / "adult_domains_top_blocklists.txt"],
+}
+
 # Deliberately NOT part of SOURCES/cleaned_site_categories.csv above. This
 # is a real, third-party "safe/benign" list (see
 # raw/safe_domains_dnsfilter_raw.txt for full sourcing) used ONLY to give
@@ -274,7 +284,25 @@ def main():
                 continue
             domain_to_category[domain] = name
 
-    final_rows = sorted(domain_to_category.items())
+    # Blocklist-only additions: same cleaning steps, same "first label wins"
+    # rule, but kept out of domain_to_category so the ML training set below
+    # is unchanged.
+    app_domain_to_category = dict(domain_to_category)
+    blocklist_only_added = {}
+    for name, paths in BLOCKLIST_ONLY_SOURCES.items():
+        report_key = f"{name} (blocklist only)"
+        added = 0
+        for domain in clean_category(report_key, paths, report):
+            if domain in app_domain_to_category:
+                cross_category_conflicts.append(
+                    (domain, app_domain_to_category[domain], report_key)
+                )
+                continue
+            app_domain_to_category[domain] = name
+            added += 1
+        blocklist_only_added[report_key] = added
+
+    final_rows = sorted(app_domain_to_category.items())
 
     with open(OUTPUT_DIR / "cleaned_site_categories.csv", "w", newline="") as f:
         writer = csv.writer(f)
@@ -293,10 +321,13 @@ def main():
     lines.append("  blocklistproject/Lists, MIT) as a second real source for drugs;")
     lines.append("  see README.md and each raw/*.txt file's header for full per-")
     lines.append("  category sourcing.")
+    lines.append("Blocklist-only (app CSV only, not ML training): adult domains")
+    lines.append("  agreed by The Block List Project, StevenBlack porn extensions")
+    lines.append("  and DNSFilter top 250k; see raw/adult_domains_top_blocklists.txt.")
     lines.append("")
     lines.append("Per-category cleaning steps and counts")
     lines.append("=" * 60)
-    for name in SOURCES:
+    for name in list(SOURCES) + list(blocklist_only_added):
         lines.append(f"\n[{name}]")
         by_source = report["raw_line_count_by_source"][name]
         if len(by_source) > 1:
@@ -327,6 +358,9 @@ def main():
         lines.append(
             f"  clean, category-unique count:  {report['clean_count_pre_cross_dedup'][name]}"
         )
+
+    for key, added in blocklist_only_added.items():
+        lines.append(f"  -> {key}: {added} new domains added to the app CSV")
 
     lines.append("\nCross-category resolution")
     lines.append("=" * 60)

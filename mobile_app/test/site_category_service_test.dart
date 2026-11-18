@@ -19,7 +19,7 @@ import 'package:app/services/site_category_service.dart';
 /// production code changes were needed to make this testable.
 ///
 /// IMPORTANT ABOUT THE TEST DOMAINS BELOW: cleaned_site_categories.csv
-/// (58,249 rows) is essentially the same raw domain lists the ML model
+/// (59,870 rows) is essentially the same raw domain lists the ML model
 /// was trained on, so almost any real-world gambling/adult domain you'd
 /// reach for is ALSO a literal exact-match row - which would only ever
 /// exercise the lookup path, not keyword matching or the ML fallback.
@@ -61,12 +61,12 @@ void main() {
       'a domain matching an adult keyword but NOT in the exact-match '
       'dataset is caught by AdultKeywordDetector, tagged as "keyword"',
       () async {
-        // youporn.com: contains AdultKeywordDetector's "porn" keyword, and
-        // verified absent from cleaned_site_categories.csv (the CSV's
-        // only 3 'adult' rows are pornhub.com, redtube.com, xvideos.com -
-        // this domain is deliberately not one of them), so this can only
-        // reach a match via the keyword path, not lookup.
-        final result = await service.classify('youporn.com');
+        // freeporn-example.net: contains AdultKeywordDetector's "porn"
+        // keyword and is a made-up name, verified absent from
+        // cleaned_site_categories.csv. (youporn.com was used here before,
+        // but it is now a real row in the expanded adult list, so it would
+        // resolve via lookup.) This can only match via the keyword path.
+        final result = await service.classify('freeporn-example.net');
         expect(result, isNotNull);
         expect(result!.category, 'adult');
         expect(result.source, 'keyword');
