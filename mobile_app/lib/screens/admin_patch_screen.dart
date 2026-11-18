@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/admin_settings_api_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 
 /// Manuscript "Manage System Settings -> Upload System Patch": the admin
 /// supplies a configuration patch, the server validates it (unknown keys,
@@ -115,7 +116,7 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('System Patch')),
+      appBar: const WellScreenAppBar.subPage(title: 'System Patch'),
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [

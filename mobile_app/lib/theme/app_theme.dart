@@ -36,31 +36,31 @@ class AppColors {
   // choice among parental-control competitors) plus a teal-green accent
   // that echoes the existing `success` semantic color, so brand and status
   // reinforce each other instead of competing.
-  static const Color primary = Color(0xFF2557A7);
-  static const Color primaryDark = Color(0xFF17396E);
-  static const Color primaryLight = Color(0xFFE6EDF8);
+  static const Color primary = Color(0xFF2563EB);
+  static const Color primaryDark = Color(0xFF1D4ED8);
+  static const Color primaryLight = Color(0xFFDBEAFE);
   static const Color accent = Color(0xFF14A38A); // teal-green - used sparingly for AI/ML-specific accents, so "AI-detected" content reads as visually distinct from a plain alert
 
   // Neutrals
-  static const Color background = Color(0xFFF5F7FB);
+  static const Color background = Color(0xFFFAF9F6);
   static const Color surface = Colors.white;
-  static const Color border = Color(0xFFE3E8F1);
-  static const Color textPrimary = Color(0xFF14202E);
-  static const Color textSecondary = Color(0xFF5B6B7F);
-  static const Color textDisabled = Color(0xFFAAB4C2);
+  static const Color border = Color(0xFFE5E7EB);
+  static const Color textPrimary = Color(0xFF111827);
+  static const Color textSecondary = Color(0xFF6B7280);
+  static const Color textDisabled = Color(0xFF9CA3AF);
 
   // Semantic - consistent across every screen; a "High Risk" label means
   // the same red everywhere, not a different red per screen. Unchanged by
   // the re-theme - these were already coordinated with the new primary
   // (info in particular was already almost this exact blue).
-  static const Color success = Color(0xFF1E9E6B);
-  static const Color successBg = Color(0xFFE3F6EE);
-  static const Color warning = Color(0xFFC77A00);
-  static const Color warningBg = Color(0xFFFCF0DC);
-  static const Color danger = Color(0xFFD1394A);
-  static const Color dangerBg = Color(0xFFFBE7E9);
-  static const Color info = Color(0xFF2557A7);
-  static const Color infoBg = Color(0xFFE4EEF9);
+  static const Color success = Color(0xFF10B981);
+  static const Color successBg = Color(0xFFDCFCE7);
+  static const Color warning = Color(0xFFD97706);
+  static const Color warningBg = Color(0xFFFEF3C7);
+  static const Color danger = Color(0xFFDC2626);
+  static const Color dangerBg = Color(0xFFFEE2E2);
+  static const Color info = Color(0xFF2563EB);
+  static const Color infoBg = Color(0xFFDBEAFE);
 
   // Detection-source tags (SiteCategoryService's three mechanisms) - one
   // fixed color per source everywhere it's shown, instead of the ad hoc
@@ -77,6 +77,16 @@ class AppColors {
   // outlines) - this one is for a filled inactive track or subtle section
   // background that needs a bit more contrast than a hairline border.
   static const Color track = Color(0xFFD1D5DB);
+
+  // Design-spec additions (Nov 2026 redesign).
+  /// Primary call-to-action fill ("Approve", "Copy Code", "Export PDF").
+  static const Color ink = Color(0xFF111827);
+  /// Inputs, incoming chat bubbles and soft secondary buttons.
+  static const Color surfaceMuted = Color(0xFFF1F5F9);
+  /// Outgoing chat bubble and chat composer actions.
+  static const Color messenger = Color(0xFF0084FF);
+  /// Unread dot on the bottom bar.
+  static const Color badge = Color(0xFFEF4444);
 }
 
 /// Spacing scale - use multiples of this instead of literal EdgeInsets
@@ -97,6 +107,7 @@ class AppRadius {
   AppRadius._();
   static const double card = 20;
   static const double button = 16;
+  static const double input = 16;
   static const double pill = 999;
   static const double sheet = 28;
 }
@@ -149,9 +160,11 @@ class AppTheme {
         ),
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.surface,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
           color: AppColors.textPrimary,
@@ -170,13 +183,14 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
+          backgroundColor: AppColors.ink,
           foregroundColor: Colors.white,
+          disabledBackgroundColor: AppColors.border,
+          disabledForegroundColor: AppColors.textDisabled,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.button),
-          ),
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+          shape: const StadiumBorder(),
           textStyle: const TextStyle(
             fontWeight: FontWeight.w800,
             fontSize: 15,
@@ -185,22 +199,75 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.background,
+        fillColor: AppColors.surfaceMuted,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
           vertical: 14,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.button),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(AppRadius.input),
+          borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.button),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(AppRadius.input),
+          borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.button),
+          borderRadius: BorderRadius.circular(AppRadius.input),
           borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(0, 48),
+          shape: const StadiumBorder(),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.textPrimary,
+          minimumSize: const Size(0, 48),
+          side: const BorderSide(color: AppColors.border),
+          shape: const StadiumBorder(),
+          textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: const WidgetStatePropertyAll(Colors.white),
+        trackColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? AppColors.primary
+              : AppColors.track,
+        ),
+        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: AppColors.surfaceMuted,
+        selectedColor: AppColors.primary,
+        side: BorderSide.none,
+        shape: const StadiumBorder(),
+        labelStyle: const TextStyle(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppRadius.sheet),
+          ),
         ),
       ),
       dividerTheme: const DividerThemeData(
@@ -240,8 +307,8 @@ class AppCard extends StatelessWidget {
         border: Border.all(color: AppColors.border),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 12,
+            color: Color(0x0A111827),
+            blurRadius: 16,
             offset: Offset(0, 4),
           ),
         ],
@@ -428,5 +495,112 @@ class AppErrorState extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Which of the three button looks from the design spec to draw.
+enum AppPillStyle {
+  /// Solid obsidian - the main action ("Approve", "Copy Code", "Export PDF").
+  primary,
+
+  /// Solid brand blue ("App Rules", "Verify & Continue").
+  brand,
+
+  /// Soft neutral or tinted fill - secondary actions ("Deny", "Share GPS").
+  soft,
+}
+
+/// The one full-pill button used on every redesigned screen, so heights,
+/// radius and weights stay identical instead of being restyled per screen.
+class AppPillButton extends StatelessWidget {
+  const AppPillButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.style = AppPillStyle.primary,
+    this.icon,
+    this.expand = false,
+    this.compact = false,
+    this.softTint = false,
+    this.loading = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final AppPillStyle style;
+  final IconData? icon;
+
+  /// Fill the available width (for full-width form actions).
+  final bool expand;
+
+  /// 36px tall instead of 48px - for buttons inside a card header row.
+  final bool compact;
+
+  /// For [AppPillStyle.soft] only: blue-tinted fill instead of neutral gray.
+  final bool softTint;
+
+  /// Show a spinner instead of the label and ignore taps.
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color background;
+    final Color foreground;
+    switch (style) {
+      case AppPillStyle.primary:
+        background = AppColors.ink;
+        foreground = Colors.white;
+      case AppPillStyle.brand:
+        background = AppColors.primary;
+        foreground = Colors.white;
+      case AppPillStyle.soft:
+        background = softTint ? AppColors.primaryLight : AppColors.surfaceMuted;
+        foreground = softTint ? AppColors.primaryDark : AppColors.textPrimary;
+    }
+
+    final height = compact ? 36.0 : 48.0;
+    final button = ElevatedButton(
+      onPressed: loading ? null : onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        disabledBackgroundColor: loading ? background : AppColors.border,
+        disabledForegroundColor: loading
+            ? foreground
+            : AppColors.textDisabled,
+        elevation: 0,
+        minimumSize: Size(0, height),
+        padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 22),
+        shape: const StadiumBorder(),
+        textStyle: TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: compact ? 13 : 15,
+        ),
+      ),
+      child: loading
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: foreground,
+              ),
+            )
+          : Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: compact ? 16 : 18),
+            const SizedBox(width: 8),
+          ],
+          Flexible(
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+
+    return expand ? SizedBox(width: double.infinity, child: button) : button;
   }
 }

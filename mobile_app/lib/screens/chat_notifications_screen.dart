@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../services/chat_notifications_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 
 /// Shared, durable chat & access-request inbox for parent and child accounts.
 /// It is also embedded above the parent's existing security-alert history.
@@ -85,13 +86,14 @@ class ChatNotificationsPanel extends StatelessWidget {
                   color: Colors.white,
                   elevation: 0,
                   margin: const EdgeInsets.only(bottom: 8),
+                  clipBehavior: Clip.antiAlias,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: const BorderSide(color: Color(0xFFE2EAF0)),
+                    borderRadius: BorderRadius.circular(AppRadius.card),
+                    side: const BorderSide(color: Color(0xFFE5E7EB)),
                   ),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: const Color(0xFFE9F1FD),
+                      backgroundColor: const Color(0xFFDBEAFE),
                       child: Icon(
                         _iconFor((doc.data()['type'] ?? '').toString()),
                         color: AppColors.primary,
@@ -175,15 +177,8 @@ class ChatNotificationsScreen extends StatelessWidget {
   const ChatNotificationsScreen({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFFF3F7FA),
-    appBar: AppBar(
-      backgroundColor: AppColors.primary,
-      foregroundColor: Colors.white,
-      title: const Text(
-        'Notifications',
-        style: TextStyle(fontWeight: FontWeight.w900),
-      ),
-    ),
+    backgroundColor: const Color(0xFFF1F5F9),
+    appBar: const WellScreenAppBar.subPage(title: 'Notifications'),
     body: ListView(
       padding: EdgeInsets.all(18),
       children: [ChatNotificationsPanel()],

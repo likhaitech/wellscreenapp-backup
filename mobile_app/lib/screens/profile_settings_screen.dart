@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../widgets/wellscreen_ui.dart';
 
 import '../theme/app_theme.dart';
 import '../services/app_time_limit_service.dart';
@@ -324,9 +325,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                                 },
                           style: FilledButton.styleFrom(
                             backgroundColor: purple,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                            shape: const StadiumBorder(),
                           ),
                           icon: const Icon(Icons.save_rounded),
                           label: Text(
@@ -463,9 +462,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           : () => saveProfileDetails(role),
                       style: FilledButton.styleFrom(
                         backgroundColor: purple,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                        shape: const StadiumBorder(),
                       ),
                       icon: const Icon(Icons.save_rounded),
                       label: Text(
@@ -496,14 +493,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       obscureText: obscureText,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: purple),
-        filled: true,
-        fillColor: pageBg,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: purple, width: 2),
-        ),
+        prefixIcon: Icon(icon, color: grayText),
       ),
     );
   }
@@ -540,15 +530,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
     return Scaffold(
       backgroundColor: pageBg,
-      appBar: AppBar(
-        title: const Text(
-          'Profile Settings',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        backgroundColor: pageBg,
-        foregroundColor: darkText,
-        elevation: 0,
-      ),
+      appBar: const WellScreenAppBar.subPage(title: 'Settings'),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('users')
@@ -596,7 +578,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               : 'User Account';
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
               _profileHeader(
                 fullName: fullName,
@@ -667,9 +649,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                   ),
                   _settingsTile(
                     icon: Icons.logout_rounded,
-                    iconColor: Colors.redAccent,
+                    iconColor: AppColors.danger,
                     backgroundColor: softRed,
-                    title: 'Logout',
+                    title: 'Sign Out',
                     subtitle: 'Sign out from this WellScreen account.',
                     onTap: logout,
                   ),
@@ -692,128 +674,87 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }) {
     final isChild = role == 'child';
 
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isChild
-              ? const [purple, deepPurple]
-              : const [purple, deepPurple],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x222557A7),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Stack(
-            children: [
-              _profileImage(photoUrl, isChild),
-              Positioned(
-                right: 0,
-                bottom: 2,
+    return Column(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _profileImage(photoUrl, isChild),
+            Positioned(
+              right: -6,
+              bottom: 0,
+              child: Material(
+                color: Colors.white,
+                shape: const StadiumBorder(
+                  side: BorderSide(color: AppColors.border),
+                ),
                 child: InkWell(
+                  customBorder: const StadiumBorder(),
                   onTap: onEdit,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: teal,
-                      borderRadius: BorderRadius.circular(17),
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: const Icon(
-                      Icons.edit_rounded,
-                      color: Colors.white,
-                      size: 18,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    child: Text(
+                      'Edit',
+                      style: TextStyle(
+                        color: darkText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            fullName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
             ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          fullName,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: darkText,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 5),
-          Text(
-            email,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.primaryLight,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Text(
-              roleLabel,
-              style: const TextStyle(
-                color: purple,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          email,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: grayText, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        StatusPill(label: roleLabel, tone: StatusTone.info),
+      ],
     );
   }
 
   Widget _profileImage(String photoUrl, bool isChild) {
-    if (photoUrl.isNotEmpty) {
-      return CircleAvatar(
-        radius: 48,
-        backgroundColor: Colors.white,
-        child: ClipOval(
-          child: Image.network(
-            photoUrl,
-            width: 92,
-            height: 92,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(
-                isChild
-                    ? Icons.child_care_rounded
-                    : Icons.family_restroom_rounded,
-                color: purple,
-                size: 54,
-              );
-            },
-          ),
-        ),
-      );
-    }
+    final fallback = Icon(
+      isChild ? Icons.face_rounded : Icons.person_rounded,
+      color: purple,
+      size: 46,
+    );
 
     return CircleAvatar(
-      radius: 48,
-      backgroundColor: Colors.white,
-      child: Icon(
-        isChild ? Icons.child_care_rounded : Icons.family_restroom_rounded,
-        color: purple,
-        size: 54,
-      ),
+      radius: 44,
+      backgroundColor: softPurple,
+      child: photoUrl.isEmpty
+          ? fallback
+          : ClipOval(
+              child: Image.network(
+                photoUrl,
+                width: 88,
+                height: 88,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => fallback,
+              ),
+            ),
     );
   }
 
+  /// Apple-style grouped list: a small caption, then one white inset card
+  /// holding the rows with hairline dividers between them.
   Widget _settingsSection({
     required String title,
     required List<Widget> children,
@@ -821,16 +762,28 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: darkText,
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
+        Padding(
+          padding: const EdgeInsets.only(left: 6, bottom: 8),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: grayText,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-        const SizedBox(height: 10),
-        ...children,
+        BentoCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) const Divider(indent: 52),
+                children[i],
+              ],
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -843,44 +796,37 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 12,
-            offset: Offset(0, 5),
-          ),
-        ],
+    final destructive = iconColor == AppColors.danger;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      leading: Icon(
+        icon,
+        color: destructive ? AppColors.danger : darkText,
+        size: 22,
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(14),
-        leading: CircleAvatar(
-          radius: 25,
-          backgroundColor: backgroundColor,
-          child: Icon(icon, color: iconColor),
+      minLeadingWidth: 22,
+      title: Text(
+        title,
+        style: TextStyle(
+          color: destructive ? AppColors.danger : darkText,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
         ),
-        title: Text(
-          title,
-          style: const TextStyle(color: darkText, fontWeight: FontWeight.w900),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            subtitle,
-            style: const TextStyle(
-              color: grayText,
-              height: 1.3,
-              fontWeight: FontWeight.w600,
+      ),
+      subtitle: Text(
+        subtitle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: grayText, fontSize: 12, height: 1.3),
+      ),
+      trailing: destructive
+          ? null
+          : const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textDisabled,
             ),
-          ),
-        ),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: onTap,
-      ),
+      onTap: onTap,
     );
   }
 }

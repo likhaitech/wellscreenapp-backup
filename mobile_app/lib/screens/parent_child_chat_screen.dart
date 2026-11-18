@@ -42,10 +42,10 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
   String? _decidingRequest;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _inboxReadSubscription;
 
-  static const Color _chatBlue = Color(0xFF254EDB);
+  static const Color _chatBlue = AppColors.messenger;
   static const Color _chatDarkBlue = AppColors.primaryDark;
-  static const Color _softBlue = Color(0xFFEDF3FF);
-  static const Color _chatLine = Color(0xFFDCE5F5);
+  static const Color _softBlue = AppColors.surfaceMuted;
+  static const Color _chatLine = AppColors.border;
 
   DocumentReference<Map<String, dynamic>> get _profile => FirebaseFirestore
       .instance
@@ -267,51 +267,90 @@ Future<void> _decide(
   }
 }
 
+  /// Guardian "Approve Access" sheet: duration pills, then Approve / Deny.
   Future<void> _openApprovalDialog(String id, int requested) async {
-    var minutes = requested;
-    final decided = await showDialog<int>(
+    final options = <int>{5, 15, 30, if (requested > 0) requested}.toList()
+      ..sort();
+    var minutes = requested > 0 ? requested : 15;
+
+    // Returns the approved minutes, 0 for "Deny", or null when dismissed.
+    final decided = await showModalBottomSheet<int>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setModalState) => AlertDialog(
-          title: const Text('Modify Approved Time'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Child requested $requested minutes.'),
-              const SizedBox(height: 12),
-              const Text('Approve for:'),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<int>(
-                initialValue: minutes,
-                isExpanded: true,
-                items: (<int>{5, 10, 15, 20, 30, 45, 60, 90, 120, 180, requested}
-                      .toList()..sort())
-                    .map((value) => DropdownMenuItem<int>(
-                          value: value,
-                          child: Text('$value minutes'),
-                        ))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) setModalState(() => minutes = value);
-                },
-              ),
-            ],
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setModalState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Approve Access',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  requested > 0
+                      ? 'Child requested $requested minutes.'
+                      : 'Choose how long to allow.',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    for (var i = 0; i < options.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Expanded(
+                        child: AppPillButton(
+                          label: '${options[i]}m',
+                          compact: true,
+                          style: options[i] == minutes
+                              ? AppPillStyle.brand
+                              : AppPillStyle.soft,
+                          onPressed: () =>
+                              setModalState(() => minutes = options[i]),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppPillButton(
+                        label: 'Approve',
+                        onPressed: () => Navigator.pop(sheetContext, minutes),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: AppPillButton(
+                        label: 'Deny',
+                        style: AppPillStyle.soft,
+                        onPressed: () => Navigator.pop(sheetContext, 0),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, minutes),
-              child: const Text('Approve'),
-            ),
-          ],
         ),
       ),
     );
-    if (decided != null) {
+    if (decided == null) return;
+    if (decided == 0) {
+      await _decide(id, approve: false, minutes: 0);
+    } else {
       await _decide(id, approve: true, minutes: decided);
     }
   }
@@ -363,8 +402,7 @@ Future<void> _decide(
           margin: const EdgeInsets.symmetric(vertical: 2),
           padding: const EdgeInsets.fromLTRB(14, 9, 14, 7),
           decoration: BoxDecoration(
-            color: own ? _chatBlue : Colors.white,
-            border: own ? null : Border.all(color: const Color(0xFFE2E8F0)),
+            color: own ? _chatBlue : AppColors.surfaceMuted,
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(20),
               topRight: const Radius.circular(20),
@@ -392,7 +430,7 @@ Future<void> _decide(
                 _time(item['createdAt']),
                 style: TextStyle(
                   fontSize: 10,
-                  color: own ? Colors.white70 : const Color(0xFF8A8D91),
+                  color: own ? Colors.white70 : const Color(0xFF6B7280),
                 ),
               ),
             ],
@@ -439,10 +477,14 @@ Future<void> _decide(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFCFDDFC)),
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            border: Border.all(color: AppColors.border),
             boxShadow: const [
-              BoxShadow(color: Color(0x0A24488E), blurRadius: 10),
+              BoxShadow(
+                color: Color(0x0A111827),
+                blurRadius: 16,
+                offset: Offset(0, 4),
+              ),
             ],
           ),
           child: Column(
@@ -455,7 +497,7 @@ Future<void> _decide(
                   SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'App Access Request',
+                      'Access Request',
                       style: TextStyle(
                         color: _chatDarkBlue,
                         fontWeight: FontWeight.w800,
@@ -621,7 +663,7 @@ Future<void> _decide(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFFCEDDFB)),
+        border: Border.all(color: AppColors.border),
         boxShadow: const [BoxShadow(color: Color(0x0D214989), blurRadius: 9)],
       ),
       child: Column(
@@ -742,19 +784,34 @@ Future<void> _decide(
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(8, 8, 10, 8),
+        padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
         decoration: const BoxDecoration(color: Colors.white),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             if (!widget.isParent)
-              IconButton(
-                tooltip: 'Request app access',
-                onPressed: () => setState(
-                  () => _showRequestComposer = !_showRequestComposer,
+              Padding(
+                padding: const EdgeInsets.only(right: 8, bottom: 2),
+                child: Material(
+                  color: _chatBlue,
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    tooltip: 'Request app access',
+                    constraints: const BoxConstraints.tightFor(
+                      width: 40,
+                      height: 40,
+                    ),
+                    padding: EdgeInsets.zero,
+                    onPressed: () => setState(
+                      () => _showRequestComposer = !_showRequestComposer,
+                    ),
+                    icon: const Icon(
+                      Icons.add_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
                 ),
-                icon: const Icon(Icons.add_circle_outline_rounded),
-                color: _chatBlue,
               ),
             Expanded(
               child: TextField(
@@ -765,24 +822,24 @@ Future<void> _decide(
                 textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   counterText: '',
-                  hintText: 'Aa',
+                  hintText: 'Message...',
                   hintStyle: const TextStyle(
                     fontSize: 15,
-                    color: Color(0xFF8A8D91),
+                    color: Color(0xFF6B7280),
                   ),
                   isDense: true,
                   filled: true,
-                  fillColor: const Color(0xFFF0F2F5),
+                  fillColor: AppColors.surfaceMuted,
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
                     vertical: 12,
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide.none,
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(20),
                     borderSide: BorderSide.none,
                   ),
                 ),
@@ -1021,16 +1078,16 @@ Future<void> _decide(
       );
     }
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC),
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        toolbarHeight: 66,
-        backgroundColor: const Color(0xFFF8F9FC),
+        toolbarHeight: 64,
+        backgroundColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
-        surfaceTintColor: const Color(0xFFF8F9FC),
-        iconTheme: const IconThemeData(color: _chatBlue),
+        surfaceTintColor: Colors.white,
+        iconTheme: const IconThemeData(color: AppColors.textPrimary),
         titleSpacing: 0,
-        elevation: 0.5,
-        shadowColor: const Color(0x33000000),
+        elevation: 0,
+        shape: const Border(bottom: BorderSide(color: AppColors.border)),
         title: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _profile.snapshots(),
           builder: (context, snapshot) {
@@ -1048,9 +1105,9 @@ Future<void> _decide(
               children: [
                 const CircleAvatar(
                   radius: 19,
-                  backgroundColor: Color(0xFFE3EEFF),
+                  backgroundColor: AppColors.primaryLight,
                   child: Icon(Icons.person_rounded,
-                    color: _chatDarkBlue, size: 24),
+                    color: AppColors.primary, size: 24),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -1063,7 +1120,7 @@ Future<void> _decide(
                           fontSize: 17, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 1),
                       const Text('Private family conversation',
-                        style: TextStyle(color: Color(0xFF8A8D91), fontSize: 11)),
+                        style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
                     ],
                   ),
                 ),
