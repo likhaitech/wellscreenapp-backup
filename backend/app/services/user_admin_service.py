@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from firebase_admin import auth, firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from .firebase_service import get_firestore_client, initialize_firebase
 
@@ -202,6 +203,60 @@ def update_user(
     return get_user(uid)
 
 
+def _delete_family_data(db: Any, uid: str, role: str) -> dict[str, int]:
+    """Remove the monitoring data tied to an account being deleted.
+
+    Before this, deleting an account removed only the login and the
+    users/{uid} document, leaving child profiles - with location, usage,
+    browsing and chat history - behind with no owner.
+
+    * guardian: every child profile they own is deleted (with all its
+      subcollections), each paired child account is set back to
+      not_paired, and the guardian's rules and pairing codes are removed.
+    * child: the child profile linked to that account is deleted, since
+      it holds that child's personal monitoring data.
+    """
+    deleted = {"child_profiles": 0, "unlinked_children": 0, "pairing_codes": 0}
+    profiles = db.collection("child_profiles")
+
+    if role == "parent":
+        owned = profiles.where(filter=FieldFilter("parentId", "==", uid))
+        for snapshot in owned.stream():
+            data = snapshot.to_dict() or {}
+            child_uid = data.get("childAccountId")
+            if isinstance(child_uid, str) and child_uid:
+                db.collection("users").document(child_uid).set(
+                    {
+                        "pairingStatus": "not_paired",
+                        "pairedParentId": firestore.DELETE_FIELD,
+                        "pairedChildProfileId": firestore.DELETE_FIELD,
+                        "pairingCode": firestore.DELETE_FIELD,
+                        "pairedAt": firestore.DELETE_FIELD,
+                    },
+                    merge=True,
+                )
+                deleted["unlinked_children"] += 1
+            db.recursive_delete(snapshot.reference)
+            deleted["child_profiles"] += 1
+
+        db.collection("app_rules").document(uid).delete()
+
+        codes = db.collection("pairing_codes").where(
+            filter=FieldFilter("parentId", "==", uid)
+        )
+        for snapshot in codes.stream():
+            snapshot.reference.delete()
+            deleted["pairing_codes"] += 1
+
+    elif role == "child":
+        linked = profiles.where(filter=FieldFilter("childAccountId", "==", uid))
+        for snapshot in linked.stream():
+            db.recursive_delete(snapshot.reference)
+            deleted["child_profiles"] += 1
+
+    return deleted
+
+
 def delete_user(uid: str) -> None:
     initialize_firebase()
 
@@ -210,8 +265,16 @@ def delete_user(uid: str) -> None:
     # verifying immediately, not just once it happens to expire.
     auth.revoke_refresh_tokens(uid)
 
+    db = get_firestore_client()
+    user_ref = db.collection("users").document(uid)
+    user_snapshot = user_ref.get()
+    user_data = (user_snapshot.to_dict() or {}) if user_snapshot.exists else {}
+    role = str(user_data.get("role") or "")
+
+    # Family data goes first, while the login still exists: if this step
+    # fails, the admin can simply retry the delete.
+    _delete_family_data(db, uid, role)
+
     auth.delete_user(uid)
 
-    db = get_firestore_client()
-
-    db.collection("users").document(uid).delete()
+    user_ref.delete()
