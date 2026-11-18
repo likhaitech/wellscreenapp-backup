@@ -20,12 +20,10 @@ class DevicePairingScreen extends StatefulWidget {
 
 class _DevicePairingScreenState extends State<DevicePairingScreen> {
   static const Color purple = AppColors.primary;
-  static const Color deepPurple = AppColors.primaryDark;
   static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
-  static const Color softPurple = AppColors.primaryLight;
   static const Color softGreen = AppColors.successBg;
   static const Color softOrange = AppColors.warningBg;
 

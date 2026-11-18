@@ -74,9 +74,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
-  static const Color softGreen = AppColors.successBg;
   static const Color softBlue = AppColors.infoBg;
-  static const Color softRed = Color(0xFFFFEFEF);
 
   // Used by handleBottomNavTap to scroll to the existing pairing section
   // when a child device has not yet been connected to a parent.

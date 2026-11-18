@@ -35,7 +35,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   // names so the body below didn't need a line-by-line rewrite, but now
   // every value traces back to the one shared source of truth.
   static const Color purple = AppColors.primary;
-  static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
