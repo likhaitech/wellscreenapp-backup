@@ -3,7 +3,7 @@ main = "chat-notification-cron-worker.js"
 compatibility_date = "2026-11-01"
 
 [vars]
-MONITORING_API_URL = "https://wellscreen-app.onrender.com"
+MONITORING_API_URL = "https://wellscreenapp-backup.onrender.com"
 
 [triggers]
 crons = ["* * * * *"]
