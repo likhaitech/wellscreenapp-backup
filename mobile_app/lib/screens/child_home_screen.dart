@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -2964,16 +2965,17 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
     return WellScreenAppBar.primary(
       onMenu: () => _showMenuSheet(data),
-      // Long-press (not a visible button) opens the raw capture debug log -
-      // this screen is rendered on the CHILD's device, and that log is the
-      // child's own monitored browsing/usage data, so it must not be one
-      // visible tap away from the child themselves.
-      onTitleLongPress: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const CaptureDebugScreen()),
-        );
-      },
+      // Developer builds only: long-press opens the raw capture debug log.
+      // Release APKs have no way in, since that log is the child's own
+      // monitored browsing data.
+      onTitleLongPress: kDebugMode
+          ? () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CaptureDebugScreen()),
+              );
+            }
+          : null,
       onAvatar: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),

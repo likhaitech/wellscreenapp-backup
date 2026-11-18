@@ -1,6 +1,7 @@
 package com.wellscreen.app
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -15,6 +16,9 @@ import org.json.JSONObject
  *
  * Deliberately best-effort and silent on failure, same as those - a
  * logging call must never be what breaks real capture.
+ *
+ * Debug builds only: a release APK writes nothing here, so the child's
+ * captured domains are never kept in this extra plain-text log.
  */
 object CaptureDebugLogger {
     private const val PREFS_NAME = "FlutterSharedPreferences"
@@ -22,6 +26,9 @@ object CaptureDebugLogger {
     private const val MAX_LOG_ENTRIES = 200
 
     fun log(context: Context, message: String) {
+        val debuggable =
+            (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!debuggable) return
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val log = JSONArray(prefs.getString(LOG_KEY, "[]") ?: "[]")
