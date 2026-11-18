@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../widgets/wellscreen_ui.dart';
 
 import '../theme/app_theme.dart';
+import '../services/app_rules_service.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
 import 'login_screen.dart';
@@ -351,8 +352,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     // Revoke the child's registered push token before leaving this account.
     await AppTimeLimitNotificationService.instance.stopForSignOut();
 
-    // Clear the child-specific native limit cache before switching accounts.
-    await AppTimeLimitService().clearCachedLimits();
+    // On a monitored child phone, keep the native limit cache so the
+    // AccessibilityService keeps enforcing it after sign-out. Other phones
+    // (e.g. a guardian's) clear it as before.
+    if (!await AppRulesService.isMonitoredChildDevice()) {
+      await AppTimeLimitService().clearCachedLimits();
+    }
     await FirebaseAuth.instance.signOut();
 
     if (!mounted) return;

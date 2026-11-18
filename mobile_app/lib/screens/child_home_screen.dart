@@ -1375,14 +1375,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   }
 
   Future<void> logout() async {
-    // Native AccessibilityService cannot read FirebaseAuth session state.
-    // Clear its child-specific rule cache before signing out.
+    // Daily limits stay in the native cache after sign-out on purpose:
+    // the native AccessibilityService keeps enforcing them, so signing out
+    // is not a way around the guardian's limits. The cache is replaced when
+    // a different child profile is opened (prepareCacheForChild).
     _timeLimitWatchGeneration++;
     final previous = _appTimeLimitSubscription;
     _appTimeLimitSubscription = null;
     _timeLimitProfileId = null;
     await previous?.cancel();
-    await _appTimeLimitService.clearCachedLimits();
     await _temporaryGrants.stop();
     await _limitNotifications.stopForSignOut();
     await FirebaseAuth.instance.signOut();

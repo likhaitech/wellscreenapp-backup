@@ -366,15 +366,9 @@ class _WebsiteRulesSync {
     _accountSub = null;
     _rulesSub = null;
 
-    _enqueue(() async {
-      final prefs = await SharedPreferences.getInstance();
-      if (authVersion != _authVersion) return;
-      final cached = _readCache(prefs);
-      if (uid == null || cached['childUid'] != uid) {
-        await _writeCache(prefs, uid, null, const WebsiteRules());
-      }
-    });
-
+    // Signing out or switching accounts keeps the phone's website rules;
+    // only a confirmed unpair of the same child (or a new pairing) changes
+    // them - see _onPairingChanged. Same policy as AppRulesService.
     if (uid == null) return;
     _accountSub = _firestore
         .collection('users')
@@ -395,14 +389,14 @@ class _WebsiteRulesSync {
               parent.isNotEmpty &&
               profile is String &&
               profile.isNotEmpty) {
-            _onPairingChanged(uid, parent);
+            _onPairingChanged(uid, parent, true);
           } else {
-            _onPairingChanged(uid, null);
+            _onPairingChanged(uid, null, data?['role'] == 'child');
           }
         }, onError: _logError);
   }
 
-  void _onPairingChanged(String uid, String? parentId) {
+  void _onPairingChanged(String uid, String? parentId, bool isChild) {
     if (_seenPairing && parentId == _parentId) return;
     _seenPairing = true;
     _parentId = parentId;
@@ -414,9 +408,14 @@ class _WebsiteRulesSync {
       final prefs = await SharedPreferences.getInstance();
       if (version != _rulesVersion) return;
       final cached = _readCache(prefs);
-      if (parentId == null ||
-          cached['childUid'] != uid ||
-          cached['parentId'] != parentId) {
+      final cachedChild = cached['childUid'];
+      if (parentId == null) {
+        // Only the guardian removing THIS child's device releases the
+        // phone; another unpaired account or a guardian keeps the rules.
+        if (isChild && (cachedChild == null || cachedChild == uid)) {
+          await _writeCache(prefs, uid, null, const WebsiteRules());
+        }
+      } else if (cachedChild != uid || cached['parentId'] != parentId) {
         await _writeCache(prefs, uid, parentId, const WebsiteRules());
       }
     });
