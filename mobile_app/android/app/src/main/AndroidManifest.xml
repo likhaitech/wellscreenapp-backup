@@ -14,6 +14,7 @@
         android:label="WellScreen"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+
         <service
             android:name=".ScreenTimeReportJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"
@@ -53,8 +54,34 @@
             </intent-filter>
         </activity>
 
-        <meta-data android:name="flutterEmbedding" android:value="2" />
-        <receiver android:name=".SmsSentReceiver" android:exported="false" />
-        <receiver android:name=".SmsDeliveredReceiver" android:exported="false" />
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
+        <receiver
+            android:name=".SmsSentReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".SmsDeliveredReceiver"
+            android:exported="false" />
+
+        <!-- Task 11: Optional Device Administrator Protection -->
+        <receiver
+            android:name=".WellScreenDeviceAdminReceiver"
+            android:label="WellScreen Uninstall Protection"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/wellscreen_device_admin" />
+
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+
+        </receiver>
+
     </application>
 </manifest>
