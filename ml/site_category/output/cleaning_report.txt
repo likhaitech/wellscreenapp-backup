@@ -13,15 +13,15 @@ Per-category cleaning steps and counts
 ============================================================
 
 [gambling]
-  raw lines read:                32310 (combined from 2 sources)
+  raw lines read:                32328 (combined from 2 sources)
     - gambling_domains.txt: 32247
-    - gambling_domains_ph_researched.txt: 63
-  blank/comment lines removed:   34
+    - gambling_domains_ph_researched.txt: 81
+  blank/comment lines removed:   44
   IP-address entries removed:    14
     example(s): 159.153.253.16, 193.172.39.6, 205.134.167.8
   malformed entries removed:     0
   in-category duplicates removed:0
-  clean, category-unique count:  32262
+  clean, category-unique count:  32270
 
 [drugs]
   raw lines read:                26667 (combined from 2 sources)
@@ -72,10 +72,10 @@ Cross-category resolution
 
 Final dataset
 ============================================================
-  gambling: 32262 domains
+  gambling: 32270 domains
   drugs: 25948 domains
   dangerous_material: 35 domains
   adult: 1624 domains
-  TOTAL raw lines across sources:  60691
-  TOTAL cleaned, deduplicated rows: 59869
-  Rows removed by cleaning: 822 (1.4% of raw input)
+  TOTAL raw lines across sources:  60709
+  TOTAL cleaned, deduplicated rows: 59877
+  Rows removed by cleaning: 832 (1.4% of raw input)

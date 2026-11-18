@@ -107,6 +107,10 @@ object SiteBlocker {
         // Adult keywords catch porn sites missing from the bundled list.
         if (AdultKeywordMatcher.matches(normalized)) return true
 
-        return matchesDomain(normalized, loadDataset(context))
+        if (matchesDomain(normalized, loadDataset(context))) return true
+
+        // New gambling sites not in the list: the trained name model, only
+        // at its 90% confidence bar.
+        return GamblingNameClassifier.isGambling(context, normalized)
     }
 }

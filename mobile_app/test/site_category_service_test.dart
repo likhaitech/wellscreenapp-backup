@@ -19,7 +19,7 @@ import 'package:app/services/site_category_service.dart';
 /// production code changes were needed to make this testable.
 ///
 /// IMPORTANT ABOUT THE TEST DOMAINS BELOW: cleaned_site_categories.csv
-/// (59,870 rows) is essentially the same raw domain lists the ML model
+/// (59,878 rows) is essentially the same raw domain lists the ML model
 /// was trained on, so almost any real-world gambling/adult domain you'd
 /// reach for is ALSO a literal exact-match row - which would only ever
 /// exercise the lookup path, not keyword matching or the ML fallback.
