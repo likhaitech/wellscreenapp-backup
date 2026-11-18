@@ -33,6 +33,7 @@ import '../services/usage_dashboard_controller_service.dart';
 import '../services/usage_tracking_service.dart';
 import '../services/temporary_app_grant_service.dart';
 import '../services/chat_notifications_service.dart';
+import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_ui.dart';
@@ -139,7 +140,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   bool _smsPermissionGranted = false;
   String? _cachedParentPhoneNumber;
   List<Map<String, dynamic>> _smsAlertLog = [];
-  String? _syncedParentIdForPhoneNumber;
+  String? _syncedProfileIdForPhoneNumber;
 
   // Synchronization status (see SyncStatusService / _attemptFirestoreSync
   // below). cloud_firestore's set()/update() Futures hang indefinitely when
@@ -360,24 +361,29 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   /// native Kotlin with no Firestore access of their own - they read the
   /// same "FlutterSharedPreferences" file the Flutter app writes to, the
   /// same pattern app_rules_service.dart already uses for restricted-app
-  /// package lists. The number itself lives on users/{parentId}.phoneNumber
-  /// (ProfileSettingsScreen), set by the parent on their own device.
+  /// package lists. The number is the guardian's verified number, copied
+  /// onto this child's profile by ParentPhoneSyncService.
   Future<void> _maybeSyncParentPhoneNumber(Map<String, dynamic> data) async {
-    final parentId = (data['pairedParentId'] ?? '').toString();
+    // The guardian's verified number is copied onto this child's own
+    // profile (child_profiles/{id}.parentPhoneNumber) by the guardian's app
+    // - see ParentPhoneSyncService. The child cannot read the guardian's
+    // private users/{uid} record, and cannot change this field itself.
+    final profileId = (data['pairedChildProfileId'] ?? '').toString();
 
-    if (parentId.isEmpty || parentId == _syncedParentIdForPhoneNumber) {
+    if (profileId.isEmpty || profileId == _syncedProfileIdForPhoneNumber) {
       return;
     }
 
-    _syncedParentIdForPhoneNumber = parentId;
+    _syncedProfileIdForPhoneNumber = profileId;
 
     try {
       final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(parentId)
+          .collection('child_profiles')
+          .doc(profileId)
           .get();
 
-      final phoneNumber = (doc.data()?['phoneNumber'] ?? '').toString().trim();
+      final phoneNumber =
+          (doc.data()?[ParentPhoneSyncService.field] ?? '').toString().trim();
       final prefs = await SharedPreferences.getInstance();
 
       if (phoneNumber.isEmpty) {

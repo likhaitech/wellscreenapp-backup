@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../services/emergency_access_service.dart';
 import '../widgets/app_usage_icon.dart';
 import '../services/pattern_detection_service.dart';
+import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_ui.dart';
@@ -74,6 +75,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     // alerts sent via backend/app/services/notification_service.py
     // actually show up while the app is open. See push_notification_service.dart.
     _pushNotificationService.initialize();
+    // Keep each child's copy of the verified guardian number current, so
+    // the child's phone can send backup SMS alerts.
+    ParentPhoneSyncService.syncToChildProfiles();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ChatNotificationsService.instance.markDashboardReady();
     });

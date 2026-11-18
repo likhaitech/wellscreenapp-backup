@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../widgets/wellscreen_ui.dart';
 
 import '../theme/app_theme.dart';
+import '../services/parent_phone_sync_service.dart';
 import '../services/app_rules_service.dart';
 import '../services/password_policy.dart';
 import '../services/app_time_limit_service.dart';
@@ -757,6 +758,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           builder: (_) => const PhoneVerificationScreen(),
                         ),
                       );
+                      // Pass a newly verified number on to the children
+                      // (no-op for child accounts).
+                      await ParentPhoneSyncService.syncToChildProfiles();
                       if (mounted) setState(() {});
                     },
                   ),
