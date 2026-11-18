@@ -6,7 +6,8 @@ import org.json.JSONObject
 import java.util.Locale
 
 /**
- * Enforces guardian website overrides before the bundled harmful-site dataset.
+ * Enforces guardian website overrides before adult keyword matching and the
+ * bundled harmful-site dataset.
  * The Flutter rules service mirrors one complete, family-scoped rules object
  * into SharedPreferences. A single JSON value avoids mixing two rule versions.
  */
@@ -16,9 +17,17 @@ object SiteBlocker {
     private const val LEGACY_BLOCKED_KEY = "flutter.blocked_domains_json"
 
     @Volatile
-    private var datasetDomains: Set<String>? = null
+    private var datasetDomains: Map<String, String>? = null
 
-    private data class WebsiteRules(
+    /**
+     * Why a website was blocked, saved with each blocked attempt so the
+     * parent's report can explain it. [source] is one of "parent_rule",
+     * "keyword", "list" or "ai"; [category] is the harmful-site category
+     * when known (null for a parent's own block).
+     */
+    data class BlockReason(val source: String, val category: String?)
+
+    internal data class WebsiteRules(
         val blocked: Set<String>,
         val allowed: Set<String>
     )
@@ -26,14 +35,17 @@ object SiteBlocker {
     private fun normalize(domain: String): String =
         domain.trim().lowercase(Locale.ROOT).trimEnd('.')
 
-    private fun loadDataset(context: Context): Set<String> {
+    private fun loadDataset(context: Context): Map<String, String> {
         datasetDomains?.let { return it }
-        val result = HashSet<String>()
+        val result = HashMap<String, String>()
         try {
             context.assets.open(CSV_PATH).bufferedReader().useLines { lines ->
                 lines.drop(1).forEach { line ->
                     val comma = line.indexOf(',')
-                    if (comma > 0) result.add(normalize(line.substring(0, comma)))
+                    if (comma > 0) {
+                        result[normalize(line.substring(0, comma))] =
+                            line.substring(comma + 1).trim()
+                    }
                 }
             }
         } catch (_: Exception) {
@@ -94,15 +106,52 @@ object SiteBlocker {
         return false
     }
 
-    fun isBlocked(context: Context, domain: String): Boolean {
-        val normalized = normalize(domain)
-        if (normalized.isEmpty()) return false
-
-        val rules = parentRules(context)
-        val customDomain = normalized.removePrefix("www.")
-        if (matchesDomain(customDomain, rules.allowed)) return false
-        if (matchesDomain(customDomain, rules.blocked)) return true
-
-        return matchesDomain(normalized, loadDataset(context))
+    /** The matching entry's category, also matching parent domains. */
+    private fun categoryFor(domain: String, dataset: Map<String, String>): String? {
+        val labels = domain.split('.')
+        for (start in 0..(labels.size - 2)) {
+            val candidate = labels.subList(start, labels.size).joinToString(".")
+            dataset[candidate]?.let { return it }
+        }
+        return null
     }
+
+    /**
+     * The blocking decision, in order: guardian allow, guardian block,
+     * adult keywords, bundled list, gambling AI. Pure (no Android types)
+     * so it can be unit tested.
+     */
+    internal fun decide(
+        domain: String,
+        rules: WebsiteRules,
+        dataset: Map<String, String>,
+        isAiGambling: (String) -> Boolean,
+    ): BlockReason? {
+        val normalized = normalize(domain)
+        if (normalized.isEmpty()) return null
+
+        val customDomain = normalized.removePrefix("www.")
+        if (matchesDomain(customDomain, rules.allowed)) return null
+        if (matchesDomain(customDomain, rules.blocked)) {
+            return BlockReason("parent_rule", null)
+        }
+
+        // Adult keywords catch porn sites missing from the bundled list.
+        if (AdultKeywordMatcher.matches(normalized)) return BlockReason("keyword", "adult")
+
+        categoryFor(normalized, dataset)?.let { return BlockReason("list", it) }
+
+        // New gambling sites not in the list: the trained name model, only
+        // at its 90% confidence bar.
+        if (isAiGambling(normalized)) return BlockReason("ai", "gambling")
+        return null
+    }
+
+    fun blockReason(context: Context, domain: String): BlockReason? =
+        decide(domain, parentRules(context), loadDataset(context)) {
+            GamblingNameClassifier.isGambling(context, it)
+        }
+
+    fun isBlocked(context: Context, domain: String): Boolean =
+        blockReason(context, domain) != null
 }

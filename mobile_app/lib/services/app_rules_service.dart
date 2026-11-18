@@ -216,6 +216,15 @@ class AppRulesService {
     await saveRules(rules);
   }
 
+  /// True when this phone holds rules mirrored for a paired child, i.e. it
+  /// is (or was) a monitored child device. Used to keep enforcement caches
+  /// across sign-out.
+  static Future<bool> isMonitoredChildDevice() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_childRuleScopeKey) ?? '';
+    return raw.trim().isNotEmpty && raw.trim() != '{}';
+  }
+
   Future<void> clearRules() async {
     await saveRulesLocally([]);
 
@@ -295,13 +304,14 @@ class _ChildAppRulesSync {
     _rulesSub = null;
 
     _enqueue(() async {
-      final prefs = await SharedPreferences.getInstance();
       if (version != _authVersion) return;
-      final scope = _scope(prefs);
-      if (uid == null ||
-          (previousUid != null && previousUid != uid) ||
-          (scope.isNotEmpty && scope['childUid'] != uid)) {
-        await _clearChildCache(prefs);
+      // Signing out, or signing in with a different account, must NOT
+      // release this phone: the restrictions belong to the device until
+      // the guardian removes it, or another child is paired on it (see
+      // _onPairingChanged). Otherwise a child could drop every restriction
+      // by tapping Sign Out or registering a second account.
+      if (previousUid != null && previousUid != uid) {
+        debugPrint('App rules sync: account changed, keeping device rules');
       }
     });
 
@@ -346,8 +356,12 @@ class _ChildAppRulesSync {
       if (version != _rulesVersion) return;
       final scope = _scope(prefs);
       if (parentId == null) {
-        // Never wipe the guardian's own editor cache on an ordinary login.
-        if (isChild || scope.isNotEmpty) await _clearChildCache(prefs);
+        // Only a confirmed unpair of the SAME child releases the phone.
+        // A different, unpaired account (or a guardian) signing in keeps
+        // the device's restrictions.
+        if (isChild && (scope.isEmpty || scope['childUid'] == uid)) {
+          await _clearChildCache(prefs);
+        }
       } else if (scope.isNotEmpty &&
           (scope['childUid'] != uid || scope['parentId'] != parentId)) {
         await _clearChildCache(prefs);

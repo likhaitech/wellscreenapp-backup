@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/password_policy.dart';
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'child_home_screen.dart';
 import 'parent_dashboard_screen.dart';
 
@@ -14,10 +16,6 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  static const Color purple = AppColors.primary;
-  static const Color darkText = AppColors.textPrimary;
-  static const Color grayText = AppColors.textSecondary;
-
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
@@ -44,8 +42,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       showMessage('Please complete all required fields.');
       return;
     }
-    if (password.length < 8) {
-      showMessage('Password must be at least 8 characters.');
+    if (!PasswordPolicy.isStrong(password)) {
+      await showPasswordRequirementsDialog(context, password);
       return;
     }
 
@@ -108,7 +106,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
         rethrow;
       }
 
+      // Send Firebase's verification email. Sign-in is not blocked, but a
+      // guardian cannot create a pairing code until their email is
+      // verified (see backend/app/services/email_verification_service.py).
+      // Best-effort - a failure here never undoes the registration.
+      var verificationSent = false;
+      try {
+        await user.sendEmailVerification();
+        verificationSent = true;
+      } catch (_) {
+        // The account works without it; the user can still reset password
+        // only if the address is real.
+      }
+
       if (!mounted) return;
+
+      showMessage(
+        verificationSent
+            ? (selectedRole == 'parent'
+                ? 'Account created. Open the link sent to $email - you '
+                      'need a verified email to link a child.'
+                : 'Account created. We sent a verification link to $email.')
+            : 'Account created.',
+      );
 
       if (selectedRole == 'parent') {
         Navigator.pushAndRemoveUntil(
@@ -150,158 +170,201 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return 'This account will be used on the child device and can be connected to a parent account using a pairing code.';
   }
 
+  Widget _roleCard({
+    required String role,
+    required String label,
+    required IconData icon,
+  }) {
+    final selected = selectedRole == role;
+
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          onTap: isLoading ? null : () => setState(() => selectedRole = role),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(
+                color: selected ? AppColors.primary : AppColors.border,
+                width: selected ? 2 : 1,
+              ),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 34,
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.textDisabled,
+                    ),
+                    const SizedBox(height: 8),
+                    ExcludeSemantics(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          color: selected
+                              ? AppColors.textPrimary
+                              : AppColors.textSecondary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                    ),
+                  ),
+                ),
+                if (selected)
+                  const Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isParent = selectedRole == 'parent';
-
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text(
-          'User Registration',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: darkText,
-        elevation: 0,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          Text(
-            isParent
-                ? 'Create Guardian Account'
-                : 'Create Child Account',
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              color: darkText,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            roleDescription,
-            style: const TextStyle(color: grayText, height: 1.4),
-          ),
-          const SizedBox(height: 28),
-          TextField(
-            controller: nameController,
-            decoration: InputDecoration(
-              labelText: 'Full Name',
-              prefixIcon: const Icon(Icons.person_rounded),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+          children: [
+            const WellScreenBrandHeader(),
+            const SizedBox(height: 28),
+            BentoCard(
+              child: Column(
+                children: [
+                  WellScreenField(
+                    label: 'Full Name',
+                    controller: nameController,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 14),
+                  WellScreenField(
+                    label: 'Email Address',
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 14),
+                  WellScreenField(
+                    label: 'Password',
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    suffixIcon: IconButton(
+                      tooltip: obscurePassword
+                          ? 'Show password'
+                          : 'Hide password',
+                      icon: Icon(
+                        obscurePassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: AppColors.textSecondary,
+                        size: 20,
+                      ),
+                      onPressed: () {
+                        setState(() => obscurePassword = !obscurePassword);
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    PasswordPolicy.hint,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
-              labelText: 'Email Address',
-              prefixIcon: const Icon(Icons.email_rounded),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: passwordController,
-            obscureText: obscurePassword,
-            decoration: InputDecoration(
-              labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock_rounded),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  obscurePassword
-                      ? Icons.visibility_rounded
-                      : Icons.visibility_off_rounded,
-                ),
-                onPressed: () {
-                  setState(() => obscurePassword = !obscurePassword);
-                },
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: selectedRole,
-            decoration: InputDecoration(
-              labelText: 'Role',
-              prefixIcon: const Icon(Icons.family_restroom_rounded),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            items: const [
-              DropdownMenuItem(
-                value: 'parent',
-                child: Text('Guardian'),
-              ),
-              DropdownMenuItem(value: 'child', child: Text('Child')),
-            ],
-            onChanged: isLoading
-                ? null
-                : (value) {
-                    if (value == null) return;
-                    setState(() => selectedRole = value);
-                  },
-          ),
-          const SizedBox(height: 18),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Text(
-              selectedRole == 'parent'
-                  ? 'After registration, this account will open the Parent Dashboard.'
-                  : 'After registration, this account will open the Child Device Setup page where the pairing code can be entered.',
-              style: const TextStyle(
-                color: darkText,
-                height: 1.4,
+            const SizedBox(height: 20),
+            const Text(
+              'I am registering as...',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-          const SizedBox(height: 26),
-          SizedBox(
-            height: 54,
-            child: FilledButton(
-              onPressed: isLoading ? null : registerUser,
-              style: FilledButton.styleFrom(
-                backgroundColor: purple,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _roleCard(
+                  role: 'parent',
+                  label: 'Guardian',
+                  icon: Icons.family_restroom_rounded,
                 ),
-              ),
-              child: isLoading
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      isParent
-                          ? 'Create Parent Account'
-                          : 'Create Child Account',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                      ),
-                    ),
+                const SizedBox(width: 12),
+                _roleCard(
+                  role: 'child',
+                  label: 'Child',
+                  icon: Icons.face_rounded,
+                ),
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 10),
+            Text(
+              roleDescription,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 22),
+            AppPillButton(
+              label: 'Create Account',
+              expand: true,
+              loading: isLoading,
+              onPressed: registerUser,
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'Already have an account?',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+                TextButton(
+                  onPressed: isLoading ? null : () => Navigator.maybePop(context),
+                  child: const Text('Log in'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

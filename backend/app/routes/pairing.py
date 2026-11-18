@@ -8,6 +8,10 @@ from ..services.chat_access_service import (
     ChatAccessError,
     authenticated_uid,
 )
+from ..services.email_verification_service import (
+    EmailNotVerifiedError,
+    ensure_email_verified,
+)
 from ..services.pairing_service import (
     PairingConflictError,
     PairingError,
@@ -46,6 +50,27 @@ def _get_authenticated_uid(authorization: str | None) -> str:
         ) from error
 
 
+# The app looks for this header to show its "Verify your email" dialog.
+EMAIL_NOT_VERIFIED_HEADER = {"X-WellScreen-Error": "email_not_verified"}
+
+
+def _require_verified_email(uid: str) -> None:
+    try:
+        ensure_email_verified(uid)
+    except EmailNotVerifiedError as error:
+        raise HTTPException(
+            status_code=403,
+            detail=str(error),
+            headers=EMAIL_NOT_VERIFIED_HEADER,
+        ) from error
+    except Exception as error:
+        # Fail closed: never pair when the account could not be checked.
+        raise HTTPException(
+            status_code=503,
+            detail="Could not check your account right now. Please try again.",
+        ) from error
+
+
 @router.post("/pairing/code")
 def create_code(
     body: GeneratePairingCodeBody,
@@ -54,6 +79,7 @@ def create_code(
     """Generate a pairing code for an authenticated parent."""
 
     uid = _get_authenticated_uid(authorization)
+    _require_verified_email(uid)
 
     try:
         return generate_pairing_code(
@@ -81,6 +107,8 @@ def redeem_code(
 ):
     """Redeem a pairing code for an authenticated child."""
 
+    # No email check here: a child may have no email of their own, and can
+    # only link with a code created by a guardian whose email is verified.
     uid = _get_authenticated_uid(authorization)
 
     try:

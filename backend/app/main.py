@@ -95,10 +95,22 @@ def _client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+# The interactive API docs (/docs, /redoc, /openapi.json) list every
+# endpoint, so they are off on the live server. Set
+# WELLSCREEN_ENABLE_API_DOCS=1 locally to turn them on for development.
+_API_DOCS_ENABLED = os.getenv("WELLSCREEN_ENABLE_API_DOCS", "").strip() in {
+    "1",
+    "true",
+    "yes",
+}
+
 app = FastAPI(
     title="WellScreen Backend",
     version="1.0.0",
     description="Administrative backend API for WellScreen.",
+    docs_url="/docs" if _API_DOCS_ENABLED else None,
+    redoc_url="/redoc" if _API_DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _API_DOCS_ENABLED else None,
 )
 
 rate_limiter = InMemoryRateLimiter()

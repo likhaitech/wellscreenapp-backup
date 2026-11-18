@@ -5,20 +5,23 @@ Sources: UT1 Blacklists (Universite Toulouse Capitole, CC BY-SA 4.0,
   blocklistproject/Lists, MIT) as a second real source for drugs;
   see README.md and each raw/*.txt file's header for full per-
   category sourcing.
+Blocklist-only (app CSV only, not ML training): adult domains
+  agreed by The Block List Project, StevenBlack porn extensions
+  and DNSFilter top 250k; see raw/adult_domains_top_blocklists.txt.
 
 Per-category cleaning steps and counts
 ============================================================
 
 [gambling]
-  raw lines read:                32310 (combined from 2 sources)
+  raw lines read:                32328 (combined from 2 sources)
     - gambling_domains.txt: 32247
-    - gambling_domains_ph_researched.txt: 63
-  blank/comment lines removed:   34
+    - gambling_domains_ph_researched.txt: 81
+  blank/comment lines removed:   44
   IP-address entries removed:    14
     example(s): 159.153.253.16, 193.172.39.6, 205.134.167.8
   malformed entries removed:     0
   in-category duplicates removed:0
-  clean, category-unique count:  32262
+  clean, category-unique count:  32270
 
 [drugs]
   raw lines read:                26667 (combined from 2 sources)
@@ -51,16 +54,28 @@ Per-category cleaning steps and counts
   in-category duplicates removed:0
   clean, category-unique count:  3
 
+[adult (blocklist only)]
+  raw lines read:                1659
+  blank/comment lines removed:   35
+  IP-address entries removed:    0
+  malformed entries removed:     0
+  in-category duplicates removed:0
+  clean, category-unique count:  1624
+  -> adult (blocklist only): 1621 new domains added to the app CSV
+
 Cross-category resolution
 ============================================================
-  domains appearing in >1 category file: 0
+  domains appearing in >1 category file: 3
+    pornhub.com: kept as 'adult', also listed under 'adult (blocklist only)'
+    xvideos.com: kept as 'adult', also listed under 'adult (blocklist only)'
+    redtube.com: kept as 'adult', also listed under 'adult (blocklist only)'
 
 Final dataset
 ============================================================
-  gambling: 32262 domains
+  gambling: 32270 domains
   drugs: 25948 domains
   dangerous_material: 35 domains
-  adult: 3 domains
-  TOTAL raw lines across sources:  59032
-  TOTAL cleaned, deduplicated rows: 58248
-  Rows removed by cleaning: 784 (1.3% of raw input)
+  adult: 1624 domains
+  TOTAL raw lines across sources:  60709
+  TOTAL cleaned, deduplicated rows: 59877
+  Rows removed by cleaning: 832 (1.4% of raw input)

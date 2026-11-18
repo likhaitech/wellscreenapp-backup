@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'admin_settings_screen.dart';
 import 'child_home_screen.dart';
 import 'parent_dashboard_screen.dart';
@@ -16,8 +17,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const Color purple = AppColors.primary;
-  static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
 
@@ -199,199 +198,89 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _logoHeader() {
-    return Column(
-      children: [
-        Container(
-          width: 132,
-          height: 132,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(38),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x14000000),
-                blurRadius: 24,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(34),
-            child: Image.asset(
-              'assets/icons/wellscreen_icon.png',
-              fit: BoxFit.contain,
-            ),
-          ),
-        ),
-        const SizedBox(height: 18),
-        const Text(
-          'WellScreen',
-          style: TextStyle(
-            color: purple,
-            fontSize: 38,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Smart Parental Control\nfor Digital Wellness',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: darkText,
-            fontSize: 17,
-            height: 1.35,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
-    );
+    return const WellScreenBrandHeader();
   }
 
   Widget _loginCard() {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 16,
-            offset: Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Login',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: darkText,
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Access your WellScreen account',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: grayText, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 22),
-          TextField(
-            controller: emailController,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-            decoration: InputDecoration(
-              labelText: 'Email',
-              prefixIcon: const Icon(Icons.email_rounded, color: purple),
-              filled: true,
-              fillColor: pageBg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: purple, width: 2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: passwordController,
-            obscureText: obscurePassword,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) {
-              if (!isLoading) {
-                loginUser();
-              }
-            },
-            decoration: InputDecoration(
-              labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock_rounded, color: purple),
-              suffixIcon: IconButton(
-                onPressed: () {
-                  setState(() => obscurePassword = !obscurePassword);
-                },
-                icon: Icon(
-                  obscurePassword
-                      ? Icons.visibility_off_rounded
-                      : Icons.visibility_rounded,
-                  color: grayText,
-                ),
-              ),
-              filled: true,
-              fillColor: pageBg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: purple, width: 2),
-              ),
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: isLoading ? null : resetPassword,
-              child: const Text(
-                'Forgot password?',
-                style: TextStyle(color: purple, fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 54,
-            child: FilledButton(
-              onPressed: isLoading ? null : loginUser,
-              style: FilledButton.styleFrom(
-                backgroundColor: purple,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: Text(
-                isLoading ? 'Logging in...' : 'Login',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        BentoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
-                'No account yet?',
-                style: TextStyle(color: grayText, fontWeight: FontWeight.w600),
+              WellScreenField(
+                label: 'Email Address',
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
               ),
-              TextButton(
-                onPressed: isLoading
-                    ? null
-                    : () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const RegisterScreen(),
-                          ),
-                        );
-                      },
-                child: const Text(
-                  'Register',
-                  style: TextStyle(color: purple, fontWeight: FontWeight.w900),
+              const SizedBox(height: 14),
+              WellScreenField(
+                label: 'Password',
+                controller: passwordController,
+                obscureText: obscurePassword,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) {
+                  if (!isLoading) {
+                    loginUser();
+                  }
+                },
+                suffixIcon: IconButton(
+                  tooltip: obscurePassword ? 'Show password' : 'Hide password',
+                  onPressed: () {
+                    setState(() => obscurePassword = !obscurePassword);
+                  },
+                  icon: Icon(
+                    obscurePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    color: grayText,
+                    size: 20,
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: isLoading ? null : resetPassword,
+                  child: const Text('Forgot password?'),
                 ),
               ),
             ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 20),
+        AppPillButton(
+          label: 'Log In',
+          expand: true,
+          loading: isLoading,
+          onPressed: loginUser,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'No account yet?',
+              style: TextStyle(color: grayText, fontSize: 13),
+            ),
+            TextButton(
+              onPressed: isLoading
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const RegisterScreen(),
+                        ),
+                      );
+                    },
+              child: const Text('Create account'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

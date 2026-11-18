@@ -1,5 +1,6 @@
 """Register via app.include_router(parent_child_chat.router)."""
 from __future__ import annotations
+import hmac
 import logging
 
 import os
@@ -86,6 +87,10 @@ def activate(profile_id: str, package_name: str,
 @router.post("/internal/chat/notifications/sweep")
 def sweep(x_chat_cron_secret: str | None = Header(default=None)):
     expected = os.environ.get("CHAT_CRON_SECRET")
-    if not expected or not x_chat_cron_secret or x_chat_cron_secret != expected:
+    if (
+        not expected
+        or not x_chat_cron_secret
+        or not hmac.compare_digest(x_chat_cron_secret, expected)
+    ):
         raise HTTPException(status_code=403, detail="Unauthorized")
     return sweep_chat_notifications()

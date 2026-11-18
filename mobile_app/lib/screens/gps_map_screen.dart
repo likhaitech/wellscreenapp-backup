@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../services/location_geocoding_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 
 class GpsMapScreen extends StatefulWidget {
   const GpsMapScreen({
@@ -35,8 +36,6 @@ class GpsMapScreen extends StatefulWidget {
 
 class _GpsMapScreenState extends State<GpsMapScreen> {
   static const Color purple = AppColors.primary;
-  static const Color deepPurple = AppColors.primaryDark;
-  static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
@@ -111,248 +110,137 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
   @override
   Widget build(BuildContext context) {
     final locationPoint = LatLng(widget.latitude, widget.longitude);
+    final latLabel =
+        '${widget.latitude.abs().toStringAsFixed(4)}\u00B0 '
+        '${widget.latitude >= 0 ? 'N' : 'S'}';
+    final lngLabel =
+        '${widget.longitude.abs().toStringAsFixed(4)}\u00B0 '
+        '${widget.longitude >= 0 ? 'E' : 'W'}';
 
     return Scaffold(
       backgroundColor: pageBg,
-      appBar: AppBar(
-        title: const Text(
-          'GPS Map View',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        backgroundColor: pageBg,
-        foregroundColor: darkText,
-        elevation: 0,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+      appBar: const WellScreenAppBar.subPage(title: 'Live Location'),
+      body: Stack(
         children: [
-          Container(
-            height: 92,
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [purple, deepPurple],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
+          Positioned.fill(
+            child: FlutterMap(
+              options: MapOptions(
+                initialCenter: locationPoint,
+                initialZoom: 15.5,
+                minZoom: 5,
+                maxZoom: 18,
               ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x22000000),
-                  blurRadius: 14,
-                  offset: Offset(0, 7),
-                ),
-              ],
-            ),
-            child: const Row(
               children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Colors.white,
-                  child: Icon(
-                    Icons.location_on_rounded,
-                    color: purple,
-                    size: 38,
-                  ),
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.wellscreen.app',
                 ),
-                SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    'Child Location',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          Container(
-            height: 430,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x12000000),
-                  blurRadius: 14,
-                  offset: Offset(0, 6),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
-              child: Stack(
-                children: [
-                  FlutterMap(
-                    options: MapOptions(
-                      initialCenter: locationPoint,
-                      initialZoom: 15.5,
-                      minZoom: 5,
-                      maxZoom: 18,
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.wellscreen.app',
-                      ),
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: locationPoint,
-                            width: 72,
-                            height: 72,
-                            child: const Icon(
-                              Icons.location_pin,
-                              color: Colors.redAccent,
-                              size: 60,
-                            ),
-                          ),
-                        ],
+                if (widget.hasLocation)
+                  CircleLayer(
+                    circles: [
+                      CircleMarker(
+                        point: locationPoint,
+                        radius: 44,
+                        color: const Color(0x332563EB),
+                        borderColor: const Color(0x552563EB),
+                        borderStrokeWidth: 1,
                       ),
                     ],
                   ),
-                  // Floating place-name caption over the map itself, so the
-                  // resolved address is visible at a glance without having
-                  // to scroll down to the info cards below.
-                  Positioned(
-                    left: 14,
-                    right: 14,
-                    bottom: 14,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: locationPoint,
+                      width: 56,
+                      height: 56,
+                      alignment: Alignment.topCenter,
+                      child: Icon(
+                        widget.hasLocation
+                            ? Icons.location_on_rounded
+                            : Icons.location_searching_rounded,
+                        color: purple,
+                        size: 48,
                       ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x22000000),
-                            blurRadius: 10,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: SafeArea(
+              top: false,
+              child: BentoCard(
+                padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (_isResolvingAddress)
-                            const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.4,
-                                color: purple,
-                              ),
-                            )
-                          else
-                            const Icon(
-                              Icons.place_rounded,
-                              color: purple,
-                              size: 18,
+                          Text(
+                            widget.hasLocation
+                                ? _placeNameText
+                                : 'No location shared yet',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: darkText,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
                             ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _placeNameText,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: darkText,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                              ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '$latLabel, $lngLabel',
+                            style: const TextStyle(
+                              color: darkText,
+                              fontSize: 13,
+                              fontFeatures: kTabularFigures,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Updated ${widget.updatedAt}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: grayText,
+                              fontSize: 12,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Material(
+                      color: AppColors.ink,
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        tooltip: 'Refresh address',
+                        onPressed: _isResolvingAddress ? null : _resolveAddress,
+                        icon: _isResolvingAddress
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.refresh_rounded,
+                                color: Colors.white,
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          _infoCard(
-            icon: Icons.place_rounded,
-            iconColor: purple,
-            title: 'Place Name',
-            subtitle: _placeNameText,
-          ),
-          _infoCard(
-            icon: Icons.my_location_rounded,
-            iconColor: teal,
-            title: 'Coordinates',
-            subtitle:
-                '${widget.latitude.toStringAsFixed(5)}, '
-                '${widget.longitude.toStringAsFixed(5)}',
-          ),
-          _infoCard(
-            icon: Icons.access_time_rounded,
-            iconColor: Colors.orange,
-            title: 'Last Updated',
-            subtitle: widget.updatedAt,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _infoCard({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 12,
-            offset: Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: AppColors.primaryLight,
-            child: Icon(icon, color: iconColor, size: 30),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: darkText,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: grayText,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                  ),
-                ),
-              ],
             ),
           ),
         ],
@@ -360,6 +248,7 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
     );
   }
 }
+
 
 class GpsMapPreview extends StatelessWidget {
   const GpsMapPreview({
@@ -380,7 +269,7 @@ class GpsMapPreview extends StatelessWidget {
     final locationPoint = LatLng(latitude, longitude);
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       child: Stack(
         children: [
           SizedBox(
@@ -435,7 +324,7 @@ class GpsMapPreview extends StatelessWidget {
                 ],
               ),
               child: Text(
-                hasLocation ? 'Shared GPS' : 'Cebu Preview',
+                hasLocation ? 'Shared GPS' : 'No GPS yet',
                 style: const TextStyle(
                   color: purple,
                   fontWeight: FontWeight.w900,

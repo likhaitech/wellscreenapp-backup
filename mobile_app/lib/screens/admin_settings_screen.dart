@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/admin_users_api_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'admin_logs_screen.dart';
 import 'admin_patch_screen.dart';
 import 'admin_users_screen.dart';
@@ -109,13 +110,9 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: pageBg,
-      appBar: AppBar(
-        title: const Text(
-          'Admin Dashboard',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: darkText,
+      appBar: WellScreenAppBar.subPage(
+        title: 'WellScreen Admin',
+        showBack: false,
         actions: [
           IconButton(
             tooltip: 'Logout',
@@ -132,40 +129,51 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               onRefresh: loadStats,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                 children: [
                   _header(),
                   const SizedBox(height: 16),
                   _statsSection(),
                   const SizedBox(height: 20),
-                  Text(
-                    'Administration',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 10),
-                  _menuCard(
-                    icon: Icons.manage_accounts_rounded,
-                    title: 'Manage Users',
-                    subtitle:
-                        'View, update, deactivate, or delete user accounts.',
-                    onTap: () => open(const AdminUsersScreen()),
-                  ),
-                  const SizedBox(height: 12),
-                  _menuCard(
-                    icon: Icons.system_update_alt_rounded,
-                    title: 'System Patch',
-                    subtitle: 'Validate and apply a configuration patch.',
-                    onTap: () => open(const AdminPatchScreen()),
-                  ),
-                  const SizedBox(height: 12),
-                  _menuCard(
-                    icon: Icons.receipt_long_rounded,
-                    title: 'System Logs',
-                    subtitle: 'Search activity, error, and sync logs.',
-                    onTap: () => open(const AdminLogsScreen()),
+                  BentoCard(
+                    padding: const EdgeInsets.fromLTRB(0, 14, 0, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
+                          child: Text(
+                            'Quick Actions',
+                            style: TextStyle(
+                              color: darkText,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        _menuCard(
+                          icon: Icons.manage_accounts_outlined,
+                          title: 'Manage Users',
+                          subtitle:
+                              'View, update, deactivate, or delete user accounts.',
+                          onTap: () => open(const AdminUsersScreen()),
+                        ),
+                        const Divider(indent: 52),
+                        _menuCard(
+                          icon: Icons.system_update_alt_rounded,
+                          title: 'System Patch',
+                          subtitle: 'Validate and apply a configuration patch.',
+                          onTap: () => open(const AdminPatchScreen()),
+                        ),
+                        const Divider(indent: 52),
+                        _menuCard(
+                          icon: Icons.receipt_long_outlined,
+                          title: 'System Logs',
+                          subtitle: 'Search activity, error, and sync logs.',
+                          onTap: () => open(const AdminLogsScreen()),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 20),
                   _recentActivity(),
@@ -178,47 +186,31 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   Widget _header() {
     final email = FirebaseAuth.instance.currentUser?.email ?? 'Administrator';
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: purple,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.admin_panel_settings_rounded,
-            color: Colors.white,
-            size: 42,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Welcome, Administrator',
+          style: TextStyle(
+            color: darkText,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'System Administration',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Signed in as $email',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.primaryLight,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          email,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: grayText, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        const StatusPill(
+          label: 'Admin Access',
+          tone: StatusTone.info,
+          icon: Icons.verified_user_outlined,
+        ),
+      ],
     );
   }
 
@@ -259,19 +251,19 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       children: [
         Row(
           children: [
-            _statTile('Total users', users.length, Icons.groups_rounded,
+            _statTile('Total Users', users.length, Icons.groups_outlined,
                 purple),
-            const SizedBox(width: 10),
-            _statTile('Guardians', guardians, Icons.shield_rounded,
+            const SizedBox(width: 12),
+            _statTile('Guardians', guardians, Icons.shield_outlined,
                 AppColors.info),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Row(
           children: [
-            _statTile('Children', children, Icons.child_care_rounded,
+            _statTile('Children', children, Icons.face_outlined,
                 AppColors.success),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             _statTile('Deactivated', deactivated, Icons.block_rounded,
                 deactivated > 0 ? AppColors.danger : grayText),
           ],
@@ -292,31 +284,29 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
   Widget _statTile(String label, int value, IconData icon, Color color) {
     return Expanded(
-      child: AppCard(
-        child: Row(
+      child: BentoCard(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: color, size: 26),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$value',
-                    style: const TextStyle(
-                      color: darkText,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: grayText, fontSize: 12),
-                  ),
-                ],
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 10),
+            Text(
+              '$value',
+              style: const TextStyle(
+                color: darkText,
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                height: 1.1,
+                fontFeatures: kTabularFigures,
               ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: grayText, fontSize: 13),
             ),
           ],
         ),
@@ -407,35 +397,27 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return AppCard(
-      onTap: onTap,
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: AppColors.primaryLight,
-            child: Icon(icon, color: purple),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: darkText,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(subtitle, style: const TextStyle(color: grayText)),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded, color: grayText),
-        ],
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      leading: Icon(icon, color: darkText, size: 22),
+      minLeadingWidth: 22,
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: darkText,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
       ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(color: grayText, fontSize: 12),
+      ),
+      trailing: const Icon(
+        Icons.chevron_right_rounded,
+        color: AppColors.textDisabled,
+      ),
+      onTap: onTap,
     );
   }
 }

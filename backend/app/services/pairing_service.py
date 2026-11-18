@@ -26,6 +26,14 @@ MAX_CODE_GENERATION_ATTEMPTS = 25
 MAX_REDEMPTION_ATTEMPTS = 10
 REDEMPTION_WINDOW = dt.timedelta(minutes=15)
 
+# Global guard against guessing with many accounts: the per-account limit
+# above can be multiplied by creating more child accounts, so wrong or
+# expired codes are also counted across ALL accounts. Once this many fail
+# within one window, every redemption is refused until the window ends.
+# Successful pairings do not count. Codes stay 6 digits.
+MAX_GLOBAL_FAILED_REDEMPTIONS = 50
+GLOBAL_FAILURES_DOC_ID = "global-failed-redemptions"
+
 
 class PairingError(ValueError):
     """Base error for pairing operations."""
@@ -41,6 +49,10 @@ class PairingConflictError(PairingError):
 
 class PairingRateLimitError(PairingError):
     """Too many pairing-code redemption attempts."""
+
+
+class PairingCodeInvalidError(PairingError):
+    """The code does not exist or has expired - counts as a failed guess."""
 
 
 def _now() -> dt.datetime:
@@ -219,6 +231,71 @@ def _consume_redemption_attempt(
     consume(db.transaction())
 
 
+def _window_state(
+    data: dict[str, Any],
+    now: dt.datetime,
+) -> tuple[dt.datetime, int]:
+    """Current (window start, count) for a 15-minute counter document.
+    An expired, missing or malformed window starts again at zero."""
+
+    window_started = data.get("windowStartedAt")
+    count = data.get("attemptCount", 0)
+
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        count = 0
+
+    if (
+        isinstance(window_started, dt.datetime)
+        and now - _as_utc(window_started) < REDEMPTION_WINDOW
+    ):
+        return _as_utc(window_started), count
+
+    return now, 0
+
+
+def _global_failures_ref(db: Any) -> Any:
+    return db.collection("pairing_attempt_limits").document(
+        GLOBAL_FAILURES_DOC_ID
+    )
+
+
+def _ensure_global_guess_budget(db: Any) -> None:
+    """Refuse all redemptions while too many wrong codes were tried."""
+
+    snapshot = _global_failures_ref(db).get()
+    data = (snapshot.to_dict() or {}) if snapshot.exists else {}
+    _, count = _window_state(data, _now())
+
+    if count >= MAX_GLOBAL_FAILED_REDEMPTIONS:
+        raise PairingRateLimitError(
+            "Pairing is paused for a few minutes because too many wrong "
+            "codes were entered. Please try again later."
+        )
+
+
+def _record_global_failure(db: Any) -> None:
+    """Count one wrong or expired code toward the global window."""
+
+    ref = _global_failures_ref(db)
+
+    @transactional
+    def record(transaction: Any) -> None:
+        snapshot = ref.get(transaction=transaction)
+        data = (snapshot.to_dict() or {}) if snapshot.exists else {}
+        window_started, count = _window_state(data, _now())
+        transaction.set(
+            ref,
+            {
+                "windowStartedAt": window_started,
+                "attemptCount": count + 1,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+    record(db.transaction())
+
+
 def redeem_pairing_code(
     *,
     child_uid: str,
@@ -250,6 +327,7 @@ def redeem_pairing_code(
         )
 
     _consume_redemption_attempt(db, child_uid)
+    _ensure_global_guess_budget(db)
 
     code_ref = db.collection("pairing_codes").document(code)
 
@@ -260,7 +338,7 @@ def redeem_pairing_code(
         code_snapshot = code_ref.get(transaction=transaction)
 
         if not code_snapshot.exists:
-            raise PairingError("Pairing code not found.")
+            raise PairingCodeInvalidError("Pairing code not found.")
 
         code_data = code_snapshot.to_dict() or {}
 
@@ -321,7 +399,7 @@ def redeem_pairing_code(
             )
 
         if status != "active":
-            raise PairingError(
+            raise PairingCodeInvalidError(
                 "This pairing code is no longer active."
             )
 
@@ -331,7 +409,7 @@ def redeem_pairing_code(
             raise PairingError("Pairing code has an invalid expiration.")
 
         if now >= _as_utc(expires_at):
-            raise PairingError("This pairing code has expired.")
+            raise PairingCodeInvalidError("This pairing code has expired.")
 
         if profile_data.get("pairingStatus") != "waiting":
             raise PairingConflictError(
@@ -403,7 +481,16 @@ def redeem_pairing_code(
             "status": "connected",
         }
 
-    return redeem(db.transaction())
+    try:
+        return redeem(db.transaction())
+    except PairingCodeInvalidError:
+        try:
+            _record_global_failure(db)
+        except Exception:
+            # Never hide the real answer ("not found") behind a counter
+            # write failure.
+            pass
+        raise
 
 
 def unpair_child_device(

@@ -61,3 +61,21 @@ joli-bet.com.ph
 jolibet1.org
 joliv1.com
 jilibet-play.com
+
+# Added 18 Nov 2026 (verified via live web search):
+#   PAGCOR names BingoPlus, ArenaPlus and OKBet among its licensed online
+#   gaming sites (Inquirer, 20 Aug 2025). DigiPlus press items give the
+#   official domains: www.bingoplus.com and www.arenaplus.net (Manila
+#   Bulletin, 7 Jun 2024); bingoplus.ph, arenaplus.ph and gzone.ph
+#   (Manila Bulletin, 26 Aug 2025); BingoPlus Poker on gamefun.ph
+#   (BusinessWorld, 31 May 2024). Phlwin's and Lodibet's own brand pages
+#   list phlwin.com.ph and lodi-bet.com.ph. okbet.com is not added here
+#   because the gambling name model already blocks it (0.98 confidence).
+bingoplus.com
+bingoplus.ph
+arenaplus.net
+arenaplus.ph
+gzone.ph
+gamefun.ph
+phlwin.com.ph
+lodi-bet.com.ph

@@ -331,6 +331,83 @@ class TestUpdateUser:
         assert "updatedAt" in written
 
 
+class _Snap:
+    def __init__(self, ref, data, exists=True):
+        self.reference = ref
+        self._data = data
+        self.exists = exists
+
+    def to_dict(self):
+        return dict(self._data)
+
+
+class _FakeDb:
+    """Minimal Firestore double recording what delete_user touches."""
+
+    def __init__(self, users=None, profiles=None, codes=None):
+        self.users = users or {}
+        self.profiles = profiles or {}
+        self.codes = codes or {}
+        self.recursive_deleted = []
+        self.deleted_docs = []
+        self.user_sets = {}
+
+    def recursive_delete(self, ref):
+        self.recursive_deleted.append(ref.path)
+
+    def collection(self, name):
+        db = self
+
+        class _Doc:
+            def __init__(self, doc_id):
+                self.path = f"{name}/{doc_id}"
+                self.doc_id = doc_id
+
+            def get(self):
+                data = db.users.get(self.doc_id)
+                return _Snap(self, data or {}, exists=data is not None)
+
+            def set(self, data, merge=False):
+                db.user_sets[self.path] = data
+
+            def delete(self):
+                db.deleted_docs.append(self.path)
+
+        class _Query:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def stream(self):
+                return iter(self.rows)
+
+        class _Col:
+            def document(self, doc_id):
+                return _Doc(doc_id)
+
+            def where(self, *, filter):
+                field, value = filter.field_path, filter.value
+                source = {"child_profiles": db.profiles, "pairing_codes": db.codes}[name]
+                return _Query(
+                    [
+                        _Snap(_Doc(doc_id), data)
+                        for doc_id, data in source.items()
+                        if data.get(field) == value
+                    ]
+                )
+
+        return _Col()
+
+
+def _run_delete(fake_db, uid):
+    with patch.object(svc, "initialize_firebase"), patch.object(
+        svc.auth, "revoke_refresh_tokens"
+    ), patch.object(svc.auth, "delete_user") as auth_delete, patch.object(
+        svc, "get_firestore_client", return_value=fake_db
+    ):
+        svc.delete_user(uid)
+    return auth_delete
+
+
 class TestDeleteUser:
     def test_revokes_tokens_before_deleting_the_auth_account(self):
         fake_db = MagicMock()
@@ -352,15 +429,62 @@ class TestDeleteUser:
         assert call_order == ["revoke", "delete"]
 
     def test_also_deletes_the_users_firestore_document(self):
-        fake_db = MagicMock()
+        fake_db = _FakeDb(users={"u1": {"role": "parent"}})
+        _run_delete(fake_db, "u1")
+        assert "users/u1" in fake_db.deleted_docs
 
+    def test_guardian_delete_removes_their_child_profiles_and_rules(self):
+        fake_db = _FakeDb(
+            users={"p1": {"role": "parent"}, "c1": {"role": "child"}},
+            profiles={
+                "prof1": {"parentId": "p1", "childAccountId": "c1"},
+                "prof2": {"parentId": "p1"},
+                "other": {"parentId": "p2", "childAccountId": "c9"},
+            },
+            codes={"123456": {"parentId": "p1"}, "654321": {"parentId": "p2"}},
+        )
+        _run_delete(fake_db, "p1")
+
+        assert sorted(fake_db.recursive_deleted) == [
+            "child_profiles/prof1",
+            "child_profiles/prof2",
+        ]
+        assert "app_rules/p1" in fake_db.deleted_docs
+        assert "pairing_codes/123456" in fake_db.deleted_docs
+        assert "pairing_codes/654321" not in fake_db.deleted_docs
+        # The paired child account is released, not deleted.
+        assert fake_db.user_sets["users/c1"]["pairingStatus"] == "not_paired"
+
+    def test_child_delete_removes_only_that_childs_profile(self):
+        fake_db = _FakeDb(
+            users={"c1": {"role": "child"}},
+            profiles={
+                "prof1": {"parentId": "p1", "childAccountId": "c1"},
+                "prof2": {"parentId": "p1", "childAccountId": "c2"},
+            },
+        )
+        _run_delete(fake_db, "c1")
+
+        assert fake_db.recursive_deleted == ["child_profiles/prof1"]
+        assert "app_rules/c1" not in fake_db.deleted_docs
+
+    def test_cleanup_failure_keeps_the_login_so_the_delete_can_be_retried(self):
+        fake_db = _FakeDb(
+            users={"p1": {"role": "parent"}},
+            profiles={"prof1": {"parentId": "p1"}},
+        )
+
+        def boom(ref):
+            raise RuntimeError("firestore down")
+
+        fake_db.recursive_delete = boom
         with patch.object(svc, "initialize_firebase"), patch.object(
             svc.auth, "revoke_refresh_tokens"
-        ), patch.object(svc.auth, "delete_user"), patch.object(
+        ), patch.object(svc.auth, "delete_user") as auth_delete, patch.object(
             svc, "get_firestore_client", return_value=fake_db
         ):
-            svc.delete_user("u1")
-
-        fake_db.collection.assert_called_once_with("users")
-        fake_db.collection.return_value.document.assert_called_once_with("u1")
-        fake_db.collection.return_value.document.return_value.delete.assert_called_once()
+            try:
+                svc.delete_user("p1")
+            except RuntimeError:
+                pass
+        auth_delete.assert_not_called()

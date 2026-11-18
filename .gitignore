@@ -42,3 +42,7 @@ build/
 .gradle/
 android/.gradle/
 **/Pods/
+
+# Editor/manual backup copies - never commit these.
+*.bak
+*.backup-*
