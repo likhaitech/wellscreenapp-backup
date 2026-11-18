@@ -882,6 +882,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     String childEmail,
   ) {
     if (!paired) return 'Waiting for pairing';
+    // Reported by the child's phone with its heartbeat: all blocking runs
+    // in WellScreen's Accessibility service, so "off" means nothing is
+    // being blocked even if the phone still shows as online.
+    if (child?['accessibilityEnabled'] == false) {
+      return 'Blocking is off \u2022 Accessibility disabled';
+    }
     final online = _childRecentlyOnline(child);
     if (online == null) return 'Awaiting device check-in';
     final seen = child?['lastSeenAt'];
@@ -901,6 +907,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   Color _childPresenceColor(Map<String, dynamic>? child, bool paired) {
     if (!paired) return AppColors.warning;
+    if (child?['accessibilityEnabled'] == false) return AppColors.danger;
     final online = _childRecentlyOnline(child);
     if (online == null) return AppColors.warning;
     return online ? AppColors.success : AppColors.danger;

@@ -40,6 +40,19 @@ class AndroidAppService {
     }
   }
 
+  /// Whether WellScreen's Accessibility service is switched on. Returns
+  /// null when it cannot be read (e.g. not on Android), so callers can
+  /// show "unknown" instead of guessing.
+  Future<bool?> isAccessibilityServiceEnabled() async {
+    try {
+      return await _channel.invokeMethod<bool>(
+        'isAccessibilityServiceEnabled',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> openAccessibilitySettings() async {
     await _channel.invokeMethod('openAccessibilitySettings');
   }

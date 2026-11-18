@@ -1,5 +1,6 @@
 package com.wellscreen.app
 
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
@@ -65,6 +66,8 @@ class MainActivity : FlutterActivity() {
                     startActivity(intent)
                     result.success(true)
                 }
+                "isAccessibilityServiceEnabled" ->
+                    result.success(isWellScreenAccessibilityEnabled())
                 "openUsageAccessSettings" -> {
                     val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -74,6 +77,24 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    /**
+     * True when WellScreen's AccessibilityService is switched on in Android
+     * settings. All app and website blocking runs inside that service, so
+     * the guardian is told when it is off.
+     */
+    private fun isWellScreenAccessibilityEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+        ) ?: return false
+        val full = ComponentName(this, WellScreenAccessibilityService::class.java)
+        val names = setOf(
+            full.flattenToString().lowercase(),
+            full.flattenToShortString().lowercase(),
+        )
+        return enabled.split(':').any { it.trim().lowercase() in names }
     }
 
     private fun getInstalledApps(): List<Map<String, String>> {

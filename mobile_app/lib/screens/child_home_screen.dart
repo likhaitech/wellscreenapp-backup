@@ -111,6 +111,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   StreamSubscription<bool>? _connectivitySubscription;
   Timer? _presenceHeartbeatTimer;
   DateTime? _lastPresenceWriteAttempt;
+  // Real on/off state of WellScreen's Accessibility service (null = unknown)
+  // and the value last sent to the guardian.
+  bool? _accessibilityEnabled;
+  bool? _reportedAccessibilityEnabled;
   static const Duration _presenceHeartbeatInterval = Duration(minutes: 5);
 
   int currentIndex = 0;
@@ -228,6 +232,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _loadWeeklyUsage();
     _refreshSmsAlertStatus();
     _refreshSyncStatus();
+    unawaited(_refreshAccessibilityStatus());
     _connectivitySubscription = _syncStatusService.onlineStatusChanges.listen(
       _handleConnectivityChange,
     );
@@ -243,7 +248,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     // The parent derives Online/Offline from this server-authored timestamp.
     _presenceHeartbeatTimer = Timer.periodic(
       _presenceHeartbeatInterval,
-      (_) => unawaited(_publishOnlineHeartbeat()),
+      (_) {
+        unawaited(_refreshAccessibilityStatus());
+        unawaited(_publishOnlineHeartbeat());
+      },
     );
   }
 
@@ -339,6 +347,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       _loadWeeklyUsage();
       _refreshSmsAlertStatus();
       _refreshSyncStatus();
+      unawaited(_refreshAccessibilityStatus());
       unawaited(_publishOnlineHeartbeat());
       final activeProfile = _timeLimitProfileId;
       if (activeProfile != null && activeProfile.isNotEmpty) {
@@ -442,6 +451,19 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   /// Best-effort server heartbeat for the parent dashboard. No offline write:
   /// a disconnected phone cannot announce its own disconnection to Firestore.
   /// Native ScreenTimeReportJobService checks in even while Flutter UI is closed.
+  Future<void> _refreshAccessibilityStatus() async {
+    final enabled = await _androidAppService.isAccessibilityServiceEnabled();
+    if (!mounted) return;
+    if (enabled != _accessibilityEnabled) {
+      setState(() => _accessibilityEnabled = enabled);
+    }
+    // Tell the guardian straight away when it changes.
+    if (enabled != null && enabled != _reportedAccessibilityEnabled) {
+      _lastPresenceWriteAttempt = null;
+      unawaited(_publishOnlineHeartbeat());
+    }
+  }
+
   Future<void> _publishOnlineHeartbeat() async {
     if (!_isOnline) return;
     final user = FirebaseAuth.instance.currentUser;
@@ -461,8 +483,17 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       await FirebaseFirestore.instance
           .collection('child_profiles')
           .doc(profileId)
-          .update({'lastSeenAt': FieldValue.serverTimestamp()})
+          .update({
+            'lastSeenAt': FieldValue.serverTimestamp(),
+            if (_accessibilityEnabled != null) ...{
+              'accessibilityEnabled': _accessibilityEnabled,
+              'accessibilityCheckedAt': FieldValue.serverTimestamp(),
+            },
+          })
           .timeout(const Duration(seconds: 10));
+      if (_accessibilityEnabled != null) {
+        _reportedAccessibilityEnabled = _accessibilityEnabled;
+      }
     } catch (error) {
       _lastPresenceWriteAttempt = null;
       debugPrint('Child presence check-in failed: $error');
@@ -4834,11 +4865,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           _checklistRow(
             icon: Icons.accessibility_new_rounded,
             title: 'Accessibility Service',
-            subtitle:
-                'Needed to block restricted apps. Check that WellScreen is '
-                'switched on in Android Accessibility settings.',
-            done: null,
-            actionLabel: 'Open',
+            subtitle: _accessibilityEnabled == true
+                ? 'On. Restricted apps and websites are blocked.'
+                : 'Needed to block restricted apps. Switch WellScreen on in '
+                      'Android Accessibility settings.',
+            done: _accessibilityEnabled,
+            actionLabel: _accessibilityEnabled == true ? null : 'Open',
             onAction: _openAccessibilitySettings,
           ),
         ],
