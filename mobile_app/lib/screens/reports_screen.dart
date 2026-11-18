@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../widgets/wellscreen_ui.dart';
 
+import '../services/block_reason_label.dart';
 import '../services/location_geocoding_service.dart';
 import '../services/report_export_service.dart';
 import '../theme/app_theme.dart';
@@ -409,7 +411,7 @@ class ReportsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     if (childProfileId.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Reports')),
+        appBar: const WellScreenAppBar.subPage(title: 'Reports'),
         body: const _ReportsEmptyState(
           message: 'Pair a child device first to see reports.',
         ),
@@ -420,65 +422,57 @@ class ReportsScreen extends StatelessWidget {
       length: _tabs.length,
       initialIndex: initialTab,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Reports'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.ios_share_rounded),
-              tooltip: 'Export report as PDF',
-              onPressed: () => _exportReport(context),
-            ),
-          ],
-          // A branded pill/segmented control instead of Material's default
-          // underline TabBar - the underline style reads as a plain
-          // document viewer; a filled sliding pill (the same rounded-pill
-          // language AppBadge/AppRadius.pill already use elsewhere in the
-          // app) reads as a deliberately designed dashboard.
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(60),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg,
-                0,
-                AppSpacing.lg,
-                AppSpacing.sm,
+        backgroundColor: AppColors.background,
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(112),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              WellScreenAppBar.subPage(
+                title: 'Reports',
+                actions: [
+                  AppPillButton(
+                    label: 'Export PDF',
+                    compact: true,
+                    onPressed: () => _exportReport(context),
+                  ),
+                  const SizedBox(width: 8),
+                ],
               ),
-              child: Container(
+              // Category pills: the active one is a filled blue pill, the
+              // others are plain labels.
+              SizedBox(
                 height: 44,
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-                child: TabBar(
-                  tabs: _tabs,
-                  dividerColor: Colors.transparent,
-                  splashBorderRadius: BorderRadius.circular(AppRadius.pill),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  indicator: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x332557A7),
-                        blurRadius: 8,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  labelColor: Colors.white,
-                  unselectedLabelColor: AppColors.textSecondary,
-                  labelStyle: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: TabBar(
+                    tabs: _tabs,
+                    dividerColor: Colors.transparent,
+                    splashBorderRadius: BorderRadius.circular(AppRadius.pill),
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicatorPadding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 4,
+                    ),
+                    indicator: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                    labelPadding: EdgeInsets.zero,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: AppColors.textPrimary,
+                    labelStyle: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
         body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -898,9 +892,12 @@ class ReportsScreen extends StatelessWidget {
           isSuccess: (entry) =>
               entry['outcome'] == 'blocked' ||
               entry['outcome'] == 'emergency_access_bypass',
-          entryLabel: (entry) =>
-              '${_friendlyAppName(entry['packageName'] as String?)} · '
-              '${entry['outcome'] ?? 'unknown'}',
+          entryLabel: (entry) {
+            final reason = blockReasonLabel(entry);
+            return '${_friendlyAppName(entry['packageName'] as String?)} · '
+                '${entry['outcome'] ?? 'unknown'}'
+                '${reason == null ? '' : ' · $reason'}';
+          },
         ),
       ),
       (
@@ -980,19 +977,8 @@ class ReportsScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [AppColors.primary, AppColors.primaryDark],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
+        color: AppColors.primary,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 14,
-            offset: Offset(0, 6),
-          ),
-        ],
       ),
       child: Row(
         children: [

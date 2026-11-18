@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 
 /// System-wide audit log for admins - every action recorded server-side
 /// (grant_admin.py, backend services, etc.) into the `system_logs`
@@ -145,7 +146,7 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('System Logs')),
+      appBar: const WellScreenAppBar.subPage(title: 'System Logs'),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _logsQuery.snapshots(),
         builder: (context, snapshot) {

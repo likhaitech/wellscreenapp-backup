@@ -1,8 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../widgets/wellscreen_ui.dart';
 
 import '../theme/app_theme.dart';
+import '../services/parent_phone_sync_service.dart';
+import '../services/app_rules_service.dart';
+import '../services/password_policy.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
 import 'login_screen.dart';
@@ -17,7 +21,6 @@ class ProfileSettingsScreen extends StatefulWidget {
 
 class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   static const Color purple = AppColors.primary;
-  static const Color deepPurple = AppColors.primaryDark;
   static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
@@ -166,8 +169,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       return;
     }
 
-    if (newPassword.length < 8) {
-      showMessage('New password must be at least 8 characters.');
+    if (!PasswordPolicy.isStrong(newPassword)) {
+      await showPasswordRequirementsDialog(context, newPassword);
       return;
     }
 
@@ -291,9 +294,18 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                       const SizedBox(height: 12),
                       _textField(
                         controller: newPasswordController,
-                        label: 'New Password (min. 8 characters)',
+                        label: 'New Password',
                         icon: Icons.lock_rounded,
                         obscureText: true,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        PasswordPolicy.hint,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       _textField(
@@ -324,9 +336,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                                 },
                           style: FilledButton.styleFrom(
                             backgroundColor: purple,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                            shape: const StadiumBorder(),
                           ),
                           icon: const Icon(Icons.save_rounded),
                           label: Text(
@@ -352,8 +362,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     // Revoke the child's registered push token before leaving this account.
     await AppTimeLimitNotificationService.instance.stopForSignOut();
 
-    // Clear the child-specific native limit cache before switching accounts.
-    await AppTimeLimitService().clearCachedLimits();
+    // On a monitored child phone, keep the native limit cache so the
+    // AccessibilityService keeps enforcing it after sign-out. Other phones
+    // (e.g. a guardian's) clear it as before.
+    if (!await AppRulesService.isMonitoredChildDevice()) {
+      await AppTimeLimitService().clearCachedLimits();
+    }
     await FirebaseAuth.instance.signOut();
 
     if (!mounted) return;
@@ -362,6 +376,128 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,
+    );
+  }
+
+  /// What WellScreen does and does not collect, matching the code: usage
+  /// time, website domains (never full addresses or page content), shared
+  /// GPS location, and family chat - and nothing from messages, calls,
+  /// photos, passwords or files.
+  void showPrivacyBoundarySheet() {
+    Widget row(IconData icon, String title, String body, {bool no = false}) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: no ? AppColors.danger : AppColors.primary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: darkText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    body,
+                    style: const TextStyle(
+                      color: grayText,
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Privacy Boundary',
+                style: TextStyle(
+                  color: darkText,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'What WellScreen collects from a monitored phone, and what '
+                'it never touches.',
+                style: TextStyle(color: grayText, fontSize: 13),
+              ),
+              const SizedBox(height: 18),
+              row(
+                Icons.timer_outlined,
+                'App usage time',
+                'How long each app was open today, read from Android Usage '
+                    'Access.',
+              ),
+              row(
+                Icons.language_rounded,
+                'Website domains only',
+                'The site name (for example, example.com) in supported '
+                    'browsers. Never the full address, page content or '
+                    'what was typed.',
+              ),
+              row(
+                Icons.location_on_outlined,
+                'Shared location',
+                'The phone\'s location when it is shared with the guardian.',
+              ),
+              row(
+                Icons.chat_bubble_outline_rounded,
+                'Family chat and requests',
+                'Messages and access requests between the child and their '
+                    'own guardian only.',
+              ),
+              const Divider(height: 22),
+              row(
+                Icons.block_rounded,
+                'Never collected',
+                'Text messages, calls, photos, passwords, other apps\' '
+                    'content, and files on the phone.',
+                no: true,
+              ),
+              row(
+                Icons.lock_outline_rounded,
+                'Who can see it',
+                'Only the child and their paired guardian. Database rules '
+                    'block every other account.',
+              ),
+              const SizedBox(height: 4),
+              AppPillButton(
+                label: 'Got it',
+                expand: true,
+                onPressed: () => Navigator.pop(sheetContext),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -463,9 +599,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           : () => saveProfileDetails(role),
                       style: FilledButton.styleFrom(
                         backgroundColor: purple,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                        shape: const StadiumBorder(),
                       ),
                       icon: const Icon(Icons.save_rounded),
                       label: Text(
@@ -496,14 +630,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       obscureText: obscureText,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: purple),
-        filled: true,
-        fillColor: pageBg,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: purple, width: 2),
-        ),
+        prefixIcon: Icon(icon, color: grayText),
       ),
     );
   }
@@ -540,15 +667,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
     return Scaffold(
       backgroundColor: pageBg,
-      appBar: AppBar(
-        title: const Text(
-          'Profile Settings',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        backgroundColor: pageBg,
-        foregroundColor: darkText,
-        elevation: 0,
-      ),
+      appBar: const WellScreenAppBar.subPage(title: 'Settings'),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('users')
@@ -596,7 +715,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               : 'User Account';
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
               _profileHeader(
                 fullName: fullName,
@@ -639,6 +758,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           builder: (_) => const PhoneVerificationScreen(),
                         ),
                       );
+                      // Pass a newly verified number on to the children
+                      // (no-op for child accounts).
+                      await ParentPhoneSyncService.syncToChildProfiles();
                       if (mounted) setState(() {});
                     },
                   ),
@@ -663,13 +785,13 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     title: 'Privacy Boundary',
                     subtitle:
                         'WellScreen does not read messages, passwords, calls, photos, or sensitive files.',
-                    onTap: () {},
+                    onTap: showPrivacyBoundarySheet,
                   ),
                   _settingsTile(
                     icon: Icons.logout_rounded,
-                    iconColor: Colors.redAccent,
+                    iconColor: AppColors.danger,
                     backgroundColor: softRed,
-                    title: 'Logout',
+                    title: 'Sign Out',
                     subtitle: 'Sign out from this WellScreen account.',
                     onTap: logout,
                   ),
@@ -692,128 +814,87 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }) {
     final isChild = role == 'child';
 
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isChild
-              ? const [purple, deepPurple]
-              : const [purple, deepPurple],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x222557A7),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Stack(
-            children: [
-              _profileImage(photoUrl, isChild),
-              Positioned(
-                right: 0,
-                bottom: 2,
+    return Column(
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _profileImage(photoUrl, isChild),
+            Positioned(
+              right: -6,
+              bottom: 0,
+              child: Material(
+                color: Colors.white,
+                shape: const StadiumBorder(
+                  side: BorderSide(color: AppColors.border),
+                ),
                 child: InkWell(
+                  customBorder: const StadiumBorder(),
                   onTap: onEdit,
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: teal,
-                      borderRadius: BorderRadius.circular(17),
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: const Icon(
-                      Icons.edit_rounded,
-                      color: Colors.white,
-                      size: 18,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    child: Text(
+                      'Edit',
+                      style: TextStyle(
+                        color: darkText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            fullName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
             ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          fullName,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: darkText,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 5),
-          Text(
-            email,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.primaryLight,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Text(
-              roleLabel,
-              style: const TextStyle(
-                color: purple,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          email,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: grayText, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        StatusPill(label: roleLabel, tone: StatusTone.info),
+      ],
     );
   }
 
   Widget _profileImage(String photoUrl, bool isChild) {
-    if (photoUrl.isNotEmpty) {
-      return CircleAvatar(
-        radius: 48,
-        backgroundColor: Colors.white,
-        child: ClipOval(
-          child: Image.network(
-            photoUrl,
-            width: 92,
-            height: 92,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(
-                isChild
-                    ? Icons.child_care_rounded
-                    : Icons.family_restroom_rounded,
-                color: purple,
-                size: 54,
-              );
-            },
-          ),
-        ),
-      );
-    }
+    final fallback = Icon(
+      isChild ? Icons.face_rounded : Icons.person_rounded,
+      color: purple,
+      size: 46,
+    );
 
     return CircleAvatar(
-      radius: 48,
-      backgroundColor: Colors.white,
-      child: Icon(
-        isChild ? Icons.child_care_rounded : Icons.family_restroom_rounded,
-        color: purple,
-        size: 54,
-      ),
+      radius: 44,
+      backgroundColor: softPurple,
+      child: photoUrl.isEmpty
+          ? fallback
+          : ClipOval(
+              child: Image.network(
+                photoUrl,
+                width: 88,
+                height: 88,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => fallback,
+              ),
+            ),
     );
   }
 
+  /// Apple-style grouped list: a small caption, then one white inset card
+  /// holding the rows with hairline dividers between them.
   Widget _settingsSection({
     required String title,
     required List<Widget> children,
@@ -821,16 +902,28 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: darkText,
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
+        Padding(
+          padding: const EdgeInsets.only(left: 6, bottom: 8),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: grayText,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-        const SizedBox(height: 10),
-        ...children,
+        BentoCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0) const Divider(indent: 52),
+                children[i],
+              ],
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -843,44 +936,37 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 12,
-            offset: Offset(0, 5),
-          ),
-        ],
+    final destructive = iconColor == AppColors.danger;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      leading: Icon(
+        icon,
+        color: destructive ? AppColors.danger : darkText,
+        size: 22,
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(14),
-        leading: CircleAvatar(
-          radius: 25,
-          backgroundColor: backgroundColor,
-          child: Icon(icon, color: iconColor),
+      minLeadingWidth: 22,
+      title: Text(
+        title,
+        style: TextStyle(
+          color: destructive ? AppColors.danger : darkText,
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
         ),
-        title: Text(
-          title,
-          style: const TextStyle(color: darkText, fontWeight: FontWeight.w900),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            subtitle,
-            style: const TextStyle(
-              color: grayText,
-              height: 1.3,
-              fontWeight: FontWeight.w600,
+      ),
+      subtitle: Text(
+        subtitle,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: grayText, fontSize: 12, height: 1.3),
+      ),
+      trailing: destructive
+          ? null
+          : const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textDisabled,
             ),
-          ),
-        ),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: onTap,
-      ),
+      onTap: onTap,
     );
   }
 }

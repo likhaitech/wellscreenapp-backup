@@ -8,6 +8,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../services/pairing_api_service.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/verify_email_dialog.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'login_screen.dart';
 
 class DevicePairingScreen extends StatefulWidget {
@@ -19,12 +21,10 @@ class DevicePairingScreen extends StatefulWidget {
 
 class _DevicePairingScreenState extends State<DevicePairingScreen> {
   static const Color purple = AppColors.primary;
-  static const Color deepPurple = AppColors.primaryDark;
   static const Color teal = AppColors.accent;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
-  static const Color softPurple = AppColors.primaryLight;
   static const Color softGreen = AppColors.successBg;
   static const Color softOrange = AppColors.warningBg;
 
@@ -158,7 +158,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     );
 
     final childNames = newlyConnected
-        .map((doc) => (doc.data()['name'] ?? 'Student').toString())
+        .map((doc) => (doc.data()['name'] ?? 'Child').toString())
         .toList();
 
     // Update before showing dialogs to prevent duplicate confirmations on
@@ -177,7 +177,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Device Connected Successfully!',
           textAlign: TextAlign.center,
@@ -193,7 +193,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              '$childNameâ€™s device has been successfully connected to your account.',
+              '$childName\'s device has been successfully connected to your account.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: grayText,
@@ -209,9 +209,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             onPressed: () => Navigator.pop(dialogContext),
             style: FilledButton.styleFrom(
               backgroundColor: purple,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
+              shape: const StadiumBorder(),
             ),
             child: const Text(
               'Continue',
@@ -226,7 +224,9 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   bool isGenerating = false;
   String generatedCode = '';
   String generatedChildName = '';
+  String generatedChildProfileId = '';
   DateTime? generatedExpiry;
+  final Set<String> _removingProfileIds = {};
 
   @override
   void dispose() {
@@ -262,8 +262,9 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     setState(() => isGenerating = true);
 
     try {
-      final result = await PairingApiService().generateCode(
-        childName: childName,
+      final result = await runWithEmailVerification(
+        context,
+        () => PairingApiService().generateCode(childName: childName),
       );
 
       if (!mounted) return;
@@ -271,6 +272,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
       setState(() {
         generatedCode = result.code;
         generatedChildName = childName;
+        generatedChildProfileId = result.childProfileId;
         generatedExpiry = result.expiresAt;
       });
 
@@ -282,6 +284,79 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     } finally {
       if (mounted) {
         setState(() => isGenerating = false);
+      }
+    }
+  }
+
+  Future<void> removeChildDevice({
+    required String childProfileId,
+    required String childName,
+  }) async {
+    if (_removingProfileIds.contains(childProfileId)) return;
+
+    setState(() {
+      _removingProfileIds.add(childProfileId);
+    });
+
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: const Text(
+            'Remove Child Device?',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            'Are you sure you want to remove $childName?\n\n'
+            'You will no longer be able to monitor or control '
+            'this device until it is paired again.\n\n'
+            'The child account will not be deleted.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.danger,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Remove Device'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      await PairingApiService().unpairDevice(childProfileId: childProfileId);
+
+      if (!mounted) return;
+
+      setState(() {
+        if (generatedChildProfileId == childProfileId) {
+          generatedCode = '';
+          generatedChildName = '';
+          generatedChildProfileId = '';
+          generatedExpiry = null;
+        }
+      });
+
+      showMessage('$childName has been successfully removed.');
+    } catch (error) {
+      if (!mounted) return;
+
+      showMessage(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _removingProfileIds.remove(childProfileId);
+        });
       }
     }
   }
@@ -355,15 +430,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
 
     return Scaffold(
       backgroundColor: pageBg,
-      appBar: AppBar(
-        title: const Text(
-          'Device Pairing',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
-        backgroundColor: pageBg,
-        foregroundColor: darkText,
-        elevation: 0,
-      ),
+      appBar: const WellScreenAppBar.subPage(title: 'Device Pairing'),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: childProfilesStream(parentUser.uid),
         builder: (context, snapshot) {
@@ -387,17 +454,17 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             );
           }
 
-          final childDocs = snapshot.data?.docs ?? [];
+          final childDocs = (snapshot.data?.docs ?? [])
+              .where((doc) => doc.data()['pairingStatus'] != 'unpaired')
+              .toList();
 
           return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
             children: [
-              _headerCard(),
-              const SizedBox(height: 18),
               _generateCodeCard(),
-              if (generatedCode.isNotEmpty) const SizedBox(height: 18),
+              if (generatedCode.isNotEmpty) const SizedBox(height: 14),
               if (generatedCode.isNotEmpty) _generatedCodeCard(),
-              const SizedBox(height: 22),
+              const SizedBox(height: 14),
               _childrenSection(childDocs),
             ],
           );
@@ -406,121 +473,43 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     );
   }
 
-  Widget _headerCard() {
-    return Container(
-      height: 94,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [purple, deepPurple],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 14,
-            offset: Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          _logoBox(),
-          const SizedBox(width: 14),
-          const Expanded(
-            child: Text(
-              'Pair Student Device',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          const Icon(Icons.link_rounded, color: Colors.white, size: 34),
-        ],
-      ),
-    );
-  }
-
-  Widget _logoBox() {
-    return Container(
-      width: 62,
-      height: 62,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(31),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(31),
-        child: Image.asset(
-          'assets/icons/wellscreen_icon.png',
-          fit: BoxFit.cover,
-        ),
+  Widget _cardTitle(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: darkText,
+        fontSize: 18,
+        fontWeight: FontWeight.w700,
       ),
     );
   }
 
   Widget _generateCodeCard() {
-    return _whiteCard(
+    return BentoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _cardTitle('Generate Pairing Code'),
+          const SizedBox(height: 6),
           const Text(
-            'Create Pairing Code',
-            style: TextStyle(
-              color: darkText,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
+            'Enter the child name and generate a 6-digit code. The '
+            'child enters or scans it on their device.',
+            style: TextStyle(color: grayText, fontSize: 13, height: 1.35),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Enter the student name and generate a 6-digit code. The student will enter this code on their device.',
-            style: TextStyle(
-              color: grayText,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 18),
-          TextField(
+          const SizedBox(height: 14),
+          WellScreenField(
+            label: 'Child Name',
             controller: childNameController,
             textInputAction: TextInputAction.done,
-            decoration: InputDecoration(
-              labelText: 'Student Name',
-              prefixIcon: const Icon(Icons.child_care_rounded, color: purple),
-              filled: true,
-              fillColor: pageBg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: purple, width: 2),
-              ),
-            ),
           ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 54,
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: isGenerating ? null : generatePairingCode,
-              style: FilledButton.styleFrom(
-                backgroundColor: purple,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              icon: const Icon(Icons.qr_code_2_rounded),
-              label: Text(
-                isGenerating ? 'Generating...' : 'Generate Pairing Code',
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
+          const SizedBox(height: 14),
+          AppPillButton(
+            label: 'Generate Code',
+            icon: Icons.qr_code_2_rounded,
+            style: AppPillStyle.brand,
+            expand: true,
+            loading: isGenerating,
+            onPressed: generatePairingCode,
           ),
         ],
       ),
@@ -528,126 +517,83 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   }
 
   Widget _generatedCodeCard() {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: softPurple,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0x222557A7)),
-      ),
+    return BentoCard(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const CircleAvatar(
-            radius: 36,
-            backgroundColor: Colors.white,
-            child: Icon(Icons.verified_rounded, color: teal, size: 46),
+          _cardTitle('Pair New Device'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              StatusPill(label: generatedChildName, tone: StatusTone.info),
+              const StatusPill(label: 'child'),
+            ],
           ),
           const SizedBox(height: 14),
-          const Text(
-            'Pairing Code Ready',
-            style: TextStyle(
-              color: darkText,
-              fontSize: 21,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            generatedChildName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: grayText,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: Text(
-              generatedCode,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: purple,
-                fontSize: 38,
-                letterSpacing: 8,
-                fontWeight: FontWeight.w900,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Same code as the digits, just scannable - the child can
+              // type the 6 digits or scan this on the child app's pairing
+              // screen (see qr_scan_screen.dart). Encodes the plain code
+              // only, so it carries no more trust than the digits do.
+              QrImageView(
+                data: generatedCode,
+                version: QrVersions.auto,
+                size: 128,
+                padding: EdgeInsets.zero,
+                backgroundColor: Colors.white,
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: darkText,
+                ),
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: darkText,
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Same code as above, just scannable - the student can either
-          // type the 6 digits or point their camera at this on the child
-          // app's pairing screen (see qr_scan_screen.dart). Encodes the
-          // plain code only, nothing else, so it carries no more trust
-          // than the digits do: whoever holds pairing_codes/{code} in
-          // Firestore is still what actually grants the pairing, not
-          // possession of the image.
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: Column(
-              children: [
-                QrImageView(
-                  data: generatedCode,
-                  version: QrVersions.auto,
-                  size: 160,
-                  backgroundColor: Colors.white,
-                  eyeStyle: const QrEyeStyle(
-                    eyeShape: QrEyeShape.square,
-                    color: purple,
-                  ),
-                  dataModuleStyle: const QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: purple,
-                  ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Pairing Code',
+                      style: TextStyle(color: grayText, fontSize: 12),
+                    ),
+                    const SizedBox(height: 2),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        generatedCode,
+                        style: const TextStyle(
+                          color: darkText,
+                          fontSize: 30,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w800,
+                          fontFeatures: kTabularFigures,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    AppPillButton(
+                      label: 'Copy Code',
+                      compact: true,
+                      expand: true,
+                      onPressed: copyCode,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Or let the student scan this QR code',
-                  style: TextStyle(
-                    color: grayText,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Text(
             'Expires: ${formatDate(generatedExpiry)}',
-            style: const TextStyle(
-              color: grayText,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 48,
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: copyCode,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: purple,
-                side: const BorderSide(color: purple, width: 1.4),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              icon: const Icon(Icons.copy_rounded),
-              label: const Text(
-                'Copy Code',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
+            style: const TextStyle(color: grayText, fontSize: 12),
           ),
         ],
       ),
@@ -657,81 +603,65 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   Widget _childrenSection(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> childDocs,
   ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Child Devices',
-          style: TextStyle(
-            color: darkText,
-            fontSize: 22,
-            fontWeight: FontWeight.w900,
+    return BentoCard(
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _cardTitle('Paired Devices')),
+              if (childDocs.isNotEmpty)
+                TextButton(
+                  onPressed: _isSyncingParentDetails
+                      ? null
+                      : () {
+                          final parentUser = FirebaseAuth.instance.currentUser;
+                          if (parentUser != null) {
+                            unawaited(
+                              _syncPublicParentDetailsToChildren(
+                                parentUser,
+                                showFeedback: true,
+                              ),
+                            );
+                          }
+                        },
+                  child: Text(
+                    _isSyncingParentDetails ? 'Syncing...' : 'Sync details',
+                  ),
+                )
+              else
+                const SizedBox(height: 44),
+            ],
           ),
-        ),
-        const SizedBox(height: 12),
-        if (childDocs.isNotEmpty) ...[
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _isSyncingParentDetails
-                  ? null
-                  : () {
-                      final parentUser = FirebaseAuth.instance.currentUser;
-                      if (parentUser != null) {
-                        unawaited(
-                          _syncPublicParentDetailsToChildren(
-                            parentUser,
-                            showFeedback: true,
-                          ),
-                        );
-                      }
-                    },
-              icon: _isSyncingParentDetails
-                  ? const SizedBox(
-                      width: 17,
-                      height: 17,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.sync_rounded),
-              label: Text(
-                _isSyncingParentDetails
-                    ? 'Syncing Parent Details...'
-                    : 'Sync Parent Details',
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
+          if (childDocs.isEmpty)
+            _emptyChildrenCard()
+          else
+            for (var i = 0; i < childDocs.length; i++) ...[
+              if (i > 0) const Divider(endIndent: 8),
+              _childDeviceCard(childDocs[i].id, childDocs[i].data()),
+            ],
         ],
-        if (childDocs.isEmpty)
-          _emptyChildrenCard()
-        else
-          ...childDocs.map((doc) => _childDeviceCard(doc.data())),
-      ],
+      ),
     );
   }
 
   Widget _emptyChildrenCard() {
-    return _whiteCard(
-      child: const Column(
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(0, 6, 8, 12),
+      child: Row(
         children: [
-          Icon(Icons.phone_android_rounded, color: purple, size: 58),
-          SizedBox(height: 12),
-          Text(
-            'No child device yet',
-            style: TextStyle(
-              color: darkText,
-              fontSize: 19,
-              fontWeight: FontWeight.w900,
-            ),
+          Icon(
+            Icons.phone_android_rounded,
+            color: AppColors.textDisabled,
+            size: 28,
           ),
-          SizedBox(height: 6),
-          Text(
-            'Generate a pairing code to connect a student account.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: grayText,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'No child device yet. Generate a pairing code to connect a '
+              'child account.',
+              style: TextStyle(color: grayText, fontSize: 13, height: 1.35),
             ),
           ),
         ],
@@ -739,110 +669,100 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     );
   }
 
-  Widget _childDeviceCard(Map<String, dynamic> data) {
-    final name = (data['name'] ?? 'Student Device').toString();
+  Widget _childDeviceCard(String childProfileId, Map<String, dynamic> data) {
+    final name = (data['name'] ?? 'Child Device').toString();
     final email = (data['childEmail'] ?? 'Not connected yet').toString();
     final connected = isConnected(data);
     final connectedAt = formatTimestamp(data['connectedAt']);
+    final isRemoving = _removingProfileIds.contains(childProfileId);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 12,
-            offset: Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 8, 8, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          CircleAvatar(
-            radius: 29,
-            backgroundColor: connected ? softGreen : softOrange,
-            child: Icon(
-              connected ? Icons.phone_android_rounded : Icons.link_off_rounded,
-              color: connected ? teal : Colors.orange,
-              size: 32,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$nameâ€™s Phone',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: darkText,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: connected ? softGreen : softOrange,
+                child: Icon(
+                  connected
+                      ? Icons.phone_android_rounded
+                      : Icons.link_off_rounded,
+                  color: connected ? AppColors.success : AppColors.warning,
+                  size: 22,
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  connected ? email : 'Waiting for student pairing',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: grayText,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  connected ? 'Connected: $connectedAt' : 'Status: Waiting',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: grayText, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: connected ? softGreen : softOrange,
-              borderRadius: BorderRadius.circular(30),
-            ),
-            child: Text(
-              connected ? 'Online' : 'Waiting',
-              style: TextStyle(
-                color: connected ? teal : Colors.orange,
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$name\u2019s Phone',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: darkText,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      connected ? email : 'Waiting for child pairing',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: grayText, fontSize: 13),
+                    ),
+                    if (connected) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Paired $connectedAt',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: grayText, fontSize: 12),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              StatusPill(
+                label: connected ? 'Paired' : 'Waiting',
+                tone: connected ? StatusTone.success : StatusTone.warning,
+                dot: true,
+              ),
+            ],
+          ),
+          if (connected) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: isRemoving
+                  ? null
+                  : () => removeChildDevice(
+                      childProfileId: childProfileId,
+                      childName: name,
+                    ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.danger,
+                side: const BorderSide(color: AppColors.dangerBg),
+                minimumSize: const Size(0, 40),
+                shape: const StadiumBorder(),
+              ),
+              icon: isRemoving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.link_off_rounded, size: 18),
+              label: Text(isRemoving ? 'Removing Device...' : 'Remove Device'),
             ),
-          ),
+          ],
         ],
       ),
-    );
-  }
-
-  Widget _whiteCard({
-    required Widget child,
-    EdgeInsets padding = const EdgeInsets.all(18),
-  }) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 12,
-            offset: Offset(0, 5),
-          ),
-        ],
-      ),
-      child: child,
     );
   }
 }

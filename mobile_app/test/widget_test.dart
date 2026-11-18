@@ -9,12 +9,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('WellScreen'), findsOneWidget);
-    expect(
-      find.text('Smart Parental Control\nfor Digital Wellness'),
-      findsOneWidget,
-    );
-    expect(find.text('Login'), findsWidgets);
-    expect(find.text('Access your WellScreen account'), findsOneWidget);
+    expect(find.text('Build healthy digital habits together'), findsOneWidget);
+    expect(find.text('Email Address'), findsOneWidget);
+    expect(find.text('Password'), findsOneWidget);
+    expect(find.text('Log In'), findsOneWidget);
+    expect(find.text('Forgot password?'), findsOneWidget);
 
     expect(
       find.text('Parent access for digital wellness monitoring'),

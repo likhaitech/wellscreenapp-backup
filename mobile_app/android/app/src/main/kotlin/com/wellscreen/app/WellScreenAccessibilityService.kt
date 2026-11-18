@@ -232,7 +232,11 @@ class WellScreenAccessibilityService : AccessibilityService() {
     private var lastBlockedDomain: String? = null
     private var lastWebBlockTime: Long = 0L
 
-    private fun blockWebsite(browserPackage: String, domain: String) {
+    private fun blockWebsite(
+        browserPackage: String,
+        domain: String,
+        reason: SiteBlocker.BlockReason,
+    ) {
         val now = System.currentTimeMillis()
         val recent = lastBlockedDomain == domain &&
             now - lastWebBlockTime < 2500 &&
@@ -245,13 +249,20 @@ class WellScreenAccessibilityService : AccessibilityService() {
         Log.d(CAPTURE_LOG_TAG, msg)
         CaptureDebugLogger.log(this, msg)
 
+        // Send the browser to a safe page first, so reopening it does not land
+        // on the blocked site again (that caused an endless block loop).
+        SafePageRedirect.leaveBlockedPage(this, browserPackage)
+
         try {
             val intent = Intent(this, BlockedAppActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             intent.putExtra("blocked_domain", domain)
+            intent.putExtra("blocked_browser", browserPackage)
             startActivity(intent)
-            RestrictionLogger.recordOutcome(this, domain, "blocked", now)
+            RestrictionLogger.recordOutcome(
+                this, domain, "blocked", now, reason.source, reason.category,
+            )
         } catch (_: Exception) {
             RestrictionLogger.recordOutcome(this, domain, "failed_exception", now)
         }
@@ -307,8 +318,9 @@ class WellScreenAccessibilityService : AccessibilityService() {
 
             // Block BEFORE the dedup below - a still-loaded blocked page must be
             // re-blocked after the child dismisses the block screen.
-            if (SiteBlocker.isBlocked(this, domain)) {
-                blockWebsite(currentPackage, domain)
+            val blockReason = SiteBlocker.blockReason(this, domain)
+            if (blockReason != null) {
+                blockWebsite(currentPackage, domain, blockReason)
                 return
             }
 

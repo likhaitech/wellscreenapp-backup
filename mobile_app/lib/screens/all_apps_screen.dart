@@ -5,8 +5,9 @@ import '../models/app_time_limit.dart';
 import '../services/app_time_limit_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_usage_icon.dart';
-import '../widgets/wellscreen_bottom_nav.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'device_pairing_screen.dart';
+import 'parent_child_chat_screen.dart';
 import 'profile_settings_screen.dart';
 import 'reports_screen.dart';
 import 'set_app_time_limit_dialog.dart';
@@ -58,33 +59,33 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
     _limitsStream = _appTimeLimitService.watchLimits(widget.childProfileId);
   }
 
-  void _openPeriodInfo() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Previous days are not stored by the current child sync. '
-          '7 Days, 30 Days, and Custom will be available once daily history is added.',
-        ),
-      ),
-    );
-  }
-
   void _onBottomNavTap(int index) {
     if (index == 0) {
       Navigator.pop(context);
     } else if (index == 1) {
+      if (widget.childProfileId.isEmpty) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ParentChildChatScreen(
+            childProfileId: widget.childProfileId,
+            isParent: true,
+          ),
+        ),
+      );
+    } else if (index == 2) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const DevicePairingScreen()),
       );
-    } else if (index == 2) {
+    } else if (index == 3) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ReportsScreen(childProfileId: widget.childProfileId),
         ),
       );
-    } else if (index == 3) {
+    } else if (index == 4) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
@@ -216,18 +217,15 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
           },
         ),
       ),
-      // Reuses the existing WellScreen navigation widget and the same four
-      // parent destinations. ReportsScreen itself is untouched.
-      bottomNavigationBar: WellScreenBottomNav(
+      // The same five guardian destinations as the dashboard dock.
+      bottomNavigationBar: FloatingPillDock(
         currentIndex: 0,
         items: const [
-          WellScreenNavItem(icon: Icons.home_rounded, label: 'Home'),
-          WellScreenNavItem(
-            icon: Icons.phone_android_rounded,
-            label: 'Devices',
-          ),
-          WellScreenNavItem(icon: Icons.analytics_rounded, label: 'Reports'),
-          WellScreenNavItem(icon: Icons.settings_rounded, label: 'Settings'),
+          DockItem(icon: Icons.home_outlined, label: 'Home'),
+          DockItem(icon: Icons.chat_bubble_outline_rounded, label: 'Chat'),
+          DockItem(icon: Icons.link_rounded, label: 'Devices'),
+          DockItem(icon: Icons.bar_chart_rounded, label: 'Reports'),
+          DockItem(icon: Icons.settings_outlined, label: 'Settings'),
         ],
         onTap: _onBottomNavTap,
       ),
@@ -279,48 +277,29 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
     );
   }
 
+  /// Only today's usage is synced from the child's phone, so this shows a
+  /// single "Today" label instead of period tabs that had nothing behind
+  /// them.
   Widget _periodSwitcher() {
-    const tabs = ['Today', '7 Days', '30 Days', 'Custom'];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
-      child: Container(
-        height: 44,
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: const Color(0xFFDCE5F2)),
-        ),
-        child: Row(
-          children: [
-            for (var i = 0; i < tabs.length; i++) ...[
-              if (i != 0)
-                Container(width: 1, height: 16, color: const Color(0xFFE6EDF6)),
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(26),
-                  onTap: i == 0 ? null : _openPeriodInfo,
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: i == 0 ? AppColors.primary : Colors.transparent,
-                      borderRadius: BorderRadius.circular(26),
-                    ),
-                    child: Text(
-                      tabs[i],
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: i == 0 ? Colors.white : AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(18, 14, 18, 18),
+      child: Row(
+        children: [
+          StatusPill(
+            label: 'Today',
+            tone: StatusTone.info,
+            icon: Icons.today_rounded,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Usage since midnight on the child\'s phone',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }

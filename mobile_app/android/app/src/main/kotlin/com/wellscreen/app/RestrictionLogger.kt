@@ -33,6 +33,8 @@ object RestrictionLogger {
         packageName: String,
         outcome: String,
         triggeredAtMs: Long,
+        blockSource: String? = null,
+        category: String? = null,
     ) {
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -45,6 +47,10 @@ object RestrictionLogger {
             entry.put("outcome", outcome)
             entry.put("responseTimeMs", now - triggeredAtMs)
             entry.put("timestampMs", now)
+            // Website blocks also say WHY (parent rule, keyword, list or AI)
+            // and the harmful-site category, for the parent's report.
+            if (blockSource != null) entry.put("blockSource", blockSource)
+            if (category != null) entry.put("category", category)
             log.put(entry)
 
             val trimmed = JSONArray()
