@@ -1,5 +1,9 @@
 package com.wellscreen.app
 
+import android.widget.ImageView
+import android.graphics.drawable.GradientDrawable
+import android.graphics.Typeface
+import android.graphics.Color
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -9,7 +13,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Gravity
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONArray
@@ -82,41 +85,175 @@ class BlockedAppActivity : Activity() {
             blockedPackage
         }
 
+        // Resolve a readable name and icon for the blocked app. A blocked
+        // website has neither, so it falls back to the WellScreen shield.
+        var displayName = appLabel
+        var appIcon: android.graphics.drawable.Drawable? = null
+        if (blockedDomain == null) {
+            try {
+                val info = packageManager.getApplicationInfo(blockedPackage, 0)
+                displayName = packageManager.getApplicationLabel(info).toString()
+                appIcon = packageManager.getApplicationIcon(info)
+            } catch (_: Exception) {
+                // Keep the package name as the label.
+            }
+        }
+
+        val density = resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density).toInt()
+
+        val ink = Color.parseColor("#111827")
+        val slate = Color.parseColor("#6B7280")
+        val canvas = Color.parseColor("#FAF9F6")
+
+        fun pill(fill: Int): GradientDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(999).toFloat()
+            setColor(fill)
+        }
+
+        window.decorView.setBackgroundColor(canvas)
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(48, 48, 48, 48)
+            setBackgroundColor(canvas)
+            setPadding(dp(24), dp(48), dp(24), dp(48))
+        }
+
+        val icon = ImageView(this).apply {
+            if (appIcon != null) {
+                setImageDrawable(appIcon)
+            } else {
+                setImageResource(android.R.drawable.ic_lock_lock)
+                setColorFilter(Color.parseColor("#2563EB"))
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
+        }
+
+        val badge = TextView(this).apply {
+            text = when {
+                blockedDomain != null -> "Blocked"
+                isDailyTimeLimitBlock -> "Time limit reached"
+                else -> "Restricted"
+            }
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#DC2626"))
+            background = pill(Color.parseColor("#FEE2E2"))
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(10) }
         }
 
         val title = TextView(this).apply {
             text = when {
-                blockedDomain != null -> "Website Blocked"
-                isDailyTimeLimitBlock -> "Daily App Time Limit Reached"
-                else -> "App Restricted"
+                blockedDomain != null -> "Website blocked"
+                else -> "$displayName is paused"
             }
-            textSize = 30f
+            textSize = 26f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(ink)
             gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(18) }
         }
 
         val message = TextView(this).apply {
             text = when {
                 blockedDomain != null ->
-                    "This website is blocked by WellScreen.\n\n$blockedDomain\n\nPlease ask your parent/guardian."
+                    "$blockedDomain is blocked by WellScreen."
                 isDailyTimeLimitBlock ->
-                    "You've reached today's usage limit for $appLabel.\n\n" +
-                        "This app will be available again after the next daily reset, " +
-                        "or when your parent/guardian increases its limit."
-                else ->
-                    "This app is currently restricted by WellScreen.\n\n" +
-                        "Package:\n$blockedPackage\n\nPlease take a break or ask your parent/guardian."
+                    "You've reached today's limit for this app. It will be " +
+                        "available again after the next daily reset, or when " +
+                        "your guardian adds time."
+                else -> "Restricted by your guardian"
             }
-            textSize = 17f
+            textSize = 15f
+            setTextColor(slate)
             gravity = Gravity.CENTER
-            setPadding(0, 32, 0, 32)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(6) }
         }
 
-        val button = Button(this).apply {
-            text = if (isDailyTimeLimitBlock) "Go Home" else "Go Back"
+        // White "Emergency Access" card with the request button.
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(20).toFloat()
+                setColor(Color.WHITE)
+                setStroke(dp(1), Color.parseColor("#E5E7EB"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(32) }
+        }
+
+        val cardTitle = TextView(this).apply {
+            text = "Emergency Access"
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(ink)
+        }
+
+        val cardBody = TextView(this).apply {
+            text = "Need this for something urgent? Ask your guardian to " +
+                "temporarily lift the restriction."
+            textSize = 13f
+            setTextColor(slate)
+            setPadding(0, dp(6), 0, dp(14))
+        }
+
+        val requestButton = TextView(this).apply {
+            text = "Request Temporary Access"
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = pill(ink)
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48),
+            )
+            // Requests are sent from the WellScreen chat, so open the app.
+            setOnClickListener {
+                val launch = packageManager.getLaunchIntentForPackage(packageName)
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launch)
+                }
+                finish()
+            }
+        }
+
+        card.addView(cardTitle)
+        card.addView(cardBody)
+        card.addView(requestButton)
+
+        val backButton = TextView(this).apply {
+            text = if (isDailyTimeLimitBlock || blockedDomain != null) "Go Home" else "Go Back"
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(ink)
+            gravity = Gravity.CENTER
+            background = pill(Color.parseColor("#F1F5F9"))
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { topMargin = dp(12) }
             setOnClickListener {
                 when {
                     blockedDomain != null -> returnToHome()
@@ -126,9 +263,12 @@ class BlockedAppActivity : Activity() {
             }
         }
 
+        root.addView(icon)
+        root.addView(badge)
         root.addView(title)
         root.addView(message)
-        root.addView(button)
+        root.addView(card)
+        root.addView(backButton)
         setContentView(root)
     }
 

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/wellscreen_ui.dart';
 
 /// Reads and displays the rolling trace written by CaptureDebugLogger
 /// (android/.../CaptureDebugLogger.kt) - an in-app-visible mirror of the
@@ -106,7 +107,7 @@ class _CaptureDebugScreenState extends State<CaptureDebugScreen> {
     if (!kDebugMode) {
       return Scaffold(
         backgroundColor: AppColors.background,
-        appBar: AppBar(title: const Text('Capture Debug Log')),
+        appBar: const WellScreenAppBar.subPage(title: 'Capture Debug Log'),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(AppSpacing.lg),
@@ -123,8 +124,8 @@ class _CaptureDebugScreenState extends State<CaptureDebugScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Capture Debug Log'),
+      appBar: WellScreenAppBar.subPage(
+        title: 'Capture Debug Log',
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

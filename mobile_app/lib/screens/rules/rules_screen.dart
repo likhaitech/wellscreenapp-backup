@@ -5,6 +5,7 @@ import '../../models/installed_app_info.dart';
 import '../../services/android_app_service.dart';
 import '../../services/app_rules_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/wellscreen_ui.dart';
 
 class RulesScreen extends StatefulWidget {
   const RulesScreen({super.key});
@@ -177,31 +178,51 @@ class _RulesScreenState extends State<RulesScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Rules'),
-        backgroundColor: AppColors.background,
-        surfaceTintColor: AppColors.background,
+      appBar: WellScreenAppBar.subPage(
+        title: 'App Rules',
         actions: [
           IconButton(
             tooltip: 'Refresh',
             onPressed: _loading ? null : _loadAppsAndRules,
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded),
           ),
-          TextButton(
-            onPressed: _saving ? null : _saveAllRules,
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text(
-                    'SAVE',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            icon: const Icon(Icons.settings_outlined),
+            onSelected: (value) {
+              if (value == 'accessibility') {
+                _androidAppService.openAccessibilitySettings();
+              } else if (value == 'usage') {
+                _androidAppService.openUsageAccessSettings();
+              } else if (value == 'clear') {
+                _clearRules();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'accessibility',
+                child: Text('Accessibility settings'),
+              ),
+              PopupMenuItem(value: 'usage', child: Text('Usage access')),
+              PopupMenuItem(value: 'clear', child: Text('Clear all rules')),
+            ],
           ),
         ],
       ),
+      bottomNavigationBar: _loading || _loadError != null
+          ? null
+          : SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: AppPillButton(
+                  label: 'Save Rules',
+                  expand: true,
+                  loading: _saving,
+                  onPressed: _saveAllRules,
+                ),
+              ),
+            ),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primary),
@@ -220,36 +241,42 @@ class _RulesScreenState extends State<RulesScreen> {
           : CustomScrollView(
               slivers: [
                 SliverToBoxAdapter(
-                  child: Column(
-                    children: [
-                      _PermissionCard(
-                        monitoredCount: monitoredRules.length,
-                        restrictedCount: restrictedRules.length,
-                        onOpenAccessibility:
-                            _androidAppService.openAccessibilitySettings,
-                        onOpenUsageAccess:
-                            _androidAppService.openUsageAccessSettings,
-                        onClearRules: _clearRules,
-                      ),
-                      _ActiveRulesCard(
-                        monitoredRules: monitoredRules,
-                        restrictedRules: restrictedRules,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-                        child: TextField(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                    child: Column(
+                      children: [
+                        TextField(
                           decoration: InputDecoration(
+                            isDense: true,
                             filled: true,
-                            fillColor: Colors.white,
-                            prefixIcon: const Icon(Icons.search),
+                            fillColor: AppColors.surfaceMuted,
+                            prefixIcon: const Icon(
+                              Icons.search_rounded,
+                              color: AppColors.textSecondary,
+                            ),
                             hintText: 'Search apps',
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                            ),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
+                              borderSide: BorderSide.none,
                             ),
                             enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.pill,
+                              ),
                               borderSide: const BorderSide(
-                                color: AppColors.textSecondary,
+                                color: AppColors.primary,
+                                width: 1.5,
                               ),
                             ),
                           ),
@@ -259,8 +286,32 @@ class _RulesScreenState extends State<RulesScreen> {
                             });
                           },
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _SummaryTile(
+                                count: monitoredRules.length,
+                                label: 'Monitored',
+                                icon: Icons.info_outline_rounded,
+                                background: AppColors.primaryLight,
+                                foreground: AppColors.primaryDark,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _SummaryTile(
+                                count: restrictedRules.length,
+                                label: 'Restricted',
+                                icon: Icons.lock_outline_rounded,
+                                background: const Color(0xFFFECACA),
+                                foreground: const Color(0xFF991B1B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 if (filteredApps.isEmpty)
@@ -280,27 +331,37 @@ class _RulesScreenState extends State<RulesScreen> {
                   )
                 else
                   SliverPadding(
-                    padding: const EdgeInsets.only(bottom: 18),
-                    sliver: SliverList.separated(
-                      itemCount: filteredApps.length,
-                      separatorBuilder: (context, index) =>
-                          const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final app = filteredApps[index];
-                        final rule = _rulesByPackage[app.packageName];
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+                    sliver: DecoratedSliver(
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(AppRadius.card),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      sliver: SliverList.separated(
+                        itemCount: filteredApps.length + 1,
+                        separatorBuilder: (context, index) => index == 0
+                            ? const SizedBox.shrink()
+                            : const Divider(indent: 14, endIndent: 14),
+                        itemBuilder: (context, index) {
+                          if (index == 0) return const _PermissionsHeader();
 
-                        return _AppRuleRow(
-                          app: app,
-                          monitorEnabled: rule?.monitorEnabled ?? false,
-                          restrictEnabled: rule?.restrictEnabled ?? false,
-                          onMonitorChanged: (value) {
-                            _updateMonitor(app, value);
-                          },
-                          onRestrictChanged: (value) {
-                            _updateRestrict(app, value);
-                          },
-                        );
-                      },
+                          final app = filteredApps[index - 1];
+                          final rule = _rulesByPackage[app.packageName];
+
+                          return _AppRuleRow(
+                            app: app,
+                            monitorEnabled: rule?.monitorEnabled ?? false,
+                            restrictEnabled: rule?.restrictEnabled ?? false,
+                            onMonitorChanged: (value) {
+                              _updateMonitor(app, value);
+                            },
+                            onRestrictChanged: (value) {
+                              _updateRestrict(app, value);
+                            },
+                          );
+                        },
+                      ),
                     ),
                   ),
               ],
@@ -309,282 +370,103 @@ class _RulesScreenState extends State<RulesScreen> {
   }
 }
 
-class _PermissionCard extends StatelessWidget {
-  final int monitoredCount;
-  final int restrictedCount;
-  final VoidCallback onOpenAccessibility;
-  final VoidCallback onOpenUsageAccess;
-  final VoidCallback onClearRules;
-
-  const _PermissionCard({
-    required this.monitoredCount,
-    required this.restrictedCount,
-    required this.onOpenAccessibility,
-    required this.onOpenUsageAccess,
-    required this.onClearRules,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: AppColors.primaryLight,
-      margin: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'App Rules Control',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 18,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _CountBadge(
-                    label: 'Monitored',
-                    count: monitoredCount,
-                    icon: Icons.visibility_rounded,
-                    color: AppColors.info,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _CountBadge(
-                    label: 'Restricted',
-                    count: restrictedCount,
-                    icon: Icons.block_rounded,
-                    color: AppColors.danger,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'Enable WellScreen in Accessibility Settings so this device can detect restricted apps when they are opened.',
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.35,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onOpenAccessibility,
-                    child: const Text(
-                      'Accessibility',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onOpenUsageAccess,
-                    child: const Text(
-                      'Usage Access',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: onClearRules,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text(
-                  'Clear rules',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CountBadge extends StatelessWidget {
-  final String label;
+/// Tinted count tile ("12 Monitored", "3 Restricted").
+class _SummaryTile extends StatelessWidget {
   final int count;
+  final String label;
   final IconData icon;
-  final Color color;
+  final Color background;
+  final Color foreground;
 
-  const _CountBadge({
-    required this.label,
+  const _SummaryTile({
     required this.count,
+    required this.label,
     required this.icon,
-    required this.color,
+    required this.background,
+    required this.foreground,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
+        color: background,
+        borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 7),
-          Flexible(
-            child: Text(
-              '$count $label',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: color, fontWeight: FontWeight.w900),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActiveRulesCard extends StatelessWidget {
-  final List<AppRule> monitoredRules;
-  final List<AppRule> restrictedRules;
-
-  const _ActiveRulesCard({
-    required this.monitoredRules,
-    required this.restrictedRules,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasRules = monitoredRules.isNotEmpty || restrictedRules.isNotEmpty;
-
-    return Card(
-      color: Colors.white,
-      margin: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: ExpansionTile(
-        initiallyExpanded: hasRules,
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        leading: const Icon(
-          Icons.rule_folder_rounded,
-          color: AppColors.primary,
-        ),
-        title: const Text(
-          'Active App Rules',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        subtitle: Text(
-          hasRules
-              ? 'View monitored and restricted apps'
-              : 'No apps selected yet',
-          style: const TextStyle(color: AppColors.textSecondary),
-        ),
-        children: [
-          if (!hasRules)
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Turn on Monitor or Restrict below to add app rules.',
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-            ),
-          if (monitoredRules.isNotEmpty) ...[
-            _RuleGroup(
-              title: 'Monitored Apps',
-              icon: Icons.visibility_rounded,
-              color: AppColors.info,
-              rules: monitoredRules,
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (restrictedRules.isNotEmpty)
-            _RuleGroup(
-              title: 'Restricted Apps',
-              icon: Icons.block_rounded,
-              color: AppColors.danger,
-              rules: restrictedRules,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RuleGroup extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color color;
-  final List<AppRule> rules;
-
-  const _RuleGroup({
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.rules,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w900,
-                fontSize: 15,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: rules.map((rule) {
-            return Chip(
-              avatar: CircleAvatar(
-                backgroundColor: color,
-                child: Text(
-                  rule.appName.isNotEmpty ? rule.appName[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w700,
+                    height: 1.1,
+                    fontFeatures: kTabularFigures,
                   ),
                 ),
+                const SizedBox(height: 2),
+                Text(label, style: TextStyle(color: foreground, fontSize: 14)),
+              ],
+            ),
+          ),
+          Icon(icon, color: foreground, size: 18),
+        ],
+      ),
+    );
+  }
+}
+
+/// "App Permissions" title with the Monitor / Restrict column headers.
+class _PermissionsHeader extends StatelessWidget {
+  const _PermissionsHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    const columnStyle = TextStyle(
+      color: AppColors.textSecondary,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+    );
+
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(14, 14, 10, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'App Permissions',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
               ),
-              label: Text(
-                rule.appName,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              side: BorderSide(color: color.withValues(alpha: 0.3)),
-              backgroundColor: color.withValues(alpha: 0.08),
-            );
-          }).toList(),
-        ),
-      ],
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: Text(
+              'Monitor',
+              textAlign: TextAlign.center,
+              style: columnStyle,
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: Text(
+              'Restrict',
+              textAlign: TextAlign.center,
+              style: columnStyle,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -606,24 +488,28 @@ class _AppRuleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      constraints: const BoxConstraints(minHeight: 86),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: AppColors.primaryLight,
+          Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceMuted,
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Text(
               app.appName.isNotEmpty ? app.appName[0].toUpperCase() : '?',
               style: const TextStyle(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -633,18 +519,18 @@ class _AppRuleRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   app.packageName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 12,
                     color: AppColors.textSecondary,
                   ),
                 ),
@@ -652,14 +538,13 @@ class _AppRuleRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          _CompactRuleSwitch(
-            label: 'Monitor',
+          _RuleSwitch(
+            label: 'Monitor ${app.appName}',
             value: monitorEnabled,
             onChanged: onMonitorChanged,
           ),
-          const SizedBox(width: 6),
-          _CompactRuleSwitch(
-            label: 'Restrict',
+          _RuleSwitch(
+            label: 'Restrict ${app.appName}',
             value: restrictEnabled,
             onChanged: onRestrictChanged,
           ),
@@ -669,12 +554,12 @@ class _AppRuleRow extends StatelessWidget {
   }
 }
 
-class _CompactRuleSwitch extends StatelessWidget {
+class _RuleSwitch extends StatelessWidget {
   final String label;
   final bool value;
   final ValueChanged<bool> onChanged;
 
-  const _CompactRuleSwitch({
+  const _RuleSwitch({
     required this.label,
     required this.value,
     required this.onChanged,
@@ -683,25 +568,13 @@ class _CompactRuleSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 64,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Transform.scale(
-            scale: 0.72,
-            child: Switch(value: value, onChanged: onChanged),
-          ),
-        ],
+      width: 60,
+      child: Semantics(
+        label: label,
+        child: Transform.scale(
+          scale: 0.82,
+          child: Switch(value: value, onChanged: onChanged),
+        ),
       ),
     );
   }

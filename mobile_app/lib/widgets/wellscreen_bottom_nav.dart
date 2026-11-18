@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class WellScreenNavItem {
   const WellScreenNavItem({
     required this.icon,
@@ -8,14 +10,16 @@ class WellScreenNavItem {
   });
 
   final IconData icon;
+
+  /// Not drawn. Used for the screen-reader name and the long-press tooltip.
   final String label;
 
   /// Draws a small red unread dot on the icon's top-right corner.
   final bool showBadge;
 }
 
-/// Floating white pill navigation bar: icon with a text label underneath.
-/// The active tab gets a soft blue pill highlight behind its icon.
+/// Floating white pill dock with icon-only tabs. The active tab sits inside
+/// a solid blue circle with a white icon; the others are plain gray icons.
 class WellScreenBottomNav extends StatelessWidget {
   const WellScreenBottomNav({
     super.key,
@@ -29,10 +33,7 @@ class WellScreenBottomNav extends StatelessWidget {
   final ValueChanged<int> onTap;
 
   static const Color navBackground = Colors.white;
-  static const Color _activeColor = Color(0xFF1E40AF);
-  static const Color _activePill = Color(0xFFDBEAFE);
-  static const Color _inactiveColor = Color(0xFF64748B);
-  static const Color _badgeColor = Color(0xFFEF4444);
+  static const Color _inactiveColor = Color(0xFF4B5563);
 
   @override
   Widget build(BuildContext context) {
@@ -41,16 +42,16 @@ class WellScreenBottomNav extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Container(
-          height: 66,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          height: 64,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: navBackground,
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(color: AppColors.border),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x1F0F172A),
-                blurRadius: 18,
+                color: Color(0x1A111827),
+                blurRadius: 20,
                 offset: Offset(0, 6),
               ),
             ],
@@ -59,46 +60,53 @@ class WellScreenBottomNav extends StatelessWidget {
             children: List.generate(items.length, (index) {
               final item = items[index];
               final selected = index == currentIndex;
-              final color = selected ? _activeColor : _inactiveColor;
 
               return Expanded(
                 child: Semantics(
                   button: true,
                   selected: selected,
                   label: item.label,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(26),
-                    onTap: () => onTap(index),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        AnimatedContainer(
+                  child: Tooltip(
+                    message: item.label,
+                    excludeFromSemantics: true,
+                    child: InkResponse(
+                      onTap: () => onTap(index),
+                      radius: 30,
+                      child: Center(
+                        child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           curve: Curves.easeOut,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
-                          ),
+                          width: 46,
+                          height: 46,
                           decoration: BoxDecoration(
-                            color: selected ? _activePill : Colors.transparent,
-                            borderRadius: BorderRadius.circular(16),
+                            color: selected
+                                ? AppColors.primary
+                                : Colors.transparent,
+                            shape: BoxShape.circle,
                           ),
                           child: Stack(
                             clipBehavior: Clip.none,
+                            alignment: Alignment.center,
                             children: [
-                              Icon(item.icon, color: color, size: 22),
+                              Icon(
+                                item.icon,
+                                color: selected ? Colors.white : _inactiveColor,
+                                size: 24,
+                              ),
                               if (item.showBadge)
                                 Positioned(
-                                  right: -3,
-                                  top: -2,
+                                  right: 8,
+                                  top: 8,
                                   child: Container(
-                                    width: 9,
-                                    height: 9,
+                                    width: 10,
+                                    height: 10,
                                     decoration: BoxDecoration(
-                                      color: _badgeColor,
+                                      color: AppColors.badge,
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: Colors.white,
+                                        color: selected
+                                            ? AppColors.primary
+                                            : Colors.white,
                                         width: 1.5,
                                       ),
                                     ),
@@ -107,22 +115,7 @@ class WellScreenBottomNav extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 3),
-                        ExcludeSemantics(
-                          child: Text(
-                            item.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: color,
-                              fontSize: 11,
-                              fontWeight: selected
-                                  ? FontWeight.w700
-                                  : FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

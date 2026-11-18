@@ -5,8 +5,9 @@ import '../models/app_time_limit.dart';
 import '../services/app_time_limit_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_usage_icon.dart';
-import '../widgets/wellscreen_bottom_nav.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'device_pairing_screen.dart';
+import 'parent_child_chat_screen.dart';
 import 'profile_settings_screen.dart';
 import 'reports_screen.dart';
 import 'set_app_time_limit_dialog.dart';
@@ -73,18 +74,29 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
     if (index == 0) {
       Navigator.pop(context);
     } else if (index == 1) {
+      if (widget.childProfileId.isEmpty) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ParentChildChatScreen(
+            childProfileId: widget.childProfileId,
+            isParent: true,
+          ),
+        ),
+      );
+    } else if (index == 2) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const DevicePairingScreen()),
       );
-    } else if (index == 2) {
+    } else if (index == 3) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ReportsScreen(childProfileId: widget.childProfileId),
         ),
       );
-    } else if (index == 3) {
+    } else if (index == 4) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const ProfileSettingsScreen()),
@@ -216,18 +228,15 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
           },
         ),
       ),
-      // Reuses the existing WellScreen navigation widget and the same four
-      // parent destinations. ReportsScreen itself is untouched.
-      bottomNavigationBar: WellScreenBottomNav(
+      // The same five guardian destinations as the dashboard dock.
+      bottomNavigationBar: FloatingPillDock(
         currentIndex: 0,
         items: const [
-          WellScreenNavItem(icon: Icons.home_rounded, label: 'Home'),
-          WellScreenNavItem(
-            icon: Icons.phone_android_rounded,
-            label: 'Devices',
-          ),
-          WellScreenNavItem(icon: Icons.analytics_rounded, label: 'Reports'),
-          WellScreenNavItem(icon: Icons.settings_rounded, label: 'Settings'),
+          DockItem(icon: Icons.home_outlined, label: 'Home'),
+          DockItem(icon: Icons.chat_bubble_outline_rounded, label: 'Chat'),
+          DockItem(icon: Icons.link_rounded, label: 'Devices'),
+          DockItem(icon: Icons.bar_chart_rounded, label: 'Reports'),
+          DockItem(icon: Icons.settings_outlined, label: 'Settings'),
         ],
         onTap: _onBottomNavTap,
       ),
@@ -298,13 +307,13 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                 Container(width: 1, height: 16, color: const Color(0xFFE6EDF6)),
               Expanded(
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(26),
+                  borderRadius: BorderRadius.circular(20),
                   onTap: i == 0 ? null : _openPeriodInfo,
                   child: Container(
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: i == 0 ? AppColors.primary : Colors.transparent,
-                      borderRadius: BorderRadius.circular(26),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       tabs[i],

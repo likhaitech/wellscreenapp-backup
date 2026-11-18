@@ -2,6 +2,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../widgets/wellscreen_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'chat_notifications_screen.dart';
@@ -30,8 +31,8 @@ class ParentNotificationsScreen extends StatefulWidget {
 
 class _ParentNotificationsScreenState
     extends State<ParentNotificationsScreen> {
-  static const Color _primary = Color(0xFF285DAB);
-  static const Color _pageBackground = Color(0xFFF3F7FA);
+  static const Color _primary = Color(0xFF2563EB);
+  static const Color _pageBackground = Color(0xFFFAF9F6);
 
   final Set<String> _readAlerts = <String>{};
 
@@ -205,8 +206,8 @@ class _ParentNotificationsScreenState
   }
 
   Widget _severityBadge(String status) {
-    Color foreground = const Color(0xFF536579);
-    Color background = const Color(0xFFE9EEF3);
+    Color foreground = const Color(0xFF6B7280);
+    Color background = const Color(0xFFE5E7EB);
     if (status == 'Healthy') {
       foreground = const Color(0xFF116B47);
       background = const Color(0xFFE2F5EB);
@@ -243,7 +244,7 @@ class _ParentNotificationsScreenState
 
     String status = report == null ? 'Awaiting data' : 'Unavailable';
     IconData icon = Icons.help_outline_rounded;
-    Color iconColor = const Color(0xFF536579);
+    Color iconColor = const Color(0xFF6B7280);
     if (rawStatus == 'healthy') {
       status = 'Healthy';
       icon = Icons.verified_user_outlined;
@@ -271,13 +272,13 @@ class _ParentNotificationsScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2EAF0)),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
-            backgroundColor: const Color(0xFFF0F4F8),
+            backgroundColor: const Color(0xFFFAF9F6),
             child: Icon(icon, color: iconColor),
           ),
           const SizedBox(width: 12),
@@ -290,7 +291,7 @@ class _ParentNotificationsScreenState
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF142333),
+                    color: Color(0xFF111827),
                   ),
                 ),
                 const SizedBox(height: 7),
@@ -299,7 +300,7 @@ class _ParentNotificationsScreenState
                 Text(
                   syncLabel,
                   style: const TextStyle(
-                    color: Color(0xFF637386),
+                    color: Color(0xFF6B7280),
                     fontSize: 12,
                   ),
                 ),
@@ -308,7 +309,7 @@ class _ParentNotificationsScreenState
                   Text(
                     '$count app${count == 1 ? '' : 's'} flagged',
                     style: const TextStyle(
-                      color: Color(0xFF637386),
+                      color: Color(0xFF6B7280),
                       fontSize: 12,
                     ),
                   ),
@@ -377,10 +378,11 @@ class _ParentNotificationsScreenState
       color: Colors.white,
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         side: const BorderSide(
-          color: Color(0xFFE2EAF0),
+          color: Color(0xFFE5E7EB),
         ),
       ),
       child: ExpansionTile(
@@ -390,7 +392,7 @@ class _ParentNotificationsScreenState
           }
         },
         leading: CircleAvatar(
-          backgroundColor: const Color(0xFFE9F1FD),
+          backgroundColor: const Color(0xFFDBEAFE),
           child: Icon(
             _iconForKind(kind),
             color: _primary,
@@ -406,7 +408,7 @@ class _ParentNotificationsScreenState
                   fontWeight: read
                       ? FontWeight.w700
                       : FontWeight.w900,
-                  color: const Color(0xFF142333),
+                  color: const Color(0xFF111827),
                 ),
               ),
             ),
@@ -426,7 +428,7 @@ class _ParentNotificationsScreenState
           child: Text(
             _formatTime(occurredAt),
             style: const TextStyle(
-              color: Color(0xFF637386),
+              color: Color(0xFF6B7280),
               fontSize: 12,
             ),
           ),
@@ -454,7 +456,7 @@ class _ParentNotificationsScreenState
                 ? 'Legacy child-device SMS log'
                 : _deliveryLabel('Push', pushStatus),
             style: const TextStyle(
-              color: Color(0xFF536579),
+              color: Color(0xFF6B7280),
               fontSize: 12,
             ),
           ),
@@ -464,7 +466,7 @@ class _ParentNotificationsScreenState
                 ? 'SMS: $smsStatus'
                 : _deliveryLabel('SMS', smsStatus),
             style: const TextStyle(
-              color: Color(0xFF536579),
+              color: Color(0xFF6B7280),
               fontSize: 12,
             ),
           ),
@@ -608,7 +610,7 @@ class _ParentNotificationsScreenState
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF536579),
+                        color: Color(0xFF6B7280),
                       ),
                     ),
                   ),
@@ -666,7 +668,7 @@ class _ParentNotificationsScreenState
                       '(child device)',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF536579),
+                        color: Color(0xFF6B7280),
                       ),
                     ),
                   ),
@@ -788,16 +790,7 @@ class _ParentNotificationsScreenState
 
     return Scaffold(
       backgroundColor: _pageBackground,
-      appBar: AppBar(
-        backgroundColor: _primary,
-        foregroundColor: Colors.white,
-        title: const Text(
-          'Notifications',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
+      appBar: const WellScreenAppBar.subPage(title: 'Notifications'),
       body: user == null
           ? const Center(
               child: Text(
@@ -830,7 +823,7 @@ class _ParentNotificationsScreenState
                     'Security, usage, '
                     'and SMS alert history',
                     style: TextStyle(
-                      color: Color(0xFF536579),
+                      color: Color(0xFF6B7280),
                       fontSize: 13,
                     ),
                   ),
