@@ -7,7 +7,7 @@ class CreateUserRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6)
     display_name: str | None = None
-    role: str = "user"
+    role: str = "parent"
     disabled: bool = False
 
 

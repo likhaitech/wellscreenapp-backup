@@ -1,3 +1,4 @@
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,6 +11,7 @@ from app.models.admin_user import (
 from app.services.admin_auth_service import require_admin
 from app.services.system_log_service import create_system_log
 from app.services.user_admin_service import (
+    PairedRoleConflictError,
     create_user,
     delete_user,
     get_user,
@@ -77,10 +79,10 @@ def create_new_user(
     request: CreateUserRequest,
     current_admin: dict = Depends(require_admin),
 ):
-    if request.role not in {"user", "admin"}:
+    if request.role not in {"parent", "child", "admin"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be either 'user' or 'admin'",
+            detail="Role must be 'parent', 'child', or 'admin'",
         )
 
     try:
@@ -129,14 +131,16 @@ def edit_user(
     current_admin_uid = current_admin.get("uid")
 
     if request.role is not None and request.role not in {
-        "user",
+        "parent",
+        "child",
         "admin",
     }:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role must be either 'user' or 'admin'",
+            detail="Role must be 'parent', 'child', or 'admin'",
         )
 
+    # Administrators must not disable or demote themselves.
     if uid == current_admin_uid:
         if request.disabled is True:
             raise HTTPException(
@@ -184,6 +188,14 @@ def edit_user(
         )
 
         return updated_user
+
+    except PairedRoleConflictError as exc:
+        # A paired parent or child must be unpaired before
+        # switching between parent and child account types.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
 
     except auth.UserNotFoundError:
         raise HTTPException(

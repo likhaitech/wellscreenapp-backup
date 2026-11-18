@@ -118,7 +118,7 @@ def test_create_success_logs_and_returns_created_user():
                 json={
                     "email": "new@example.com",
                     "password": "secret123",
-                    "role": "user",
+                    "role": "parent",
                 },
             )
     finally:

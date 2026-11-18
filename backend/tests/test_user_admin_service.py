@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.services import user_admin_service as svc
 
 
@@ -52,7 +54,7 @@ class TestListUsers:
             result = svc.list_users()
 
         assert [u["uid"] for u in result] == ["u1", "u2"]
-        assert result[0]["role"] == "user"  # no custom_claims -> defaults to "user"
+        assert result[0]["role"] == "parent"  # no custom_claims -> defaults to "parent"
         assert result[1]["role"] == "admin"
 
 
@@ -94,7 +96,7 @@ class TestCreateUser:
         mock_claims.assert_called_once_with("new-uid", {"role": "admin", "admin": True})
         assert result["role"] == "admin"
 
-    def test_default_role_is_user_with_admin_false(self):
+    def test_default_role_is_parent_with_admin_false(self):
         created = _fake_user_record(uid="new-uid")
         fake_db = MagicMock()
 
@@ -105,7 +107,7 @@ class TestCreateUser:
         ), patch.object(svc.auth, "get_user", return_value=created):
             svc.create_user(email="new@example.com", password="secret123")
 
-        mock_claims.assert_called_once_with("new-uid", {"role": "user", "admin": False})
+        mock_claims.assert_called_once_with("new-uid", {"role": "parent", "admin": False})
 
     def test_firestore_write_failure_deletes_the_orphaned_auth_account(self):
         # FIX: auth.create_user() already created the Auth account before
@@ -161,7 +163,7 @@ class TestCreateUser:
             svc, "get_firestore_client", return_value=fake_db
         ), patch.object(svc.auth, "get_user", return_value=created):
             svc.create_user(
-                email="new@example.com", password="secret123", role="user", disabled=False
+                email="new@example.com", password="secret123", role="parent", disabled=False
             )
 
         fake_db.collection.assert_called_once_with("users")
@@ -169,7 +171,48 @@ class TestCreateUser:
         written = fake_db.collection.return_value.document.return_value.set.call_args[0][0]
         assert written["uid"] == "new-uid"
         assert written["email"] == "new@example.com"
-        assert written["role"] == "user"
+        assert written["role"] == "parent"
+        assert written["childrenCount"] == 0
+
+    def test_child_account_starts_unpaired(self):
+        created = _fake_user_record(uid="child-uid")
+        fake_db = MagicMock()
+        with patch.object(svc, "initialize_firebase"), patch.object(
+            svc.auth, "create_user", return_value=created
+        ), patch.object(svc.auth, "set_custom_user_claims") as claims, patch.object(
+            svc, "get_firestore_client", return_value=fake_db
+        ), patch.object(svc.auth, "get_user", return_value=created):
+            svc.create_user(email="child@example.com", password="secret123", role="child")
+
+        claims.assert_called_once_with("child-uid", {"role": "child", "admin": False})
+        written = fake_db.collection.return_value.document.return_value.set.call_args.args[0]
+        assert written["role"] == "child"
+        assert written["pairingStatus"] == "not_paired"
+        assert written["pairedParentId"] is None
+        assert written["pairedChildProfileId"] is None
+
+    def test_admin_account_has_default_previous_role(self):
+        created = _fake_user_record(uid="admin-uid")
+        fake_db = MagicMock()
+        with patch.object(svc, "initialize_firebase"), patch.object(
+            svc.auth, "create_user", return_value=created
+        ), patch.object(svc.auth, "set_custom_user_claims"), patch.object(
+            svc, "get_firestore_client", return_value=fake_db
+        ), patch.object(svc.auth, "get_user", return_value=created):
+            svc.create_user(email="admin@example.com", password="secret123", role="admin")
+
+        written = fake_db.collection.return_value.document.return_value.set.call_args.args[0]
+        assert written["role"] == "admin"
+        assert written["previousRole"] == "parent"
+
+    def test_rejects_legacy_user_role_before_auth_creation(self):
+        with patch.object(svc, "initialize_firebase") as initialize, patch.object(
+            svc.auth, "create_user"
+        ) as auth_create:
+            with pytest.raises(ValueError, match="Role must be"):
+                svc.create_user(email="wrong@example.com", password="secret123", role="user")
+        initialize.assert_not_called()
+        auth_create.assert_not_called()
 
 
 class TestUpdateUser:
@@ -194,7 +237,7 @@ class TestUpdateUser:
         mock_update.assert_not_called()
 
     def test_role_change_preserves_other_existing_custom_claims(self):
-        current = _fake_user_record(custom_claims={"role": "user", "admin": False, "extra": "keep-me"})
+        current = _fake_user_record(custom_claims={"role": "parent", "admin": False, "extra": "keep-me"})
 
         with patch.object(svc, "initialize_firebase"), patch.object(
             svc.auth, "update_user"
@@ -265,7 +308,7 @@ class TestUpdateUser:
         ) as mock_revoke, patch.object(
             svc, "get_firestore_client", return_value=MagicMock()
         ):
-            svc.update_user("u1", role="user")
+            svc.update_user("u1", role="parent")
 
         mock_revoke.assert_called_once_with("u1")
 
@@ -280,7 +323,7 @@ class TestUpdateUser:
             svc.auth,
             "get_user",
             return_value=_fake_user_record(
-                custom_claims={"role": "user", "admin": False}
+                custom_claims={"role": "parent", "admin": False}
             ),
         ), patch.object(
             svc.auth, "set_custom_user_claims"
@@ -300,7 +343,7 @@ class TestUpdateUser:
             svc.auth,
             "get_user",
             return_value=_fake_user_record(
-                custom_claims={"role": "user", "admin": False}
+                custom_claims={"role": "parent", "admin": False}
             ),
         ), patch.object(
             svc.auth, "set_custom_user_claims"
@@ -309,7 +352,7 @@ class TestUpdateUser:
         ) as mock_revoke, patch.object(
             svc, "get_firestore_client", return_value=MagicMock()
         ):
-            svc.update_user("u1", role="parent")
+            svc.update_user("u1", role="child")
 
         mock_revoke.assert_not_called()
 
@@ -396,6 +439,94 @@ class _FakeDb:
                 )
 
         return _Col()
+
+
+
+class TestRoleManagement:
+    """New F10 role rules. Firebase Auth and Firestore remain mocked."""
+
+    def test_promoting_child_to_admin_preserves_previous_role(self):
+        db = _FakeDb(users={"u1": {"role": "child", "pairingStatus": "not_paired"}})
+        record = _fake_user_record(custom_claims={"role": "child", "admin": False})
+        with patch.object(svc, "initialize_firebase"), patch.object(
+            svc.auth, "get_user", return_value=record
+        ), patch.object(svc.auth, "set_custom_user_claims") as set_claims, patch.object(
+            svc, "get_firestore_client", return_value=db
+        ):
+            svc.update_user("u1", role="admin")
+
+        assert db.user_sets["users/u1"]["role"] == "admin"
+        assert db.user_sets["users/u1"]["previousRole"] == "child"
+        set_claims.assert_called_once_with("u1", {"role": "admin", "admin": True})
+
+    def test_admin_demotion_restores_previous_child_role_and_revokes(self):
+        db = _FakeDb(users={"u1": {"role": "admin", "previousRole": "child"}})
+        record = _fake_user_record(custom_claims={"role": "admin", "admin": True})
+        with patch.object(svc, "initialize_firebase"), patch.object(
+            svc.auth, "get_user", return_value=record
+        ), patch.object(svc.auth, "set_custom_user_claims") as set_claims, patch.object(
+            svc.auth, "revoke_refresh_tokens"
+        ) as revoke, patch.object(svc, "get_firestore_client", return_value=db):
+            svc.update_user("u1", role="parent")
+
+        assert db.user_sets["users/u1"]["role"] == "child"
+        set_claims.assert_called_once_with("u1", {"role": "child", "admin": False})
+        revoke.assert_called_once_with("u1")
+
+    def test_paired_child_cannot_become_parent_or_change_password(self):
+        db = _FakeDb(users={"u1": {
+            "role": "child", "pairingStatus": "connected",
+            "pairedParentId": "p1", "pairedChildProfileId": "profile1",
+        }})
+        record = _fake_user_record(custom_claims={"role": "child", "admin": False})
+        with patch.object(svc, "initialize_firebase"), patch.object(
+            svc.auth, "get_user", return_value=record
+        ), patch.object(svc.auth, "update_user") as auth_update, patch.object(
+            svc.auth, "set_custom_user_claims"
+        ) as set_claims, patch.object(svc, "get_firestore_client", return_value=db):
+            with pytest.raises(svc.PairedRoleConflictError):
+                svc.update_user("u1", role="parent", password="new-secret123")
+
+        auth_update.assert_not_called()
+        set_claims.assert_not_called()
+        assert "users/u1" not in db.user_sets
+
+    def test_paired_parent_cannot_become_child_when_profile_is_linked(self):
+        # Paired child_profiles may carry parentId and childAccountId without
+        # a pairingStatus field. This must still count as an active pairing.
+        db = _FakeDb(
+            users={"p1": {"role": "parent", "childrenCount": 1}},
+            profiles={"profile1": {"parentId": "p1", "childAccountId": "c1"}},
+        )
+        record = _fake_user_record(uid="p1", custom_claims={"role": "parent", "admin": False})
+        with patch.object(svc, "initialize_firebase"), patch.object(
+            svc.auth, "get_user", return_value=record
+        ), patch.object(svc.auth, "update_user") as auth_update, patch.object(
+            svc.auth, "set_custom_user_claims"
+        ) as set_claims, patch.object(svc, "get_firestore_client", return_value=db):
+            with pytest.raises(svc.PairedRoleConflictError):
+                svc.update_user("p1", role="child")
+
+        auth_update.assert_not_called()
+        set_claims.assert_not_called()
+        assert "users/p1" not in db.user_sets
+
+    def test_unpaired_parent_can_become_child(self):
+        db = _FakeDb(users={"p1": {"role": "parent", "childrenCount": 0}})
+        record = _fake_user_record(uid="p1", custom_claims={"role": "parent", "admin": False})
+        with patch.object(svc, "initialize_firebase"), patch.object(
+            svc.auth, "get_user", return_value=record
+        ), patch.object(svc.auth, "set_custom_user_claims") as set_claims, patch.object(
+            svc, "get_firestore_client", return_value=db
+        ):
+            svc.update_user("p1", role="child")
+
+        written = db.user_sets["users/p1"]
+        assert written["role"] == "child"
+        assert written["pairingStatus"] == "not_paired"
+        assert written["pairedParentId"] is None
+        assert written["pairedChildProfileId"] is None
+        set_claims.assert_called_once_with("p1", {"role": "child", "admin": False})
 
 
 def _run_delete(fake_db, uid):
