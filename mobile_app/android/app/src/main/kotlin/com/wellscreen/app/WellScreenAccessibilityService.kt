@@ -245,6 +245,10 @@ class WellScreenAccessibilityService : AccessibilityService() {
         Log.d(CAPTURE_LOG_TAG, msg)
         CaptureDebugLogger.log(this, msg)
 
+        // Send the browser to a safe page first, so reopening it does not land
+        // on the blocked site again (that caused an endless block loop).
+        SafePageRedirect.leaveBlockedPage(this, browserPackage)
+
         try {
             val intent = Intent(this, BlockedAppActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
