@@ -524,6 +524,34 @@ describe('Task 5 - Secure pairing and family access', () => {
     );
   });
 
+  // parentPhoneNumber security tests.
+
+  it('allows owning parent to update parentPhoneNumber', async () => {
+    await assertSucceeds(
+      updateDoc(doc(client('parent1'), 'child_profiles/profile1'), {
+        parentPhoneNumber: '+639171234567',
+      })
+    );
+  });
+
+  it('denies paired child changing parentPhoneNumber', async () => {
+    await assertFails(
+      updateDoc(doc(client('child1'), 'child_profiles/profile1'), {
+        parentPhoneNumber: '+639999999999',
+      })
+    );
+  });
+
+  it.each(['parent2', 'child2', null])(
+    'denies unauthorized parentPhoneNumber updates for %s',
+    async (uid) => {
+      await assertFails(
+        updateDoc(doc(client(uid), 'child_profiles/profile1'), {
+          parentPhoneNumber: '+639999999999',
+        })
+      );
+    }
+  );
   // Application rules.
 
   it('allows parent reading own app rules', async () => {
