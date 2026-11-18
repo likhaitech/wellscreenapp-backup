@@ -603,3 +603,98 @@ describe('Task 5 - Secure pairing and family access', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------
+// child_profiles: fields a paired child may and may not write
+// ---------------------------------------------------------------------
+describe('child_profiles - child-writable field allowlist', () => {
+  beforeEach(async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'child_profiles/profile1'), {
+        id: 'profile1',
+        parentId: 'parent1',
+        childAccountId: 'child1',
+        pairingStatus: 'connected',
+        name: 'Test Child',
+        monitoringSecurityAlert: { reason: 'heartbeat_missing' },
+        emergencyAccess: { status: 'none', grantedUntil: null },
+      });
+    });
+  });
+
+  const child = () => testEnv.authenticatedContext('child1').firestore();
+  const parent = () => testEnv.authenticatedContext('parent1').firestore();
+  const profile = (db) => doc(db, 'child_profiles/profile1');
+
+  it('allows the child to sync heartbeat, usage, logs and location', async () => {
+    await assertSucceeds(
+      updateDoc(profile(child()), {
+        lastSeenAt: serverTimestamp(),
+        latestUsageReport: { totalUsageDurationMs: 1000 },
+        usageReportUpdatedAt: serverTimestamp(),
+        restrictionLog: [],
+        browsingLog: [],
+        latestLocation: { latitude: 10.3, longitude: 123.9 },
+        locationUpdatedAt: serverTimestamp(),
+        accessibilityEnabled: true,
+      })
+    );
+  });
+
+  it('allows the child to REQUEST emergency access', async () => {
+    await assertSucceeds(
+      updateDoc(profile(child()), {
+        emergencyAccess: {
+          status: 'requested',
+          reason: 'Need maps',
+          grantedUntil: null,
+          dailyRequestCount: 1,
+        },
+      })
+    );
+  });
+
+  it('denies the child approving their own emergency access', async () => {
+    await assertFails(
+      updateDoc(profile(child()), {
+        emergencyAccess: {
+          status: 'approved',
+          grantedUntil: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+        },
+      })
+    );
+  });
+
+  it('denies a "requested" write that also sets grantedUntil', async () => {
+    await assertFails(
+      updateDoc(profile(child()), {
+        emergencyAccess: {
+          status: 'requested',
+          grantedUntil: new Date(Date.now() + 3600 * 1000),
+        },
+      })
+    );
+  });
+
+  it('denies the child deleting the guardian security alert', async () => {
+    await assertFails(
+      updateDoc(profile(child()), { monitoringSecurityAlert: null })
+    );
+  });
+
+  it('denies the child renaming the profile or adding unknown fields', async () => {
+    await assertFails(updateDoc(profile(child()), { name: 'Hacked' }));
+    await assertFails(updateDoc(profile(child()), { anythingElse: true }));
+  });
+
+  it('still allows the guardian to approve emergency access', async () => {
+    await assertSucceeds(
+      updateDoc(profile(parent()), {
+        emergencyAccess: {
+          status: 'approved',
+          grantedUntil: new Date(Date.now() + 30 * 60 * 1000),
+        },
+      })
+    );
+  });
+});

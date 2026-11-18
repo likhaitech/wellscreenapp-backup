@@ -124,6 +124,49 @@ service cloud.firestore {
           ]);
       }
 
+      // The only fields the child's own device ever writes on this
+      // document (child_home_screen.dart, emergency_access_service.dart,
+      // alert_notification_client.dart, ScreenTimeReportJobService.kt).
+      // Anything else - parentId, guardian-set fields, a guardian's
+      // emergency approval - can only be changed by the owning parent.
+      function childWritesOnlyOwnFields() {
+        return request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly([
+            'childDisplayName',
+            'lastSeenAt',
+            'latestUsageReport',
+            'usageReportUpdatedAt',
+            'smsAlertLog',
+            'restrictionLog',
+            'syncLog',
+            'browsingLog',
+            'pushAlertLog',
+            'mlRiskAssessment',
+            'latestLocation',
+            'locationUpdatedAt',
+            'limitSyncAcknowledgedAt',
+            'limitSyncAcknowledgedBy',
+            'accessibilityEnabled',
+            'accessibilityCheckedAt',
+            'emergencyAccess'
+          ]);
+      }
+
+      // A child may ASK for emergency access but never approve it: any
+      // child write to emergencyAccess must leave it as a pending request
+      // with no grantedUntil. Approval is a guardian-only write.
+      function childEmergencyWriteIsRequestOnly() {
+        return !request.resource.data.diff(resource.data)
+            .affectedKeys().hasAny(['emergencyAccess']) ||
+          (
+            request.resource.data.emergencyAccess is map &&
+            request.resource.data.emergencyAccess.get('status', '') ==
+              'requested' &&
+            request.resource.data.emergencyAccess.get('grantedUntil', null) ==
+              null
+          );
+      }
+
       allow read: if isOwningParent() ||
         isClaimedByCaller();
 
@@ -136,11 +179,8 @@ service cloud.firestore {
           isOwningParent() ||
           (
             isClaimedByCaller() &&
-            !request.resource.data.diff(resource.data)
-              .affectedKeys().hasAny([
-                'parentDisplayName',
-                'parentEmail'
-              ])
+            childWritesOnlyOwnFields() &&
+            childEmergencyWriteIsRequestOnly()
           )
         );
 
