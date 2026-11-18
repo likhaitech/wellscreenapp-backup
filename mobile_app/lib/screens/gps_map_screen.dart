@@ -324,7 +324,7 @@ class GpsMapPreview extends StatelessWidget {
                 ],
               ),
               child: Text(
-                hasLocation ? 'Shared GPS' : 'Cebu Preview',
+                hasLocation ? 'Shared GPS' : 'No GPS yet',
                 style: const TextStyle(
                   color: purple,
                   fontWeight: FontWeight.w900,

@@ -44,8 +44,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   static const Color softGreen = AppColors.successBg;
   static const Color softBlue = AppColors.infoBg;
 
-  static const double cebuLatitude = 10.31570;
-  static const double cebuLongitude = 123.88540;
 
   int currentIndex = 0;
 
@@ -156,7 +154,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       return latitude.toDouble();
     }
 
-    return cebuLatitude;
+    return 0;
   }
 
   double locationLongitude(Map<String, dynamic>? data) {
@@ -167,7 +165,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       return longitude.toDouble();
     }
 
-    return cebuLongitude;
+    return 0;
   }
 
   String locationText(Map<String, dynamic>? data) {
@@ -312,11 +310,21 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   void openGpsMap(Map<String, dynamic>? child) {
+    // Never open the map on a made-up point: with no shared GPS there is
+    // nothing real to show.
+    if (!hasSharedLocation(child)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No location shared yet. Tap Share GPS on your child\'s phone.',
+          ),
+        ),
+      );
+      return;
+    }
     final latitude = locationLatitude(child);
     final longitude = locationLongitude(child);
-    final label = hasSharedLocation(child)
-        ? locationText(child)
-        : 'Cebu City, Philippines preview';
+    final label = locationText(child);
     final updatedAt = locationUpdatedText(child);
 
     Navigator.push(
