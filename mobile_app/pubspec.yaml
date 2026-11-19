@@ -81,6 +81,30 @@ flutter:
     - assets/site_categories/cleaned_site_categories.csv
     - assets/site_categories/category_classifier_weights.json
 
+  # Design D fonts (SIL Open Font License; texts in assets/fonts/OFL-*.txt).
+  # Inter for body text, Outfit for headings.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    - family: Outfit
+      fonts:
+        - asset: assets/fonts/Outfit-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Outfit-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Outfit-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Outfit-ExtraBold.ttf
+          weight: 800
+
 flutter_launcher_icons:
   android: true
   ios: false

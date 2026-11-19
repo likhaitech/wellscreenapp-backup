@@ -85,10 +85,12 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.shield_rounded,
-                  color: AppColors.primary,
-                  size: 24,
+                // The real WellScreen logo, not a stand-in icon.
+                Image.asset(
+                  'assets/icons/wellscreen_icon.png',
+                  width: 28,
+                  height: 28,
+                  semanticLabel: 'WellScreen',
                 ),
                 const SizedBox(width: 8),
                 Flexible(
@@ -97,6 +99,7 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
+                      fontFamily: AppFonts.heading,
                       color: AppColors.textPrimary,
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
@@ -157,6 +160,7 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
+              fontFamily: AppFonts.heading,
               color: AppColors.textPrimary,
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -230,7 +234,7 @@ class BentoCard extends StatelessWidget {
         border: Border.all(color: borderColor),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0A111827),
+            color: AppColors.shadow,
             blurRadius: 16,
             offset: Offset(0, 4),
           ),
@@ -272,7 +276,7 @@ class StatusPill extends StatelessWidget {
   static Color foregroundFor(StatusTone tone) {
     switch (tone) {
       case StatusTone.success:
-        return const Color(0xFF047857);
+        return AppColors.success;
       case StatusTone.warning:
         return const Color(0xFFB45309);
       case StatusTone.danger:
@@ -378,7 +382,7 @@ class FloatingPillDock extends StatelessWidget {
   final List<DockItem> items;
   final ValueChanged<int> onTap;
 
-  static const Color _inactive = Color(0xFF4B5563);
+  static const Color _inactive = AppColors.textSecondary;
 
   @override
   Widget build(BuildContext context) {
@@ -489,11 +493,17 @@ class WellScreenBrandHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const Icon(Icons.shield_rounded, color: AppColors.primary, size: 52),
+        Image.asset(
+          'assets/icons/wellscreen_icon.png',
+          width: 84,
+          height: 84,
+          semanticLabel: 'WellScreen',
+        ),
         const SizedBox(height: 8),
         const Text(
           'WellScreen',
           style: TextStyle(
+            fontFamily: AppFonts.heading,
             color: AppColors.textPrimary,
             fontSize: 28,
             fontWeight: FontWeight.w800,

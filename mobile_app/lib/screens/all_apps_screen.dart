@@ -309,14 +309,14 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
       margin: const EdgeInsets.fromLTRB(18, 0, 18, 12),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F6FF),
+        color: AppColors.surfaceMuted,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCEDFF9)),
+        border: Border.all(color: AppColors.primaryLight),
       ),
       child: Row(
         children: [
           CircleAvatar(
-            backgroundColor: const Color(0xFFD9E8FF),
+            backgroundColor: AppColors.primaryLight,
             radius: 23,
             child: const Icon(
               Icons.phone_android_rounded,
@@ -349,7 +349,7 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
               ],
             ),
           ),
-          Container(height: 46, width: 1, color: const Color(0xFFCBD9EE)),
+          Container(height: 46, width: 1, color: AppColors.primaryLight),
           const SizedBox(width: 14),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -476,7 +476,7 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                 thickness: 1,
                 indent: 14,
                 endIndent: 14,
-                color: Color(0xFFE9EFF7),
+                color: AppColors.surfaceMuted,
               ),
           ],
         ),
@@ -506,6 +506,8 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
       encoded: app.iconBase64,
       fallback: Icons.apps_rounded,
       fallbackColor: AppColors.primary,
+      label: app.displayName,
+      packageName: app.packageName,
     );
   }
 

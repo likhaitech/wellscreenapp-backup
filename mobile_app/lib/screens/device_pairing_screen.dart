@@ -469,6 +469,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     return Text(
       text,
       style: const TextStyle(
+        fontFamily: AppFonts.heading,
         color: darkText,
         fontSize: 18,
         fontWeight: FontWeight.w700,

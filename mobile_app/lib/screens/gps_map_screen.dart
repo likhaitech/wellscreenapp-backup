@@ -164,8 +164,8 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                       CircleMarker(
                         point: locationPoint,
                         radius: 44,
-                        color: const Color(0x332563EB),
-                        borderColor: const Color(0x552563EB),
+                        color: AppColors.primaryA20,
+                        borderColor: AppColors.primaryA33,
                         borderStrokeWidth: 1,
                       ),
                     ],

@@ -96,7 +96,14 @@ class _SchedulesCardState extends State<SchedulesCard> {
 
   Widget _sectionTitle(String text) => Padding(
     padding: const EdgeInsets.only(top: 12, bottom: 2),
-    child: Text(text, style: const TextStyle(fontWeight: FontWeight.w700)),
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontFamily: AppFonts.heading,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
   );
 
   Widget _hint(String text) => Text(

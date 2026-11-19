@@ -18,7 +18,7 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   static const Color purple = AppColors.primary;
-  static const Color teal = AppColors.accent;
+  static const Color teal = AppColors.teal;
   static const Color darkText = AppColors.textPrimary;
 
   @override
@@ -103,7 +103,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: SizedBox.expand(
           child: Stack(
@@ -142,9 +142,10 @@ class _SplashScreenState extends State<SplashScreen> {
                         'WellScreen',
                         textAlign: TextAlign.center,
                         style: TextStyle(
+                          fontFamily: AppFonts.heading,
                           color: purple,
                           fontSize: 38,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           letterSpacing: 0.2,
                         ),
                       ),

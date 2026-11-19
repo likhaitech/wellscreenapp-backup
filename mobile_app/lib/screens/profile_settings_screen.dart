@@ -261,7 +261,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                           width: 48,
                           height: 5,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFD1D5DB),
+                            color: AppColors.track,
                             borderRadius: BorderRadius.circular(20),
                           ),
                         ),
