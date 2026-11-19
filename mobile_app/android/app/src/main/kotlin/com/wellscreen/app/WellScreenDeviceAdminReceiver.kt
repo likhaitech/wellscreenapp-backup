@@ -30,7 +30,8 @@ class WellScreenDeviceAdminReceiver : DeviceAdminReceiver() {
         private const val DISABLED_PROFILE = "flutter.device_admin_disabled_profile_id"
         private const val DISABLED_UID = "flutter.device_admin_disabled_child_uid"
 
-        private val pendingLock = Any()
+        internal val pendingLock = Any()
+        private val deliveryLock = Any()
     }
 
     override fun onDisableRequested(
@@ -65,12 +66,15 @@ class WellScreenDeviceAdminReceiver : DeviceAdminReceiver() {
 
         if (saved) {
             Log.i(TAG, "Device Admin disabled timestamp saved")
+            // Schedule a fallback before attempting immediate delivery.
+            DeviceAdminAlertRetryJobService.schedule(context.applicationContext)
         } else {
             Log.w(TAG, "Unable to persist Device Admin disabled timestamp")
         }
 
         if (user == null || profileId.isNullOrBlank()) {
             Log.i(TAG, "Alert deferred: child account unavailable")
+            DeviceAdminAlertRetryJobService.schedule(context.applicationContext)
             return
         }
 
@@ -108,6 +112,9 @@ class WellScreenDeviceAdminReceiver : DeviceAdminReceiver() {
                 } catch (e: Exception) {
                     Log.w(TAG, "Alert deferred: ${e.javaClass.simpleName}")
                 } finally {
+                    if (prefs.getLong(DISABLED_AT, 0L) == timestamp) {
+                        DeviceAdminAlertRetryJobService.schedule(context.applicationContext)
+                    }
                     handler.removeCallbacks(finish)
                     finish.run()
                 }
@@ -116,10 +123,38 @@ class WellScreenDeviceAdminReceiver : DeviceAdminReceiver() {
             handler.removeCallbacks(finish)
             finish.run()
             Log.w(TAG, "Alert deferred: unable to start background request")
+            DeviceAdminAlertRetryJobService.schedule(context.applicationContext)
         }
     }
 
-    private fun notifyGuardian(
+    internal fun notifyGuardian(
+        prefs: SharedPreferences,
+        user: FirebaseUser,
+        profileId: String,
+        timestamp: Long
+    ): Boolean {
+        synchronized(deliveryLock) {
+            if (prefs.getLong(DISABLED_AT, 0L) != timestamp) return false
+
+            val delivered = notifyGuardianLocked(prefs, user, profileId, timestamp)
+
+            if (delivered) {
+                synchronized(pendingLock) {
+                    if (prefs.getLong(DISABLED_AT, 0L) == timestamp) {
+                        prefs.edit()
+                            .remove(DISABLED_AT)
+                            .remove(DISABLED_PROFILE)
+                            .remove(DISABLED_UID)
+                            .commit()
+                    }
+                }
+            }
+
+            return delivered
+        }
+    }
+
+    private fun notifyGuardianLocked(
         prefs: SharedPreferences,
         user: FirebaseUser,
         profileId: String,
