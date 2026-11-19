@@ -118,6 +118,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   // Same for Android's Usage Access permission (daily limits need it).
   bool? _usageAccessEnabled;
   bool? _reportedUsageAccessEnabled;
+  // Setup checklist only (not sent to the guardian).
+  bool? _batteryUnrestricted;
+  bool? _deviceAdminActive;
   static const Duration _presenceHeartbeatInterval = Duration(minutes: 5);
 
   int currentIndex = 0;
@@ -467,12 +470,19 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     } catch (_) {
       usageEnabled = null;
     }
+    final batteryUnrestricted =
+        await _androidAppService.isIgnoringBatteryOptimizations();
+    final deviceAdminActive = await _androidAppService.isDeviceAdminActive();
     if (!mounted) return;
     if (enabled != _accessibilityEnabled ||
-        usageEnabled != _usageAccessEnabled) {
+        usageEnabled != _usageAccessEnabled ||
+        batteryUnrestricted != _batteryUnrestricted ||
+        deviceAdminActive != _deviceAdminActive) {
       setState(() {
         _accessibilityEnabled = enabled;
         _usageAccessEnabled = usageEnabled;
+        _batteryUnrestricted = batteryUnrestricted;
+        _deviceAdminActive = deviceAdminActive;
       });
     }
     // Tell the guardian straight away when either changes.
@@ -2869,6 +2879,26 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     }
   }
 
+  Future<void> _openBatterySettings() async {
+    final opened = await _androidAppService.openBatteryOptimizationSettings();
+    if (!opened) {
+      showMessage(
+        'Could not open battery settings. Open Settings > Apps > '
+        'WellScreen > Battery and choose Unrestricted.',
+      );
+    }
+  }
+
+  Future<void> _requestDeviceAdmin() async {
+    final opened = await _androidAppService.requestDeviceAdmin();
+    if (!opened) {
+      showMessage(
+        'Could not open uninstall protection. Open Settings > Security > '
+        'Device admin apps and turn on WellScreen.',
+      );
+    }
+  }
+
   void _goToSafetyTab({bool scrollToPairing = false}) {
     handleBottomNavTap(2);
     if (!scrollToPairing) return;
@@ -4918,6 +4948,35 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             done: _accessibilityEnabled,
             actionLabel: _accessibilityEnabled == true ? null : 'Open',
             onAction: _openAccessibilitySettings,
+          ),
+          const Divider(height: 1, color: _hairline),
+          _checklistRow(
+            icon: Icons.battery_charging_full_rounded,
+            title: 'Run in Background',
+            subtitle: _batteryUnrestricted == true
+                ? 'Allowed. Battery saver will not stop WellScreen.'
+                : 'Set WellScreen to "Not optimized" / "Unrestricted" so '
+                      'battery saver does not stop protection.',
+            done: _batteryUnrestricted,
+            actionLabel: _batteryUnrestricted == false ? 'Open' : null,
+            onAction: _batteryUnrestricted == false
+                ? _openBatterySettings
+                : null,
+          ),
+          const Divider(height: 1, color: _hairline),
+          _checklistRow(
+            icon: Icons.shield_outlined,
+            title: 'Uninstall Protection',
+            subtitle: _deviceAdminActive == true
+                ? 'On. WellScreen cannot be uninstalled without turning '
+                      'this off, and your guardian is told.'
+                : 'Optional. Stops WellScreen from being uninstalled '
+                      'without your guardian knowing.',
+            done: _deviceAdminActive,
+            actionLabel: _deviceAdminActive == false ? 'Turn On' : null,
+            onAction: _deviceAdminActive == false
+                ? _requestDeviceAdmin
+                : null,
           ),
         ],
       ),

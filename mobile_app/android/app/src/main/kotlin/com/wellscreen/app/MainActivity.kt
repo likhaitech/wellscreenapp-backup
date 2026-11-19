@@ -1,8 +1,11 @@
 package com.wellscreen.app
 
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -73,6 +76,42 @@ class MainActivity : FlutterActivity() {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     startActivity(intent)
                     result.success(true)
+                }
+                "isIgnoringBatteryOptimizations" -> {
+                    val power = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    result.success(power?.isIgnoringBatteryOptimizations(packageName))
+                }
+                "openBatteryOptimizationSettings" -> {
+                    try {
+                        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
+                }
+                "isDeviceAdminActive" -> {
+                    val policy = getSystemService(Context.DEVICE_POLICY_SERVICE)
+                        as? DevicePolicyManager
+                    val admin = ComponentName(this, WellScreenDeviceAdminReceiver::class.java)
+                    result.success(policy?.isAdminActive(admin))
+                }
+                "requestDeviceAdmin" -> {
+                    try {
+                        val admin = ComponentName(this, WellScreenDeviceAdminReceiver::class.java)
+                        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                            .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
+                            .putExtra(
+                                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                                "Stops WellScreen from being uninstalled without " +
+                                    "your guardian knowing.",
+                            )
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (_: Exception) {
+                        result.success(false)
+                    }
                 }
                 else -> result.notImplemented()
             }
