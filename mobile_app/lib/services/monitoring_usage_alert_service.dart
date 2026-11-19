@@ -19,10 +19,40 @@ class MonitoringUsageAlertService {
       '${date.year}${date.month.toString().padLeft(2, '0')}'
       '${date.day.toString().padLeft(2, '0')}';
 
+  /// Apps the child tried to open at least [minAttempts] times today while
+  /// they were blocked (from the native restriction log), with the count.
+  /// Website and settings blocks are left out: harmful sites have their own
+  /// alert, and settings entries are not apps.
+  static Map<String, int> repeatedBlockedApps(
+    List<Map<String, dynamic>> restrictionLog,
+    DateTime now, {
+    int minAttempts = 3,
+  }) {
+    final counts = <String, int>{};
+    for (final entry in restrictionLog) {
+      if (entry['outcome'] != 'blocked') continue;
+      if (entry['blockSource'] != null) continue;
+      final target = entry['packageName'];
+      if (target is! String || !target.contains('.') || target.contains(' ')) {
+        continue;
+      }
+      final ms = entry['timestampMs'];
+      if (ms is! num) continue;
+      final when = DateTime.fromMillisecondsSinceEpoch(ms.toInt());
+      if (when.year != now.year || when.month != now.month || when.day != now.day) {
+        continue;
+      }
+      counts[target] = (counts[target] ?? 0) + 1;
+    }
+    counts.removeWhere((_, count) => count < minAttempts);
+    return counts;
+  }
+
   Future<void> reportUsage({
     required String childProfileId,
     required UsageReport report,
     required List<AppUsageSummary> appSummaries,
+    List<Map<String, dynamic>> restrictionLog = const [],
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || childProfileId.isEmpty) return;
@@ -88,6 +118,27 @@ class MonitoringUsageAlertService {
         'timestampMs': timestampMs,
         'subject': app.packageName,
         'label': '${app.displayName} (${app.usageLabel} today)',
+      });
+    }
+
+    // Repeated attempts to open a blocked app: one alert per app per day.
+    final names = {
+      for (final app in appSummaries) app.packageName: app.displayName,
+    };
+    final repeated = repeatedBlockedApps(restrictionLog, now).entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    for (final attempt in repeated.take(10)) {
+      final safe = attempt.key
+          .replaceAll(RegExp(r'[^A-Za-z0-9]'), '_')
+          .padRight(3, '_');
+      final trimmed = safe.length > 60 ? safe.substring(0, 60) : safe;
+      events.add({
+        'type': 'repeated_restricted_app_access',
+        'eventId': 'rra_${trimmed}_$day',
+        'timestampMs': timestampMs,
+        'subject': attempt.key,
+        'label': '${names[attempt.key] ?? attempt.key} '
+            '(${attempt.value} attempts today)',
       });
     }
 

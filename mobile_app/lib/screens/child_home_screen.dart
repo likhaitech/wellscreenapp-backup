@@ -1434,6 +1434,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           childProfileId: childProfileId,
           report: report,
           appSummaries: allSummaries,
+          restrictionLog: restrictionLog,
         ));
       }
 
