@@ -34,6 +34,7 @@ import '../services/usage_dashboard_controller_service.dart';
 import '../services/usage_tracking_service.dart';
 import '../services/temporary_app_grant_service.dart';
 import '../services/chat_notifications_service.dart';
+import '../services/chat_unread_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
@@ -2044,6 +2045,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             // moment the timer fires. This builder stays mounted on every
             // tab (Home / Safety / Settings) for the same reason.
             _cachedUserData = data;
+            // The Chat tab's unread dot is built outside this stream, so
+            // redraw it once the paired profile is known.
+            final pairedProfile = (data['pairedChildProfileId'] ?? '')
+                .toString();
+            if (pairedProfile != (_chatUnreadProfileId ?? '')) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() {});
+              });
+            }
 
             if (connected) {
               _maybeSyncParentPhoneNumber(data);
@@ -3259,14 +3269,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             docs != null &&
             docs.any((doc) => doc.data()['type'] == 'parent_child_chat');
 
-        return FloatingPillDock(
+        return StreamBuilder<bool>(
+          stream: _chatUnreadFor(uid),
+          builder: (context, chatUnread) => FloatingPillDock(
           currentIndex: currentIndex,
           items: [
             const DockItem(icon: Icons.home_outlined, label: 'Home'),
             DockItem(
               icon: Icons.chat_bubble_outline_rounded,
               label: 'Chat',
-              showBadge: hasUnreadChat,
+              showBadge: hasUnreadChat || chatUnread.data == true,
             ),
             const DockItem(
               icon: Icons.qr_code_scanner_rounded,
@@ -3278,9 +3290,25 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             ),
           ],
           onTap: handleBottomNavTap,
+          ),
         );
       },
     );
+  }
+
+  Stream<bool>? _chatUnreadStream;
+  String? _chatUnreadProfileId;
+
+  /// Unread dot for the Chat tab (see ChatUnreadService). Recreated only
+  /// when the paired profile changes.
+  Stream<bool> _chatUnreadFor(String uid) {
+    final profileId = (_cachedUserData?['pairedChildProfileId'] ?? '')
+        .toString();
+    if (_chatUnreadStream == null || _chatUnreadProfileId != profileId) {
+      _chatUnreadProfileId = profileId;
+      _chatUnreadStream = ChatUnreadService.hasUnread(profileId, uid);
+    }
+    return _chatUnreadStream!;
   }
 
   // =============================== HOME TAB ==============================

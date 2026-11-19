@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
 import '../widgets/app_usage_icon.dart';
@@ -63,6 +64,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   bool _isRespondingToEmergencyAccess = false;
   // Cached so the dock's unread dot does not resubscribe on every rebuild.
   Stream<QuerySnapshot<Map<String, dynamic>>>? _unreadStream;
+  Stream<bool>? _chatUnreadStream;
+  String? _chatUnreadProfileId;
   Timer? _presenceRefreshTimer;
   // Android periodically checks in while online; this is an inference,
   // not an instantaneous network-disconnect signal.
@@ -345,6 +348,17 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  /// Unread dot for the Chat tab, kept per paired child (see
+  /// ChatUnreadService). Recreated only when the paired child changes.
+  Stream<bool> _chatUnreadFor(String uid) {
+    final profileId = _primaryChildId ?? '';
+    if (_chatUnreadStream == null || _chatUnreadProfileId != profileId) {
+      _chatUnreadProfileId = profileId;
+      _chatUnreadStream = ChatUnreadService.hasUnread(profileId, uid);
+    }
+    return _chatUnreadStream!;
+  }
+
   void openFamilyChat() {
     final childProfileId = _primaryChildId;
     if (childProfileId == null || childProfileId.isEmpty) {
@@ -477,6 +491,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             final primaryChildDoc = getPrimaryChildDoc(childDocs);
             final primaryChild = primaryChildDoc?.data();
             _primaryChildId = primaryChildDoc?.id;
+            // The Chat tab's unread dot is built outside this stream, so
+            // redraw it once the paired child is known.
+            if (_primaryChildId != null &&
+                _primaryChildId != _chatUnreadProfileId) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() {});
+              });
+            }
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -507,7 +529,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       bottomNavigationBar: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _unreadStream ??= ChatNotificationsService.instance
             .unreadStream(parentUser.uid),
-        builder: (context, unread) => FloatingPillDock(
+        builder: (context, unread) => StreamBuilder<bool>(
+        stream: _chatUnreadFor(parentUser.uid),
+        builder: (context, chatUnread) => FloatingPillDock(
         currentIndex: currentIndex,
         items: [
           const DockItem(icon: Icons.home_outlined, label: 'Home'),
@@ -515,6 +539,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             icon: Icons.chat_bubble_outline_rounded,
             label: 'Chat',
             showBadge:
+                chatUnread.data == true ||
                 (unread.data?.docs.any(
                   (doc) => doc.data()['type'] == 'parent_child_chat',
                 ) ??
@@ -525,6 +550,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           const DockItem(icon: Icons.settings_outlined, label: 'Settings'),
         ],
         onTap: handleBottomNavTap,
+        ),
         ),
       ),
     );
