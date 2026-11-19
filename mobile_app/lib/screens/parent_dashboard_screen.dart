@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
+import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
 import '../services/pattern_detection_service.dart';
 import '../services/parent_phone_sync_service.dart';
@@ -588,7 +589,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               ),
             );
           },
-          icon: const ChatUnreadBell(color: darkText, size: 24),
+          // Counts monitoring alerts too, not only inbox items.
+          icon: ParentAlertsBell(
+            uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+            color: darkText,
+            size: 24,
+          ),
         ),
       ],
     );

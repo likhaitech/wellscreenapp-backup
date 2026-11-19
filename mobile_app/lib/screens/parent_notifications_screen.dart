@@ -1,3 +1,4 @@
+import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'chat_notifications_screen.dart';
 import '../utils/child_name.dart';
+import '../services/parent_alert_badge_service.dart';
 
 /// Parent notification center.
 ///
@@ -48,7 +50,16 @@ class _ParentNotificationsScreenState
     if (uid != null) {
       _loadedForUid = uid;
       _loadReadState(uid);
+      // Opening Notifications clears the bell's count.
+      unawaited(ParentAlertBadgeService.markSeen(uid));
     }
+  }
+
+  @override
+  void dispose() {
+    final uid = _loadedForUid;
+    if (uid != null) unawaited(ParentAlertBadgeService.markSeen(uid));
+    super.dispose();
   }
 
   /// Restore local read/unread state for security alerts.
