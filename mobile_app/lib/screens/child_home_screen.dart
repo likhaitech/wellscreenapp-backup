@@ -2107,93 +2107,142 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     );
   }
 
+  /// "Pair with parent" from the design D mockup: logo, six digit boxes
+  /// (one hidden text field drives them), Pair device, or, Scan QR code.
   Widget _pairingCard() {
-    return _whiteCard(
-      child: Column(
-        children: [
-          const Icon(Icons.link_rounded, color: purple, size: 62),
-          const SizedBox(height: 12),
-          const Text(
-            'Connect to Parent Dashboard',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: darkText,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
+    final code = pairingCodeController.text;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 4),
+        const Text(
+          'Pair with parent',
+          style: TextStyle(
+            fontFamily: AppFonts.heading,
+            color: _ink,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: Image.asset(
+            'assets/icons/wellscreen_icon.png',
+            width: 90,
+            height: 90,
+            semanticLabel: 'WellScreen',
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Ask your parent for the 6-digit code on their WellScreen app.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _slate, fontSize: 14, height: 1.4),
+        ),
+        const SizedBox(height: 16),
+        Semantics(
+          label: 'Pairing code',
+          textField: true,
+          child: SizedBox(
+            height: 56,
+            child: Stack(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < 6; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Container(
+                        width: 44,
+                        height: 56,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: i == code.length.clamp(0, 5)
+                                ? _brandIndigo
+                                : _hairline,
+                            width: i == code.length.clamp(0, 5) ? 2 : 1,
+                          ),
+                        ),
+                        child: Text(
+                          i < code.length ? code[i] : '',
+                          style: const TextStyle(
+                            fontFamily: AppFonts.heading,
+                            color: _ink,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                // Invisible field on top: taps open the number keyboard and
+                // typed digits fill the boxes.
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0,
+                    child: TextField(
+                      controller: pairingCodeController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      showCursor: false,
+                      enableInteractiveSelection: false,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        counterText: '',
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Enter the 6-digit pairing code generated from the parent account.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: grayText,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
-            ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 52,
+          child: FilledButton(
+            onPressed: isPairing ? null : pairWithParent,
+            style: FilledButton.styleFrom(backgroundColor: _brandIndigo),
+            child: Text(isPairing ? 'Connecting...' : 'Pair device'),
           ),
-          const SizedBox(height: 18),
-          TextField(
-            controller: pairingCodeController,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 7,
+        ),
+        const SizedBox(height: 14),
+        const Row(
+          children: [
+            Expanded(child: Divider(color: _hairline)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Text('or', style: TextStyle(color: _slate, fontSize: 12)),
             ),
-            decoration: InputDecoration(
-              counterText: '',
-              hintText: '000000',
-              filled: true,
-              fillColor: pageBg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: purple, width: 2),
-              ),
+            Expanded(child: Divider(color: _hairline)),
+          ],
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 52,
+          child: FilledButton.icon(
+            onPressed: isPairing ? null : scanQrCode,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primaryLight,
+              foregroundColor: _brandIndigo,
             ),
+            icon: const Icon(Icons.photo_camera_outlined),
+            label: const Text('Scan QR code'),
           ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 54,
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: isPairing ? null : pairWithParent,
-              style: FilledButton.styleFrom(
-                backgroundColor: purple,
-                shape: const StadiumBorder(),
-              ),
-              icon: const Icon(Icons.verified_rounded),
-              label: Text(
-                isPairing ? 'Connecting...' : 'Pair Student Device',
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 50,
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: isPairing ? null : scanQrCode,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: purple,
-                side: const BorderSide(color: purple, width: 1.4),
-                shape: const StadiumBorder(),
-              ),
-              icon: const Icon(Icons.qr_code_scanner_rounded),
-              label: const Text(
-                'Scan QR Code Instead',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'Pairing lets your parent see your screen time, rules and '
+          'location. You can read exactly what they see in Settings.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _slate, fontSize: 12, height: 1.4),
+        ),
+      ],
     );
   }
 
@@ -4838,79 +4887,106 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
     return _whiteCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: connected ? _emeraldTint : _coralTint,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  connected
-                      ? Icons.location_on_rounded
-                      : Icons.location_off_rounded,
-                  color: connected ? _emerald : _coral,
-                  size: 24,
+              const Expanded(
+                child: Text(
+                  'My location',
+                  style: TextStyle(
+                    fontFamily: AppFonts.heading,
+                    color: _ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'GPS LOCATION',
-                      style: TextStyle(
-                        color: _slate,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      primary,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      secondary,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _slate,
-                        fontSize: 12,
-                        fontFeatures: _tabular,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Share GPS now',
-                onPressed: connected && !isSharingLocation
-                    ? () => shareCurrentLocation(data)
-                    : null,
-                icon: Icon(
-                  isSharingLocation
-                      ? Icons.sync_rounded
-                      : Icons.my_location_rounded,
-                  color: connected ? _brandIndigo : _slate,
-                  size: 26,
-                ),
+              _pill(
+                label: connected ? 'Shared' : 'Not paired',
+                background: connected ? _emeraldTint : AppColors.surfaceMuted,
+                foreground: connected ? _emerald : _slate,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                fontSize: 12,
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceMuted,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: connected ? AppColors.primaryLight : _coralTint,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    connected
+                        ? Icons.location_on_rounded
+                        : Icons.location_off_rounded,
+                    color: connected ? _brandIndigo : _coral,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        primary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        secondary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _slate,
+                          fontSize: 12,
+                          fontFeatures: _tabular,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: connected && !isSharingLocation
+                  ? () => shareCurrentLocation(data)
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryLight,
+                foregroundColor: _brandIndigo,
+              ),
+              icon: Icon(
+                isSharingLocation
+                    ? Icons.sync_rounded
+                    : Icons.my_location_rounded,
+                size: 20,
+              ),
+              label: Text(isSharingLocation ? 'Sharing...' : 'Share GPS now'),
+            ),
           ),
           // Passive nudge set by either the manual "Share GPS" button or
           // the periodic background auto-share timer detecting Android's
@@ -4998,37 +5074,57 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         ? (_loadingUsageDashboard ? null : false)
         : usageState.viewModel.hasUsagePermission;
 
+    final steps = <bool?>[
+      connected,
+      connected && _smsPermissionGranted && hasPhoneNumber,
+      usageGranted,
+      _accessibilityEnabled,
+      _batteryUnrestricted,
+      _deviceAdminActive,
+    ];
+    final doneCount = steps.where((d) => d == true).length;
+
     return _whiteCard(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Protection & Setup',
-            style: TextStyle(
-              color: _ink,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Protection & setup',
+                  style: TextStyle(
+                    fontFamily: AppFonts.heading,
+                    color: _ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '$doneCount of ${steps.length} done',
+                style: const TextStyle(color: _slate, fontSize: 12),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           _checklistRow(
             icon: Icons.link_rounded,
-            title: 'Device Pairing',
+            title: 'Device pairing',
             subtitle: connected
                 ? 'Connected to a parent account. Tap to view details.'
                 : 'Not paired yet. Enter the code from the parent account.',
             done: connected,
-            actionLabel: connected ? null : 'Pair Device',
+            actionLabel: connected ? null : 'Pair',
             onAction: connected
                 ? null
                 : () => _scrollToSection(_pairingSectionKey),
             onTap: connected ? showConnectedSuccessDialog : null,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.sms_outlined,
-            title: 'SMS Backup Alerts',
+            title: 'SMS alerts',
             subtitle: smsSubtitle,
             done: connected && _smsPermissionGranted && hasPhoneNumber,
             actionLabel: connected && !_smsPermissionGranted ? 'Enable' : null,
@@ -5036,10 +5132,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 ? _requestSmsPermission
                 : null,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.bar_chart_rounded,
-            title: 'Usage Access',
+            title: 'Usage access',
             subtitle: usageGranted == true
                 ? 'Allowed. Screen time is read from this phone.'
                 : 'Needed to show real screen time and app usage.',
@@ -5049,10 +5144,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 ? () => _usageTrackingService.openUsageAccessSettings()
                 : null,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.accessibility_new_rounded,
-            title: 'Accessibility Service',
+            title: 'Accessibility',
             subtitle: _accessibilityEnabled == true
                 ? 'On. Restricted apps and websites are blocked.'
                 : 'Needed to block restricted apps. Switch WellScreen on in '
@@ -5061,10 +5155,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             actionLabel: _accessibilityEnabled == true ? null : 'Open',
             onAction: _openAccessibilitySettings,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.battery_charging_full_rounded,
-            title: 'Run in Background',
+            title: 'Run in background',
             subtitle: _batteryUnrestricted == true
                 ? 'Allowed. Battery saver will not stop WellScreen.'
                 : 'Set WellScreen to "Not optimized" / "Unrestricted" so '
@@ -5075,17 +5168,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 ? _openBatterySettings
                 : null,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.shield_outlined,
-            title: 'Uninstall Protection',
+            title: 'Uninstall protection',
             subtitle: _deviceAdminActive == true
                 ? 'On. WellScreen cannot be uninstalled without turning '
                       'this off, and your guardian is told.'
                 : 'Optional. Stops WellScreen from being uninstalled '
                       'without your guardian knowing.',
             done: _deviceAdminActive,
-            actionLabel: _deviceAdminActive == false ? 'Turn On' : null,
+            actionLabel: _deviceAdminActive == false ? 'Turn on' : null,
             onAction: _deviceAdminActive == false
                 ? _requestDeviceAdmin
                 : null,
@@ -5095,8 +5187,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     );
   }
 
-  /// [done]: true = emerald check, false = amber "Setup Needed" badge,
-  /// null = status not known to the app (no badge).
+  /// Mockup checklist row: round status dot (teal check when done, clock
+  /// otherwise), title + subtitle, then "Done" or an action button.
+  /// [done] null = status not known to the app yet.
   Widget _checklistRow({
     required IconData icon,
     required String title,
@@ -5106,62 +5199,46 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     VoidCallback? onAction,
     VoidCallback? onTap,
   }) {
-    final Color iconColor;
-    final Color iconTint;
-    if (done == true) {
-      iconColor = _emerald;
-      iconTint = _emeraldTint;
-    } else if (done == false) {
-      iconColor = _amber;
-      iconTint = _amberTint;
-    } else {
-      iconColor = _slate;
-      iconTint = AppColors.surfaceMuted;
-    }
-
+    final isDone = done == true;
     return InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: _hairline)),
+        ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: iconTint,
-                borderRadius: BorderRadius.circular(12),
+            Semantics(
+              label: isDone ? 'Done' : 'Not done',
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: isDone ? AppColors.teal : AppColors.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isDone ? Icons.check_rounded : Icons.schedule_rounded,
+                  color: isDone ? AppColors.onTeal : _brandIndigo,
+                  size: 15,
+                ),
               ),
-              child: Icon(icon, color: iconColor, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (done == false)
-                        _pill(
-                          label: 'Setup Needed',
-                          background: _amberTint,
-                          foreground: AppColors.warning,
-                        ),
-                    ],
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: const TextStyle(
@@ -5183,7 +5260,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   minimumSize: const Size(0, 34),
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: const StadiumBorder(),
                 ),
                 child: Text(
                   actionLabel,
@@ -5193,14 +5269,13 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   ),
                 ),
               )
-            else if (done == true)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Icon(
-                  Icons.check_circle_rounded,
-                  color: _emerald,
-                  size: 22,
-                ),
+            else if (isDone)
+              _pill(
+                label: 'Done',
+                background: _emeraldTint,
+                foreground: _emerald,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                fontSize: 12,
               ),
           ],
         ),
@@ -5224,26 +5299,108 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       );
     }
 
+    final initials = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .take(2)
+        .map((p) => p[0].toUpperCase())
+        .join();
+
     return [
-      _settingsGroup('Account', [
-        _settingsTile(
-          icon: Icons.person_outline_rounded,
-          title: fullName,
-          subtitle: email.isEmpty ? 'Account and profile' : email,
-          onTap: openProfile,
+      // Profile card from the mockup: initials, name, pairing, Child pill.
+      _whiteCard(
+        padding: EdgeInsets.zero,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            onTap: openProfile,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primaryLight,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      initials.isEmpty ? '?' : initials,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.heading,
+                        color: _brandIndigo,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: AppFonts.heading,
+                            color: _ink,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          connected
+                              ? 'Paired with your parent'
+                              : (email.isEmpty ? 'Not paired yet' : email),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: _slate, fontSize: 13),
+                        ),
+                        const SizedBox(height: 6),
+                        _pill(
+                          label: 'Child',
+                          background: _emeraldTint,
+                          foreground: _emerald,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 3,
+                          ),
+                          fontSize: 12,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: _slate,
+                    size: 22,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
+      ),
+      const SizedBox(height: 12),
+      _settingsGroup(null, [
         _settingsTile(
-          icon: Icons.sms_outlined,
-          title: 'Parent Phone Number (SMS Backup)',
+          icon: Icons.phone_outlined,
+          color: AppColors.violet,
+          tint: AppColors.violetBg,
+          title: 'Parent\'s phone number',
           subtitle: hasPhoneNumber
-              ? 'Backup alerts text '
+              ? 'SMS backup alerts go to '
                     '${_maskPhoneNumber(_cachedParentPhoneNumber!)}'
               : 'Not added yet. Your parent sets this in their Profile '
                     'Settings.',
         ),
-      ]),
-      const SizedBox(height: 14),
-      _settingsGroup('App', [
         _settingsTile(
           icon: Icons.notifications_none_rounded,
           title: 'Notifications',
@@ -5256,25 +5413,26 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         if (connected)
           _settingsTile(
             icon: Icons.sync_rounded,
-            title: isSyncingUsage ? 'Syncing...' : 'Sync Usage Now',
+            color: _emerald,
+            tint: _emeraldTint,
+            title: isSyncingUsage ? 'Syncing...' : 'Sync usage now',
             subtitleWidget: _syncStatusIndicator(),
             onTap: isSyncingUsage ? null : () => syncUsageReport(data),
           ),
       ]),
-      const SizedBox(height: 14),
-      _settingsGroup('Privacy', [
-        _settingsTile(
-          icon: Icons.privacy_tip_outlined,
-          title: 'Privacy & Monitoring Notice',
-          subtitle: 'What WellScreen monitors and what it never reads',
-          onTap: _showMonitoringSheet,
-        ),
-      ]),
-      const SizedBox(height: 14),
+      const SizedBox(height: 12),
       _settingsGroup(null, [
         _settingsTile(
+          icon: Icons.visibility_outlined,
+          color: _emerald,
+          tint: _emeraldTint,
+          title: 'Privacy & monitoring notice',
+          subtitle: 'What your parent can see, and what WellScreen never reads',
+          onTap: _showMonitoringSheet,
+        ),
+        _settingsTile(
           icon: Icons.logout_rounded,
-          title: 'Logout',
+          title: 'Log out',
           subtitle: 'Sign out from this WellScreen account',
           destructive: true,
           onTap: _confirmLogout,
@@ -5307,14 +5465,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             borderRadius: BorderRadius.circular(20),
             side: const BorderSide(color: _hairline),
           ),
-          child: Column(
-            children: [
-              for (var i = 0; i < tiles.length; i++) ...[
-                if (i > 0)
-                  const Divider(height: 1, indent: 64, color: _hairline),
-                tiles[i],
-              ],
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(children: tiles),
           ),
         ),
       ],
@@ -5328,8 +5481,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     Widget? subtitleWidget,
     VoidCallback? onTap,
     bool destructive = false,
+    Color? color,
+    Color? tint,
   }) {
-    final accent = destructive ? _coral : _brandIndigo;
+    final accent = destructive ? _coral : (color ?? _brandIndigo);
 
     return ListTile(
       onTap: onTap,
@@ -5338,7 +5493,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         width: 38,
         height: 38,
         decoration: BoxDecoration(
-          color: destructive ? _coralTint : AppColors.primaryLight,
+          color: destructive
+              ? _coralTint
+              : (tint ?? AppColors.primaryLight),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: accent, size: 20),
@@ -5348,7 +5505,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         style: TextStyle(
           color: destructive ? AppColors.danger : _ink,
           fontSize: 14,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
         ),
       ),
       subtitle:
