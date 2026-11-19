@@ -223,7 +223,16 @@ class WellScreenAccessibilityService : AccessibilityService() {
         if (limitStatus != null && !isEmergencyAccessActive(System.currentTimeMillis())) {
             AppTimeLimitNotifier.maybeNotifyTenMinutes(this, currentPackage, limitStatus)
         }
-        val dailyLimitReached = limitStatus?.remainingMilliseconds?.let { it <= 0L } ?: false
+        var dailyLimitReached = limitStatus?.remainingMilliseconds?.let { it <= 0L } ?: false
+        // A Lite version of an app whose daily limit is used up (TikTok Lite
+        // after TikTok's limit) is paused too, until the next day.
+        var limitOwner: String? = null
+        if (!permanentlyRestricted && limitStatus == null) {
+            limitOwner = RelatedTargets.siblingsOf(currentPackage).firstOrNull {
+                AppTimeLimitEnforcer.isLimitReached(this, it)
+            }
+            if (limitOwner != null) dailyLimitReached = true
+        }
 
         if (permanentlyRestricted || dailyLimitReached) {
             val now = System.currentTimeMillis()
@@ -237,6 +246,9 @@ class WellScreenAccessibilityService : AccessibilityService() {
             if (blockingPackage != null && blockingPackage != currentPackage &&
                 TemporaryAppGrantCache.isActive(this, blockingPackage, now)
             ) {
+                return
+            }
+            if (limitOwner != null && TemporaryAppGrantCache.isActive(this, limitOwner, now)) {
                 return
             }
 

@@ -55,6 +55,16 @@ internal object RelatedTargets {
         return group.packages.firstOrNull { it in restricted }
     }
 
+    /** Other packages of the same app (TikTok -> TikTok Lite). */
+    fun siblingsOf(packageName: String): Set<String> {
+        val group = groups.firstOrNull { packageName in it.packages } ?: return emptySet()
+        return group.packages - packageName
+    }
+
+    /** Packages that have websites in this list. */
+    fun hasWebsites(packageName: String): Boolean =
+        groups.any { packageName in it.packages && it.domains.isNotEmpty() }
+
     /** Websites to block because their app (or a sibling) is blocked. */
     fun domainsFor(restricted: Set<String>): Set<String> {
         if (restricted.isEmpty()) return emptySet()
