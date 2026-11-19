@@ -29,6 +29,23 @@ class AdultKeywordMatcherTest {
     }
 
     @Test
+    fun blocksAddedExplicitKeywords() {
+        assertTrue(AdultKeywordMatcher.matches("free-hentai-site.net"))
+        assertTrue(AdultKeywordMatcher.matches("xnxx.com"))
+        assertTrue(AdultKeywordMatcher.matches("xhamster.com"))
+        assertTrue(AdultKeywordMatcher.matches("nsfwclips.example"))
+        assertTrue(AdultKeywordMatcher.matches("local-escort-ads.ph"))
+    }
+
+    @Test
+    fun keepsWordsThatOnlyContainAKeywordOpen() {
+        assertFalse(AdultKeywordMatcher.matches("milfordschools.org"))
+        assertFalse(AdultKeywordMatcher.matches("googleanalytics.com"))
+        assertFalse(AdultKeywordMatcher.matches("nakedwines.com"))
+        assertFalse(AdultKeywordMatcher.matches("skylinewebcams.com"))
+    }
+
+    @Test
     fun leavesOrdinaryDomainsOpen() {
         assertFalse(AdultKeywordMatcher.matches("google.com"))
         assertFalse(AdultKeywordMatcher.matches("x.com"))

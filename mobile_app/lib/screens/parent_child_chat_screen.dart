@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../config/app_config.dart';
 import '../services/chat_notifications_service.dart';
+import '../services/chat_unread_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_usage_icon.dart';
 
@@ -60,6 +61,10 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
       ChatNotificationsService.instance.markProfileRead(widget.childProfileId),
     );
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    // Clears the Chat tab's unread dot (see ChatUnreadService).
+    if (uid != null) {
+      unawaited(ChatUnreadService.markSeen(widget.childProfileId, uid));
+    }
     if (uid != null) {
       _inboxReadSubscription = ChatNotificationsService.instance
           .inboxFor(uid)
@@ -81,6 +86,11 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
   @override
   void dispose() {
     unawaited(_inboxReadSubscription?.cancel());
+    // Messages that arrived while the chat was open count as seen.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      unawaited(ChatUnreadService.markSeen(widget.childProfileId, uid));
+    }
     _message.dispose();
     super.dispose();
   }
@@ -1081,7 +1091,12 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
 
             timeline.sort((a, b) => when(a).compareTo(when(b)));
 
-            return Column(
+            // The request form takes only the height it needs (at most half
+            // the space) and the message list takes the rest, so the message
+            // bar always sits at the bottom. A Flexible here used to reserve
+            // half the screen even when the form was hidden.
+            return LayoutBuilder(
+              builder: (context, constraints) => Column(
               children: [
                 Expanded(
                   child: timeline.isEmpty
@@ -1127,8 +1142,10 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                         ),
                 ),
                 if (!widget.isParent)
-                  Flexible(
-                    fit: FlexFit.loose,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: constraints.maxHeight * 0.5,
+                    ),
                     child: SingleChildScrollView(
                       child:
                           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -1155,40 +1172,19 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                                   }
                                 }
                               }
+                              // The + button in the message bar opens the
+                              // request form; no separate row above the bar,
+                              // which pushed the bar up the screen.
                               return _showRequestComposer
                                   ? _requestComposer(uid, apps, pending)
-                                  : Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 13,
-                                        ),
-                                        child: TextButton.icon(
-                                          onPressed: _sendingRequest
-                                              ? null
-                                              : () => setState(
-                                                  () => _showRequestComposer =
-                                                      true,
-                                                ),
-                                          icon: const Icon(
-                                            Icons.lock_open_rounded,
-                                            size: 18,
-                                          ),
-                                          label: const Text(
-                                            'Request app access',
-                                          ),
-                                          style: TextButton.styleFrom(
-                                            foregroundColor: _chatBlue,
-                                          ),
-                                        ),
-                                      ),
-                                    );
+                                  : const SizedBox.shrink();
                             },
                           ),
                     ),
                   ),
                 _messageBar(uid),
               ],
+              ),
             );
           },
         );

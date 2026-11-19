@@ -6,7 +6,7 @@ import java.util.Locale
  * Recognises the system screens a child could use to switch WellScreen off
  * or remove it: WellScreen's App info (Uninstall, Force stop, Clear storage),
  * the uninstall dialog, WellScreen's Accessibility page and the Device Admin
- * "Deactivate" page. While the phone is paired, the Accessibility service
+ * "Deactivate" page, plus the Date & time page. While the phone is paired, the Accessibility service
  * covers these screens with a "Ask your guardian" screen.
  *
  * Screens needed during setup stay open: the Accessibility list, Usage
@@ -28,6 +28,13 @@ internal object ProtectedSettingsGuard {
 
     private const val DEVICE_ADMIN_LABEL = "wellscreen uninstall protection"
 
+    private val activationPhrases = listOf(
+        "activate this device admin",
+        "activate device admin",
+    )
+
+    private val appInfoControls = listOf("force stop", "clear storage", "clear data")
+
     private val dangerWords = listOf(
         "uninstall",
         "force stop",
@@ -44,11 +51,36 @@ internal object ProtectedSettingsGuard {
      * @param accessibilityDescription WellScreen's accessibility description,
      *   shown only on WellScreen's own Accessibility page.
      */
+    private val dateTimeTitles = listOf("date & time", "date and time")
+    private val dateTimeControls = listOf(
+        "set time automatically",
+        "set date",
+        "set time",
+        "automatic date",
+        "use network-provided time",
+        "network-provided time",
+        "time zone",
+    )
+
+    /**
+     * Android's Date & time page. Changing the date or time zone would reset
+     * "today" for daily app limits, so it is covered while paired. The
+     * System list (which only shows a "Date & time" row and the zone name)
+     * stays open.
+     */
+    fun isDateTimeScreen(texts: List<String>): Boolean {
+        val lower = texts.map { it.lowercase(Locale.ROOT) }
+        val hasTitle = lower.any { text -> dateTimeTitles.any { text.contains(it) } }
+        val hasControl = lower.any { text -> dateTimeControls.any { text.contains(it) } }
+        return hasTitle && hasControl
+    }
+
     fun isProtectedScreen(
         texts: List<String>,
         appLabel: String,
         accessibilityDescription: String,
     ): Boolean {
+        if (isDateTimeScreen(texts)) return true
         val lower = texts.map { it.lowercase(Locale.ROOT) }
         val description = accessibilityDescription.lowercase(Locale.ROOT).take(60)
         if (description.length >= 20 && lower.any { it.contains(description) }) return true
@@ -59,10 +91,15 @@ internal object ProtectedSettingsGuard {
         // The Device Admin name contains "Uninstall"; it is not a danger word.
         val cleaned = lower.map { it.replace(DEVICE_ADMIN_LABEL, "") }
 
-        // Turning Device Admin ON (setup checklist) must stay possible.
+        // Turning Device Admin ON (setup checklist) must stay possible. The
+        // page title ("Activate device admin app?") loads before the
+        // "Activate this device admin app" button, so either one counts.
+        // "deactivate" contains "activate", hence the second check. App
+        // info controls never appear on this page, so they rule it out.
         val isActivationPage =
-            cleaned.any { it.contains("activate this device admin") } &&
-                cleaned.none { it.contains("deactivate") }
+            cleaned.any { text -> activationPhrases.any { text.contains(it) } } &&
+                cleaned.none { it.contains("deactivate") } &&
+                cleaned.none { text -> appInfoControls.any { text.contains(it) } }
         if (isActivationPage) return false
 
         return cleaned.any { text -> dangerWords.any { text.contains(it) } }

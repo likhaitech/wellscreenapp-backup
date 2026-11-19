@@ -153,6 +153,7 @@ service cloud.firestore {
             'usageAccessCheckedAt',
             'locationEnabled',
             'smsPermissionGranted',
+            'dailyUsageTotals',
             'emergencyAccess'
           ]);
       }

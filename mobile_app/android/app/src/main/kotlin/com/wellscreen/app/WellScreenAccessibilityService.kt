@@ -207,8 +207,70 @@ class WellScreenAccessibilityService : AccessibilityService() {
         return true
     }
 
+    private var lastScheduleBlockPackage: String? = null
+    private var lastScheduleBlockTime: Long = 0L
+
+    /**
+     * Bedtime lock, focus mode and break timer (ScheduleEnforcer). Essential
+     * apps stay open; Emergency Access and approved app time still work.
+     * Returns true when the app is paused by a schedule.
+     */
+    private fun maybeBlockForSchedule(currentPackage: String, notInFront: Boolean): Boolean {
+        if (AppTimeLimitEnforcer.isAlwaysAllowed(this, currentPackage)) return false
+        val now = System.currentTimeMillis()
+        val block = (
+            try {
+                ScheduleEnforcer.activeBlock(this, currentPackage, now)
+            } catch (e: Exception) {
+                Log.w("WellScreenLimits", "Schedule check failed", e)
+                null
+            }
+            ) ?: return false
+        if (isEmergencyAccessActive(now)) return false
+        if (TemporaryAppGrantCache.isActive(this, currentPackage, now)) return false
+
+        if (BlockedAppActivity.isShowing &&
+            lastScheduleBlockPackage == currentPackage &&
+            now - lastScheduleBlockTime < 2500
+        ) {
+            return true
+        }
+        lastScheduleBlockPackage = currentPackage
+        lastScheduleBlockTime = now
+
+        val intent = Intent(this, BlockedAppActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(BlockedAppActivity.EXTRA_MODE, BlockedAppActivity.MODE_SCHEDULE)
+            putExtra("blocked_package", currentPackage)
+            putExtra(BlockedAppActivity.EXTRA_SCHEDULE_REASON, block.reason)
+            putExtra(BlockedAppActivity.EXTRA_SCHEDULE_ENDS_AT, block.endsAtMs)
+        }
+        try {
+            if (notInFront) {
+                performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                limitPollHandler.postDelayed({
+                    try {
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Log.w("WellScreenLimits", "Delayed schedule screen failed", e)
+                    }
+                }, 400L)
+            } else {
+                startActivity(intent)
+            }
+            RestrictionLogger.recordOutcome(
+                this, currentPackage, "blocked", now, "schedule", block.reason,
+            )
+        } catch (_: Exception) {
+            RestrictionLogger.recordOutcome(this, currentPackage, "failed_exception", now)
+        }
+        return true
+    }
+
     private fun checkRestrictedApp(currentPackage: String, notInFront: Boolean = false) {
         if (showSignInRequired(currentPackage)) return
+        if (maybeBlockForSchedule(currentPackage, notInFront)) return
         // A blocked app's Lite version is blocked too (RelatedTargets).
         val blockingPackage =
             RelatedTargets.blockingPackageFor(currentPackage, getRestrictedPackages())
@@ -223,7 +285,16 @@ class WellScreenAccessibilityService : AccessibilityService() {
         if (limitStatus != null && !isEmergencyAccessActive(System.currentTimeMillis())) {
             AppTimeLimitNotifier.maybeNotifyTenMinutes(this, currentPackage, limitStatus)
         }
-        val dailyLimitReached = limitStatus?.remainingMilliseconds?.let { it <= 0L } ?: false
+        var dailyLimitReached = limitStatus?.remainingMilliseconds?.let { it <= 0L } ?: false
+        // A Lite version of an app whose daily limit is used up (TikTok Lite
+        // after TikTok's limit) is paused too, until the next day.
+        var limitOwner: String? = null
+        if (!permanentlyRestricted && limitStatus == null) {
+            limitOwner = RelatedTargets.siblingsOf(currentPackage).firstOrNull {
+                AppTimeLimitEnforcer.isLimitReached(this, it)
+            }
+            if (limitOwner != null) dailyLimitReached = true
+        }
 
         if (permanentlyRestricted || dailyLimitReached) {
             val now = System.currentTimeMillis()
@@ -237,6 +308,9 @@ class WellScreenAccessibilityService : AccessibilityService() {
             if (blockingPackage != null && blockingPackage != currentPackage &&
                 TemporaryAppGrantCache.isActive(this, blockingPackage, now)
             ) {
+                return
+            }
+            if (limitOwner != null && TemporaryAppGrantCache.isActive(this, limitOwner, now)) {
                 return
             }
 
@@ -301,6 +375,7 @@ class WellScreenAccessibilityService : AccessibilityService() {
                         openBlockedScreen(currentPackage, timeLimitReached = dailyLimitReached)
                     }
                     RestrictionLogger.recordOutcome(this, currentPackage, "blocked", now)
+                    RepeatedAttemptAlert.onBlocked(this, currentPackage, null)
                 } catch (_: Exception) {
                     RestrictionLogger.recordOutcome(
                         this,
@@ -429,6 +504,7 @@ class WellScreenAccessibilityService : AccessibilityService() {
             RestrictionLogger.recordOutcome(
                 this, domain, "blocked", now, reason.source, reason.category,
             )
+            RepeatedAttemptAlert.onBlocked(this, domain, reason.source)
         } catch (_: Exception) {
             RestrictionLogger.recordOutcome(this, domain, "failed_exception", now)
         }

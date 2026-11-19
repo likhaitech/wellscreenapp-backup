@@ -58,4 +58,19 @@ class RelatedTargetsTest {
         // Look-alike domains are not caught.
         assertNull(SiteBlocker.decide("nottiktok.com", noRules, emptyMap(), { false }, appDomains))
     }
+
+    @Test
+    fun siblingsAndDailyLimitWebsites() {
+        assertEquals(setOf("com.ss.android.ugc.trill", "com.zhiliaoapp.musically.go"),
+            RelatedTargets.siblingsOf(tiktok))
+        assertTrue(RelatedTargets.siblingsOf("com.unknown.app").isEmpty())
+        assertTrue(RelatedTargets.hasWebsites("com.google.android.youtube"))
+        val noRules = SiteBlocker.WebsiteRules(emptySet(), emptySet())
+        val limitDomains = RelatedTargets.domainsFor(setOf("com.google.android.youtube"))
+        assertEquals(
+            SiteBlocker.BlockReason("parent_rule", "daily_limit_reached"),
+            SiteBlocker.decide("m.youtube.com", noRules, emptyMap(), { false }, emptySet(), limitDomains),
+        )
+        assertNull(SiteBlocker.decide("m.youtube.com", noRules, emptyMap(), { false }))
+    }
 }

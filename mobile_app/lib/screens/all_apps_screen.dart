@@ -451,7 +451,7 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                           ),
                           if (limit.limitReached(app.usageMs))
                             const Text(
-                              'Limit reached · device enforcement not yet enabled',
+                              'Limit reached · paused on the child\'s phone until midnight',
                               style: TextStyle(
                                 fontSize: 10,
                                 color: AppColors.danger,
@@ -552,7 +552,7 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Daily limit saved. Automatic blocking requires child-device enforcement.',
+            'Daily limit saved. The child\'s phone pauses the app when the time is used up.',
           ),
         ),
       );

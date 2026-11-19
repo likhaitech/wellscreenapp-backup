@@ -4,7 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/chat_unread_service.dart';
+import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
+import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
 import '../services/pattern_detection_service.dart';
 import '../services/parent_phone_sync_service.dart';
@@ -21,6 +24,7 @@ import '../services/chat_notifications_service.dart';
 import 'profile_settings_screen.dart';
 import 'reports_screen.dart';
 import 'rules/rules_screen.dart';
+import '../utils/child_name.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -62,6 +66,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   bool _isRespondingToEmergencyAccess = false;
   // Cached so the dock's unread dot does not resubscribe on every rebuild.
   Stream<QuerySnapshot<Map<String, dynamic>>>? _unreadStream;
+  Stream<bool>? _chatUnreadStream;
+  String? _chatUnreadProfileId;
   Timer? _presenceRefreshTimer;
   // Android periodically checks in while online; this is an inference,
   // not an instantaneous network-disconnect signal.
@@ -344,6 +350,17 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  /// Unread dot for the Chat tab, kept per paired child (see
+  /// ChatUnreadService). Recreated only when the paired child changes.
+  Stream<bool> _chatUnreadFor(String uid) {
+    final profileId = _primaryChildId ?? '';
+    if (_chatUnreadStream == null || _chatUnreadProfileId != profileId) {
+      _chatUnreadProfileId = profileId;
+      _chatUnreadStream = ChatUnreadService.hasUnread(profileId, uid);
+    }
+    return _chatUnreadStream!;
+  }
+
   void openFamilyChat() {
     final childProfileId = _primaryChildId;
     if (childProfileId == null || childProfileId.isEmpty) {
@@ -476,6 +493,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             final primaryChildDoc = getPrimaryChildDoc(childDocs);
             final primaryChild = primaryChildDoc?.data();
             _primaryChildId = primaryChildDoc?.id;
+            // The Chat tab's unread dot is built outside this stream, so
+            // redraw it once the paired child is known.
+            if (_primaryChildId != null &&
+                _primaryChildId != _chatUnreadProfileId) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() {});
+              });
+            }
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -495,7 +520,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 const SizedBox(height: 14),
                 _screenTimeAndRiskSection(primaryChild),
                 const SizedBox(height: 14),
-                _weeklyTrendSection(),
+                _weeklyTrendSection(primaryChild),
                 const SizedBox(height: 14),
                 _topAppsSection(primaryChild),
               ],
@@ -506,7 +531,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       bottomNavigationBar: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _unreadStream ??= ChatNotificationsService.instance
             .unreadStream(parentUser.uid),
-        builder: (context, unread) => FloatingPillDock(
+        builder: (context, unread) => StreamBuilder<bool>(
+        stream: _chatUnreadFor(parentUser.uid),
+        builder: (context, chatUnread) => FloatingPillDock(
         currentIndex: currentIndex,
         items: [
           const DockItem(icon: Icons.home_outlined, label: 'Home'),
@@ -514,6 +541,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             icon: Icons.chat_bubble_outline_rounded,
             label: 'Chat',
             showBadge:
+                chatUnread.data == true ||
                 (unread.data?.docs.any(
                   (doc) => doc.data()['type'] == 'parent_child_chat',
                 ) ??
@@ -524,6 +552,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           const DockItem(icon: Icons.settings_outlined, label: 'Settings'),
         ],
         onTap: handleBottomNavTap,
+        ),
         ),
       ),
     );
@@ -560,7 +589,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               ),
             );
           },
-          icon: const ChatUnreadBell(color: darkText, size: 24),
+          // Counts monitoring alerts too, not only inbox items.
+          icon: ParentAlertsBell(
+            uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+            color: darkText,
+            size: 24,
+          ),
         ),
       ],
     );
@@ -669,7 +703,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   Widget _monitoringSecurityAlertCard(Map<String, dynamic> child) {
     final alert = child['monitoringSecurityAlert'] as Map;
-    final name = (alert['deviceName'] ?? child['name'] ?? 'Child device')
+    final name = (alert['deviceName'] ?? childNameOf(child, fallback: 'Child device'))
         .toString();
     final seen = alert['lastSeenAt'];
     return BentoCard(
@@ -733,7 +767,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final reason = emergencyAccess is Map
         ? (emergencyAccess['reason'] ?? '').toString()
         : '';
-    final childName = (child['name'] ?? 'Your child').toString();
+    final childName = childNameOf(child, fallback: 'Your child');
 
     return BentoCard(
       color: _amberFill,
@@ -835,7 +869,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _deviceProfileCard(Map<String, dynamic>? child) {
-    final childName = (child?['name'] ?? 'Child Profile').toString();
+    final childName = childNameOf(child, fallback: 'Child Profile');
     final childEmail = (child?['childEmail'] ?? 'Pair a child account first')
         .toString();
     final connected = child != null && isChildConnected(child);
@@ -1378,54 +1412,174 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
-  /// Only today's report is synced and stored (see syncUsageReport in
-  /// child_home_screen.dart) - there is no per-day history collection, so
-  /// a real weekly chart can't be drawn honestly. Shows the card in the new
-  /// style with an empty state instead of made-up bars.
-  Widget _weeklyTrendSection() {
+  /// Last 7 days of screen time from the child's synced `dailyUsageTotals`
+  /// (see DailyUsageHistory), plus a 30-day average of completed days.
+  /// Today's bar uses the same live total as the Screen Time card above.
+  /// Days with no reading stay empty rather than being guessed, and the
+  /// card falls back to an empty state until the child's phone has synced.
+  Widget _weeklyTrendSection(Map<String, dynamic>? child) {
     const warningLimit = PatternDetectionService.warningTotalUsageLimit;
+    const dayLabels = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const maxBarHeight = 110.0;
+
+    final now = DateTime.now();
+    final totals = DailyUsageHistory.parse(child?['dailyUsageTotals']);
+    final liveToday = usageTotalDuration(child);
+    if (totals.isNotEmpty && liveToday > Duration.zero) {
+      final todayKey = DailyUsageHistory.dayKey(now);
+      if ((totals[todayKey] ?? 0) < liveToday.inMilliseconds) {
+        totals[todayKey] = liveToday.inMilliseconds;
+      }
+    }
+    final days = DailyUsageHistory.lastSevenDays(totals, now);
+    final hasData = days.any((day) => day.value != null);
+    final average = DailyUsageHistory.averageOfCompletedDays(totals, now);
+
+    var maxMs = warningLimit.inMilliseconds;
+    for (final day in days) {
+      final ms = day.value?.inMilliseconds ?? 0;
+      if (ms > maxMs) maxMs = ms;
+    }
+
+    final header = Row(
+      children: [
+        Expanded(child: _cardTitle('Weekly Screen Time')),
+        Text(
+          '${warningLimit.inHours}h warning level',
+          style: const TextStyle(color: grayText, fontSize: 12),
+        ),
+      ],
+    );
+
+    if (!hasData) {
+      return BentoCard(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            header,
+            const SizedBox(height: 14),
+            const Center(
+              child: Icon(
+                Icons.bar_chart_rounded,
+                color: AppColors.textDisabled,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Center(
+              child: Text(
+                'No daily history yet',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: darkText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Center(
+              child: Text(
+                'The chart fills in after the child\'s phone syncs usage.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: grayText, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final warningTop =
+        maxBarHeight * warningLimit.inMilliseconds / maxMs;
 
     return BentoCard(
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(child: _cardTitle('Weekly Screen Time')),
-              Text(
-                '${warningLimit.inHours}h warning level',
-                style: const TextStyle(color: grayText, fontSize: 12),
-              ),
-            ],
-          ),
+          header,
           const SizedBox(height: 14),
-          const Center(
-            child: Icon(
-              Icons.bar_chart_rounded,
-              color: AppColors.textDisabled,
-              size: 40,
+          SizedBox(
+            height: maxBarHeight + 40,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 20 + warningTop,
+                  child: Container(height: 1, color: AppColors.warning),
+                ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (var i = 0; i < days.length; i++)
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              days[i].value == null
+                                  ? '-'
+                                  : formatDurationLabel(days[i].value!)
+                                      .split(' ')
+                                      .first,
+                              style: const TextStyle(
+                                color: grayText,
+                                fontSize: 10,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              width: 18,
+                              height: days[i].value == null
+                                  ? 2
+                                  : (maxBarHeight *
+                                            days[i].value!.inMilliseconds /
+                                            maxMs)
+                                        .clamp(2.0, maxBarHeight),
+                              decoration: BoxDecoration(
+                                color: days[i].value == null
+                                    ? AppColors.border
+                                    : days[i].value! >= warningLimit
+                                    ? AppColors.warning
+                                    : purple,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              i == days.length - 1
+                                  ? 'Today'
+                                  : dayLabels[days[i].key.weekday - 1],
+                              style: TextStyle(
+                                color: i == days.length - 1
+                                    ? darkText
+                                    : grayText,
+                                fontSize: 11,
+                                fontWeight: i == days.length - 1
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          const Center(
-            child: Text(
-              'Weekly trends aren\'t available yet',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: darkText,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Center(
-            child: Text(
-              'Only today\'s report is stored so far.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: grayText, fontSize: 12),
-            ),
+          const SizedBox(height: 10),
+          Text(
+            average == null
+                ? 'Last 30 days: not enough history yet.'
+                : 'Last 30 days: average '
+                      '${formatDurationLabel(average.average)} per day '
+                      '(${average.daysCounted} '
+                      '${average.daysCounted == 1 ? 'day' : 'days'} recorded)',
+            style: const TextStyle(color: grayText, fontSize: 12),
           ),
         ],
       ),

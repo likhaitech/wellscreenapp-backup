@@ -127,6 +127,7 @@ object SiteBlocker {
         dataset: Map<String, String>,
         isAiGambling: (String) -> Boolean,
         appDomains: Set<String> = emptySet(),
+        limitDomains: Set<String> = emptySet(),
     ): BlockReason? {
         val normalized = normalize(domain)
         if (normalized.isEmpty()) return null
@@ -139,6 +140,11 @@ object SiteBlocker {
         // Website of an app the guardian blocked (tiktok.com for TikTok).
         if (matchesDomain(customDomain, appDomains)) {
             return BlockReason("parent_rule", "blocked_app")
+        }
+        // Website of an app whose daily time limit is used up (youtube.com
+        // after YouTube's limit) - otherwise the browser is a way around it.
+        if (matchesDomain(customDomain, limitDomains)) {
+            return BlockReason("parent_rule", "daily_limit_reached")
         }
 
         // Adult keywords catch porn sites missing from the bundled list.
@@ -159,7 +165,52 @@ object SiteBlocker {
             dataset = loadDataset(context),
             isAiGambling = { GamblingNameClassifier.isGambling(context, it) },
             appDomains = blockedAppDomains(context),
+            limitDomains = limitReachedDomains(context),
         )
+
+    @Volatile private var limitDomainsCache: Set<String> = emptySet()
+    @Volatile private var limitDomainsCachedAt: Long = 0L
+
+    /**
+     * Websites of apps whose daily limit is used up. Checking a limit reads
+     * Android's usage records, so the result is reused for 30 seconds
+     * (browsers send many events while a page loads).
+     */
+    private fun limitReachedDomains(context: Context): Set<String> {
+        val now = System.currentTimeMillis()
+        if (now - limitDomainsCachedAt in 0..30_000L) return limitDomainsCache
+        val result = try {
+            if (GrantClock.isEmergencyActive(context)) {
+                emptySet()
+            } else {
+                val prefs = context.getSharedPreferences(
+                    "FlutterSharedPreferences", Context.MODE_PRIVATE
+                )
+                val raw = prefs.getString("flutter.app_time_limits_json", null)
+                if (raw == null) {
+                    emptySet()
+                } else {
+                    val limits = JSONObject(raw).optJSONArray("limits")
+                    val reached = HashSet<String>()
+                    if (limits != null) {
+                        for (index in 0 until limits.length()) {
+                            val pkg = limits.optJSONObject(index)?.optString("packageName")
+                                ?: continue
+                            if (!RelatedTargets.hasWebsites(pkg)) continue
+                            if (TemporaryAppGrantCache.isActive(context, pkg, now)) continue
+                            if (AppTimeLimitEnforcer.isLimitReached(context, pkg)) reached.add(pkg)
+                        }
+                    }
+                    RelatedTargets.domainsFor(reached)
+                }
+            }
+        } catch (_: Exception) {
+            emptySet()
+        }
+        limitDomainsCache = result
+        limitDomainsCachedAt = now
+        return result
+    }
 
     /**
      * Websites of apps the guardian blocked. An app with an active temporary

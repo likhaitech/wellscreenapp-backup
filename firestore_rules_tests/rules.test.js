@@ -680,6 +680,22 @@ describe('child_profiles - child-writable field allowlist', () => {
     );
   });
 
+  it('allows the child to sync per-day screen-time totals for the weekly chart', async () => {
+    await assertSucceeds(
+      updateDoc(profile(child()), {
+        dailyUsageTotals: { '2026-11-18': 5400000, '2026-11-19': 1200000 },
+      })
+    );
+  });
+
+  it('does not let another signed-in user write dailyUsageTotals', async () => {
+    await assertFails(
+      updateDoc(profile(testEnv.authenticatedContext('stranger').firestore()), {
+        dailyUsageTotals: { '2026-11-19': 1 },
+      })
+    );
+  });
+
   it('allows the child to REQUEST emergency access', async () => {
     await assertSucceeds(
       updateDoc(profile(child()), {

@@ -19,10 +19,69 @@ class MonitoringUsageAlertService {
       '${date.year}${date.month.toString().padLeft(2, '0')}'
       '${date.day.toString().padLeft(2, '0')}';
 
+  /// Apps and websites the child tried to open at least [minAttempts] times
+  /// today while they were blocked (from the native restriction log), with
+  /// the count. WellScreen's own settings screen and bedtime/focus/break
+  /// blocks are left out. The native RepeatedAttemptAlert sends the same
+  /// event (same ID) the moment the 3rd block happens.
+  /// Attempt counts that alert the guardian, once each per target per day.
+  static const List<int> attemptMilestones = [3, 5, 10];
+
+  /// The highest milestone [count] has reached, or 0 below the first.
+  static int attemptMilestone(int count) {
+    var reached = 0;
+    for (final milestone in attemptMilestones) {
+      if (count >= milestone) reached = milestone;
+    }
+    return reached;
+  }
+
+  /// Shared with the native RepeatedAttemptAlert so the backend creates each
+  /// alert once: `rra_<target>_<yyyymmdd>` for 3 attempts (the original ID),
+  /// with "_5" / "_10" added for the later milestones.
+  static String repeatedAttemptEventId(String target, String day, int milestone) {
+    final safe = target
+        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '_')
+        .padRight(3, '_');
+    final trimmed = safe.length > 60 ? safe.substring(0, 60) : safe;
+    final base = 'rra_${trimmed}_$day';
+    return milestone <= attemptMilestones.first ? base : '${base}_$milestone';
+  }
+
+  static Map<String, int> repeatedBlockedApps(
+    List<Map<String, dynamic>> restrictionLog,
+    DateTime now, {
+    int minAttempts = 3,
+  }) {
+    final counts = <String, int>{};
+    for (final entry in restrictionLog) {
+      // App blocks and website blocks both count (a website block has a
+      // domain as its packageName and a blockSource); WellScreen's own
+      // settings screen and bypass outcomes don't.
+      if (entry['outcome'] != 'blocked') continue;
+      // Bedtime/focus/break blocks cover every app; not "restricted" attempts.
+      if (entry['blockSource'] == 'schedule') continue;
+      final target = entry['packageName'];
+      if (target is! String || !target.contains('.') || target.contains(' ')) {
+        continue;
+      }
+      final ms = entry['timestampMs'];
+      if (ms is! num) continue;
+      final when = DateTime.fromMillisecondsSinceEpoch(ms.toInt());
+      if (when.year != now.year || when.month != now.month || when.day != now.day) {
+        continue;
+      }
+      counts[target] = (counts[target] ?? 0) + 1;
+    }
+    counts.removeWhere((_, count) => count < minAttempts);
+    return counts;
+  }
+
   Future<void> reportUsage({
     required String childProfileId,
     required UsageReport report,
     required List<AppUsageSummary> appSummaries,
+    List<Map<String, dynamic>> restrictionLog = const [],
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || childProfileId.isEmpty) return;
@@ -88,6 +147,26 @@ class MonitoringUsageAlertService {
         'timestampMs': timestampMs,
         'subject': app.packageName,
         'label': '${app.displayName} (${app.usageLabel} today)',
+      });
+    }
+
+    // Repeated attempts to open a blocked app or site: one alert at each
+    // milestone (3, 5, 10 attempts) per target per day.
+    final names = {
+      for (final app in appSummaries) app.packageName: app.displayName,
+    };
+    final repeated = repeatedBlockedApps(restrictionLog, now).entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    for (final attempt in repeated.take(10)) {
+      final milestone = attemptMilestone(attempt.value);
+      if (milestone == 0) continue;
+      events.add({
+        'type': 'repeated_restricted_app_access',
+        'eventId': repeatedAttemptEventId(attempt.key, day, milestone),
+        'timestampMs': timestampMs,
+        'subject': attempt.key,
+        'label': '${names[attempt.key] ?? attempt.key} '
+            '($milestone attempts today)',
       });
     }
 
