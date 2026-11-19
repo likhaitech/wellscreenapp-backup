@@ -25,9 +25,21 @@ void main() {
     });
   });
 
-  test('ignores websites, settings and bypasses', () {
+  test('counts blocked websites too', () {
     final log = [
-      for (var i = 0; i < 5; i++) entry('okbet.com', now, source: 'ai'),
+      for (var i = 0; i < 3; i++)
+        entry('youtube.com', now, source: 'parent_rule'),
+      for (var i = 0; i < 4; i++) entry('okbet.com', now, source: 'ai'),
+      entry('tiktok.com', now, source: 'parent_rule'),
+    ];
+    expect(MonitoringUsageAlertService.repeatedBlockedApps(log, now), {
+      'youtube.com': 3,
+      'okbet.com': 4,
+    });
+  });
+
+  test('ignores WellScreen settings and bypasses', () {
+    final log = [
       for (var i = 0; i < 5; i++) entry('WellScreen settings', now),
       for (var i = 0; i < 5; i++)
         entry('com.zhiliaoapp.musically', now,

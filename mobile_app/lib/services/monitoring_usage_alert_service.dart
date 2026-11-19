@@ -19,10 +19,9 @@ class MonitoringUsageAlertService {
       '${date.year}${date.month.toString().padLeft(2, '0')}'
       '${date.day.toString().padLeft(2, '0')}';
 
-  /// Apps the child tried to open at least [minAttempts] times today while
-  /// they were blocked (from the native restriction log), with the count.
-  /// Website and settings blocks are left out: harmful sites have their own
-  /// alert, and settings entries are not apps.
+  /// Apps and websites the child tried to open at least [minAttempts] times
+  /// today while they were blocked (from the native restriction log), with
+  /// the count. WellScreen's own settings screen is left out.
   static Map<String, int> repeatedBlockedApps(
     List<Map<String, dynamic>> restrictionLog,
     DateTime now, {
@@ -30,8 +29,10 @@ class MonitoringUsageAlertService {
   }) {
     final counts = <String, int>{};
     for (final entry in restrictionLog) {
+      // App blocks and website blocks both count (a website block has a
+      // domain as its packageName and a blockSource); WellScreen's own
+      // settings screen and bypass outcomes don't.
       if (entry['outcome'] != 'blocked') continue;
-      if (entry['blockSource'] != null) continue;
       final target = entry['packageName'];
       if (target is! String || !target.contains('.') || target.contains(' ')) {
         continue;
