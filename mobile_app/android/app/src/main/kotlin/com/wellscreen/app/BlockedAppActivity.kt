@@ -43,6 +43,12 @@ class BlockedAppActivity : Activity() {
         private const val PROFILE_KEY = "flutter.active_child_profile_id"
         private const val RESTRICTED_KEY = "flutter.restricted_packages_json"
         private const val RECHECK_INTERVAL_MS = 5_000L
+
+        /** Which kind of screen to show; absent for app and website blocks. */
+        const val EXTRA_MODE = "block_mode"
+
+        /** U1: WellScreen's uninstall / Accessibility / Device Admin screens. */
+        const val MODE_PROTECTED_SETTINGS = "protected_settings"
     }
 
     private var isDailyTimeLimitBlock = false
@@ -75,11 +81,13 @@ class BlockedAppActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val blockedDomain = intent.getStringExtra("blocked_domain")
+        val mode = intent.getStringExtra(EXTRA_MODE)
+        val isProtectedSettings = mode == MODE_PROTECTED_SETTINGS
+        val blockedDomain = if (mode == null) intent.getStringExtra("blocked_domain") else null
         blockedBrowser = intent.getStringExtra("blocked_browser")
         isWebsiteBlock = blockedDomain != null
         val blockedPackage = intent.getStringExtra("blocked_package") ?: "Restricted app"
-        isDailyTimeLimitBlock = blockedDomain == null &&
+        isDailyTimeLimitBlock = mode == null && blockedDomain == null &&
             intent.getBooleanExtra("time_limit_reached", false)
         if (isDailyTimeLimitBlock) dailyBlockedPackage = blockedPackage
 
@@ -98,7 +106,7 @@ class BlockedAppActivity : Activity() {
         // website has neither, so it falls back to the WellScreen shield.
         var displayName = appLabel
         var appIcon: android.graphics.drawable.Drawable? = null
-        if (blockedDomain == null) {
+        if (blockedDomain == null && mode == null) {
             try {
                 val info = packageManager.getApplicationInfo(blockedPackage, 0)
                 displayName = packageManager.getApplicationLabel(info).toString()
@@ -142,6 +150,7 @@ class BlockedAppActivity : Activity() {
 
         val badge = TextView(this).apply {
             text = when {
+                isProtectedSettings -> "Protected"
                 blockedDomain != null -> "Blocked"
                 isDailyTimeLimitBlock -> "Time limit reached"
                 else -> "Restricted"
@@ -159,6 +168,7 @@ class BlockedAppActivity : Activity() {
 
         val title = TextView(this).apply {
             text = when {
+                isProtectedSettings -> "Ask your guardian"
                 blockedDomain != null -> "Website blocked"
                 else -> "$displayName is paused"
             }
@@ -174,6 +184,10 @@ class BlockedAppActivity : Activity() {
 
         val message = TextView(this).apply {
             text = when {
+                isProtectedSettings ->
+                    "WellScreen's settings are protected while this phone is " +
+                        "paired. To change them, ask your guardian for " +
+                        "Emergency Access."
                 blockedDomain != null ->
                     "$blockedDomain is blocked by WellScreen."
                 isDailyTimeLimitBlock ->
