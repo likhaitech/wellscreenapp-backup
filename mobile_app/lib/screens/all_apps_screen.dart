@@ -558,6 +558,8 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
       appName: app.displayName,
       usageTodayMs: app.usageMs,
       initialLimitMinutes: existingMinutes,
+      packageName: app.packageName,
+      iconBase64: app.iconBase64,
     );
     if (!mounted || minutes == null) return;
 

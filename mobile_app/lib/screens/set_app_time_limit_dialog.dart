@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/brand_app_icon.dart';
 
 /// Returns the selected daily allowance in minutes, or null if dismissed.
 /// This widget does not save a rule or enforce an app restriction by itself.
@@ -10,17 +11,21 @@ Future<int?> showSetAppTimeLimitDialog({
   required String appName,
   required int usageTodayMs,
   int? initialLimitMinutes,
+  String? packageName,
+  String? iconBase64,
 }) {
   return showModalBottomSheet<int>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    backgroundColor: Colors.white,
+    backgroundColor: AppColors.surface,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
     builder: (_) => _SetAppTimeLimitSheet(
       appName: appName,
+      packageName: packageName,
+      iconBase64: iconBase64,
       usageTodayMs: usageTodayMs,
       initialLimitMinutes: initialLimitMinutes,
     ),
@@ -32,9 +37,13 @@ class _SetAppTimeLimitSheet extends StatefulWidget {
     required this.appName,
     required this.usageTodayMs,
     required this.initialLimitMinutes,
+    this.packageName,
+    this.iconBase64,
   });
 
   final String appName;
+  final String? packageName;
+  final String? iconBase64;
   final int usageTodayMs;
   final int? initialLimitMinutes;
 
@@ -114,9 +123,9 @@ class _SetAppTimeLimitSheetState extends State<_SetAppTimeLimitSheet> {
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           20,
-          6,
+          0,
           20,
-          MediaQuery.of(context).viewInsets.bottom + 20,
+          MediaQuery.of(context).viewInsets.bottom + 24,
         ),
         child: SingleChildScrollView(
           child: ConstrainedBox(
@@ -125,76 +134,71 @@ class _SetAppTimeLimitSheetState extends State<_SetAppTimeLimitSheet> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Set Time Limit',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 23,
-                      fontWeight: FontWeight.w900,
-                    )),
-                const SizedBox(height: 4),
-                Text('${widget.appName} · Daily allowance',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontWeight: FontWeight.w600,
-                    )),
-                const SizedBox(height: 20),
-                const Text('Quick options',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w800,
-                    )),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [30, 60, 120, 180].map((minutes) {
-                    return ChoiceChip(
-                      label: Text(_durationText(minutes)),
-                      selected: selected == minutes,
-                      selectedColor: AppColors.primaryLight,
-                      labelStyle: TextStyle(
-                        color: selected == minutes
-                            ? AppColors.primary
-                            : AppColors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      onSelected: (_) => _setPreset(minutes),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 18),
-                const Text('Custom time limit',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontWeight: FontWeight.w800,
-                    )),
-                const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _hoursController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: const InputDecoration(
-                          labelText: 'Hours',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() => _error = null),
-                      ),
+                    BrandAppIcon(
+                      label: widget.appName,
+                      packageName: widget.packageName,
+                      iconBase64: widget.iconBase64,
+                      size: 48,
+                      radius: 14,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: TextField(
-                        controller: _minutesController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: const InputDecoration(
-                          labelText: 'Minutes',
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (_) => setState(() => _error = null),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Set time limit',
+                            style: TextStyle(
+                              fontFamily: AppFonts.heading,
+                              color: AppColors.textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${widget.appName} · daily allowance',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Quick options',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    for (final minutes in const [30, 60, 120, 180]) ...[
+                      if (minutes != 30) const SizedBox(width: 8),
+                      Expanded(
+                        child: _presetButton(minutes, selected == minutes),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(child: _numberField('Hours', _hoursController)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _numberField('Minutes', _minutesController),
                     ),
                   ],
                 ),
@@ -202,65 +206,58 @@ class _SetAppTimeLimitSheetState extends State<_SetAppTimeLimitSheet> {
                   const SizedBox(height: 8),
                   Text(_error!, style: const TextStyle(color: AppColors.danger)),
                 ],
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Used today',
-                              style: TextStyle(color: AppColors.textSecondary)),
-                          Text(_durationText(usedMinutes),
-                              style: const TextStyle(fontWeight: FontWeight.w800)),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Remaining allowance',
-                              style: TextStyle(color: AppColors.textSecondary)),
-                          Text(remaining == null ? '—' : _durationText(remaining),
-                              style: const TextStyle(fontWeight: FontWeight.w800)),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: LinearProgressIndicator(
-                          value: ratio,
-                          minHeight: 8,
-                          color: AppColors.primary,
-                          backgroundColor: AppColors.track,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
-                      child: OutlinedButton(
+                      child: _statBox(
+                        'Used today',
+                        _durationText(usedMinutes),
+                        AppColors.violetBg,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _statBox(
+                        'Remaining',
+                        remaining == null ? '—' : _durationText(remaining),
+                        AppColors.successBg,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 6,
+                    color: ratio >= 1 ? AppColors.danger : AppColors.primary,
+                    backgroundColor: AppColors.track,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
                         onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          minimumSize: const Size.fromHeight(50),
+                        ),
                         child: const Text('Cancel'),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: FilledButton(
                         onPressed: _save,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.primary,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          minimumSize: const Size.fromHeight(50),
                         ),
-                        child: const Text('Save Limit'),
+                        child: const Text('Save limit'),
                       ),
                     ),
                   ],
@@ -269,6 +266,107 @@ class _SetAppTimeLimitSheetState extends State<_SetAppTimeLimitSheet> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _presetButton(int minutes, bool on) {
+    return Semantics(
+      selected: on,
+      button: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _setPreset(minutes),
+        child: Container(
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? AppColors.primaryLight : AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: on ? AppColors.primary : AppColors.border,
+            ),
+          ),
+          child: Text(
+            _durationText(minutes),
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _numberField(String label, TextEditingController controller) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: AppColors.surface,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: AppColors.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide:
+                  const BorderSide(color: AppColors.primary, width: 1.5),
+            ),
+          ),
+          onChanged: (_) => setState(() => _error = null),
+        ),
+      ],
+    );
+  }
+
+  Widget _statBox(String label, String value, Color background) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(
+              fontFamily: AppFonts.heading,
+              color: AppColors.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
