@@ -524,9 +524,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     }
 
     final update = <String, dynamic>{
-      if (usageEnabled != null) 'usageAccessEnabled': usageEnabled,
-      if (locationEnabled != null) 'locationEnabled': locationEnabled,
-      if (smsGranted != null) 'smsPermissionGranted': smsGranted,
+      'usageAccessEnabled': ?usageEnabled,
+      'locationEnabled': ?locationEnabled,
+      'smsPermissionGranted': ?smsGranted,
     };
     if (update.isEmpty) return;
     update['usageAccessCheckedAt'] = FieldValue.serverTimestamp();
