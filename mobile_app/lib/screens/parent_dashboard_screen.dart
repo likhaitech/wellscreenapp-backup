@@ -1042,8 +1042,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return Text(
       text,
       style: const TextStyle(
+        fontFamily: AppFonts.heading,
         color: darkText,
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: FontWeight.w700,
       ),
     );
@@ -1316,6 +1317,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         icon: _iconForApp(displayName),
         iconColor: purple,
         iconBase64: _usageIconForPackage(child, packageName),
+        packageName: packageName,
         appName: displayName,
         time: formatDurationLabel(Duration(milliseconds: durationMs)),
         value: ratio.clamp(0.0, 1.0),
@@ -1350,6 +1352,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     required IconData icon,
     required Color iconColor,
     String? iconBase64,
+    String? packageName,
     required String appName,
     required String time,
     required double value,
@@ -1363,6 +1366,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             fallback: icon,
             fallbackColor: iconColor,
             size: 34,
+            label: appName,
+            packageName: packageName,
           ),
           const SizedBox(width: 12),
           Expanded(

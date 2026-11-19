@@ -10,6 +10,7 @@ import '../../services/quick_block_sites.dart';
 import '../../services/site_category_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/wellscreen_ui.dart';
+import '../../widgets/brand_app_icon.dart';
 import 'schedules_card.dart';
 
 class RulesScreen extends StatefulWidget {
@@ -42,6 +43,8 @@ class _RulesScreenState extends State<RulesScreen> {
   /// shown is this phone's own apps.
   bool _usingLocalAppList = false;
   Map<String, AppRule> _rulesByPackage = {};
+  /// Real icons from the child's usage report (see BrandAppIcon).
+  final Map<String, String> _iconByPackage = {};
 
   @override
   void initState() {
@@ -182,6 +185,12 @@ class _RulesScreenState extends State<RulesScreen> {
           children: [
             for (final site in quickBlockSites)
               FilterChip(
+                avatar: BrandAppIcon(
+                  label: site.name,
+                  domain: site.domains.first,
+                  size: 22,
+                ),
+                showCheckmark: false,
                 label: Text(site.name),
                 selected: site.isBlockedIn(_websiteRules.blockedDomains),
                 onSelected: canEdit && !_savingWebsite
@@ -226,6 +235,7 @@ class _RulesScreenState extends State<RulesScreen> {
             (domain) => ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
+              leading: BrandAppIcon(label: domain, domain: domain, size: 32),
               title: Text(domain),
               trailing: IconButton(
                 tooltip: 'Remove custom rule',
@@ -414,6 +424,13 @@ class _RulesScreenState extends State<RulesScreen> {
         if (used is List) {
           for (final app in used) {
             add(app, 'displayName');
+            if (app is Map) {
+              final package = (app['packageName'] ?? '').toString();
+              final icon = app['iconBase64'];
+              if (package.isNotEmpty && icon is String && icon.isNotEmpty) {
+                _iconByPackage[package] = icon;
+              }
+            }
           }
         }
       }
@@ -763,6 +780,7 @@ class _RulesScreenState extends State<RulesScreen> {
 
                           return _AppRuleRow(
                             app: app,
+                            iconBase64: _iconByPackage[app.packageName],
                             monitorEnabled: rule?.monitorEnabled ?? false,
                             restrictEnabled: rule?.restrictEnabled ?? false,
                             onMonitorChanged: (value) {
@@ -885,6 +903,7 @@ class _PermissionsHeader extends StatelessWidget {
 
 class _AppRuleRow extends StatelessWidget {
   final InstalledAppInfo app;
+  final String? iconBase64;
   final bool monitorEnabled;
   final bool restrictEnabled;
   final ValueChanged<bool> onMonitorChanged;
@@ -892,6 +911,7 @@ class _AppRuleRow extends StatelessWidget {
 
   const _AppRuleRow({
     required this.app,
+    this.iconBase64,
     required this.monitorEnabled,
     required this.restrictEnabled,
     required this.onMonitorChanged,
@@ -904,22 +924,11 @@ class _AppRuleRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
       child: Row(
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceMuted,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              app.appName.isNotEmpty ? app.appName[0].toUpperCase() : '?',
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+          BrandAppIcon(
+            label: app.appName,
+            packageName: app.packageName,
+            iconBase64: iconBase64,
+            size: 40,
           ),
           const SizedBox(width: 12),
           Expanded(

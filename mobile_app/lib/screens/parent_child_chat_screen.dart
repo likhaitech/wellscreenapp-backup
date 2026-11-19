@@ -506,7 +506,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                 _time(item['createdAt']),
                 style: TextStyle(
                   fontSize: 10,
-                  color: own ? Colors.white70 : const Color(0xFF6B7280),
+                  color: own ? Colors.white70 : AppColors.textSecondary,
                 ),
               ),
             ],
@@ -559,7 +559,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
             border: Border.all(color: AppColors.border),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x0A111827),
+                color: AppColors.shadow,
                 blurRadius: 16,
                 offset: Offset(0, 4),
               ),
@@ -596,6 +596,8 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                     encoded: _iconFor(profile, pkg),
                     fallback: _fallback(app),
                     fallbackColor: _chatBlue,
+                    label: app,
+                    packageName: pkg,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -924,7 +926,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                   hintText: 'Message...',
                   hintStyle: const TextStyle(
                     fontSize: 15,
-                    color: Color(0xFF6B7280),
+                    color: AppColors.textSecondary,
                   ),
                   isDense: true,
                   filled: true,
@@ -1260,7 +1262,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                       ),
                       const SizedBox(height: 1),
                       const Text('Private family conversation',
-                        style: TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
                     ],
                   ),
                 ),

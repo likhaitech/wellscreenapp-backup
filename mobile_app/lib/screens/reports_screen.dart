@@ -7,6 +7,7 @@ import '../services/location_geocoding_service.dart';
 import '../services/report_export_service.dart';
 import '../theme/app_theme.dart';
 import 'gps_map_screen.dart';
+import '../widgets/brand_app_icon.dart';
 
 /// Small "All OK" / "N failed" status pill, shared by every log section on
 /// the Alerts tab - lets a section's health be read from its collapsed
@@ -1526,11 +1527,17 @@ class _BrowsingActivityCardState extends State<_BrowsingActivityCard> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            category != null ? _categoryIcon(category) : Icons.circle,
-            color: category != null ? AppColors.danger : AppColors.primary,
-            size: category != null ? 16 : 8,
-          ),
+          // Flagged (harmful) sites keep a warning icon - their own logos
+          // are not loaded into the guardian's report. Other sites show
+          // their real icon.
+          if (category != null)
+            Icon(_categoryIcon(category), color: AppColors.danger, size: 16)
+          else
+            BrandAppIcon(
+              label: (entry['domain'] ?? '?').toString(),
+              domain: (entry['domain'] ?? '').toString(),
+              size: 24,
+            ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(

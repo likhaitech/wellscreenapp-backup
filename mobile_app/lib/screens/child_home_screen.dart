@@ -45,6 +45,7 @@ import 'parent_child_chat_screen.dart';
 import 'chat_notifications_screen.dart';
 import 'profile_settings_screen.dart';
 import 'qr_scan_screen.dart';
+import '../widgets/brand_app_icon.dart';
 
 /// Thrown by [_ChildHomeScreenState._getCurrentPositionOrThrow] specifically
 /// when Android's device-wide location services (GPS) are off - as opposed
@@ -195,8 +196,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   static const Color _ink = AppColors.textPrimary;
   static const Color _slate = AppColors.textSecondary;
   static const Color _hairline = AppColors.border;
-  static const Color _emerald = Color(0xFF10B981);
-  static const Color _emeraldTint = Color(0xFFECFDF5);
+  static const Color _emerald = AppColors.success;
+  static const Color _emeraldTint = AppColors.successBg;
   static const Color _amber = Color(0xFFF59E0B);
   static const Color _amberTint = Color(0xFFFFFBEB);
   static const Color _coral = Color(0xFFEF4444);
@@ -1639,12 +1640,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
               final statusColor = loading || loadFailed
                   ? const Color(0xFFB7791F)
                   : verified
-                  ? const Color(0xFF05884A)
+                  ? AppColors.success
                   : AppColors.danger;
               final statusBackground = loading || loadFailed
                   ? const Color(0xFFFFF2D6)
                   : verified
-                  ? const Color(0xFFD0FBE5)
+                  ? AppColors.successBg
                   : const Color(0xFFFFE1E1);
               final heading = verified
                   ? 'Parent Account\nConnected'
@@ -1687,7 +1688,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                           CircleAvatar(
                             radius: 49,
                             backgroundColor: verified
-                                ? const Color(0xFFDDF7EB)
+                                ? AppColors.successBg
                                 : statusBackground,
                             child: loading
                                 ? const CircularProgressIndicator(color: purple)
@@ -1726,22 +1727,22 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                             width: double.infinity,
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFECF4FF),
+                              color: AppColors.surfaceMuted,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: const Color(0xFFD2E4FC),
+                                color: AppColors.primaryLight,
                               ),
                             ),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const CircleAvatar(
-                                  backgroundColor: Color(0xFFCCE2FF),
+                                  backgroundColor: AppColors.primaryLight,
                                   radius: 31,
                                   child: Icon(
                                     Icons.person_rounded,
                                     size: 36,
-                                    color: Color(0xFF2563EB),
+                                    color: AppColors.primary,
                                   ),
                                 ),
                                 const SizedBox(width: 13),
@@ -1828,7 +1829,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               onPressed: () =>
                                   Navigator.of(dialogContext).pop(),
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF2563EB),
+                                backgroundColor: AppColors.primary,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 15,
                                 ),
@@ -2218,7 +2219,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         children: [
           const CircleAvatar(
             radius: 22,
-            backgroundColor: Color(0xFFDBEAFE),
+            backgroundColor: AppColors.primaryLight,
             child: Icon(Icons.bar_chart_rounded, color: purple, size: 24),
           ),
           const SizedBox(width: 12),
@@ -2867,17 +2868,19 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         ),
       );
     }
-    return _initialAvatar(name, size);
+    // Not installed (e.g. a restricted app the child never had): show the
+    // app's real website icon, with the letter only as a last resort.
+    return BrandAppIcon(label: name, packageName: packageName, size: size);
   }
 
   Widget _initialAvatar(String name, double size) {
     const palette = <Color>[
-      Color(0xFF2563EB),
-      Color(0xFF0D9488),
+      AppColors.primary,
+      AppColors.success,
       Color(0xFFDB2777),
       Color(0xFFD97706),
-      Color(0xFF7C3AED),
-      Color(0xFF059669),
+      AppColors.violet,
+      AppColors.success,
     ];
     final trimmed = name.trim();
     final letter = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
@@ -3041,7 +3044,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         border: Border.all(color: _hairline),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0A111827),
+            color: AppColors.shadow,
             blurRadius: 16,
             offset: Offset(0, 4),
           ),
@@ -3062,8 +3065,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           child: Text(
             title,
             style: const TextStyle(
+              fontFamily: AppFonts.heading,
               color: _ink,
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -3589,7 +3593,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 SizedBox(height: 2),
                 Text(
                   'Connect this phone to a parent account.',
-                  style: TextStyle(color: Color(0xFF374151), fontSize: 12),
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
                 ),
               ],
             ),
@@ -3992,16 +3996,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           packageName: limit.packageName,
           name: limit.appName.trim().isEmpty ? limit.packageName : limit.appName,
           status: _durationLabel(Duration(minutes: limit.limitMinutes)),
-          statusBackground: const Color(0xFFF1F5F9),
-          statusForeground: const Color(0xFF4B5563),
+          statusBackground: AppColors.surfaceMuted,
+          statusForeground: AppColors.textSecondary,
         ),
       for (final rule in monitored)
         _ruleChip(
           packageName: rule.packageName,
           name: appTitle(rule),
           status: 'Monitored',
-          statusBackground: const Color(0xFFDBEAFE),
-          statusForeground: const Color(0xFF2563EB),
+          statusBackground: AppColors.primaryLight,
+          statusForeground: AppColors.primary,
         ),
     ];
   }
@@ -4157,8 +4161,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                       label: _durationLabel(
                                         Duration(minutes: limit.limitMinutes),
                                       ),
-                                      background: const Color(0xFFF1F5F9),
-                                      foreground: const Color(0xFF4B5563),
+                                      background: AppColors.surfaceMuted,
+                                      foreground: AppColors.textSecondary,
                                       fontSize: 12,
                                     ),
                                   ],
@@ -4210,7 +4214,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             decoration: BoxDecoration(
               color: _emeraldTint,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFA7F3D0)),
+              border: Border.all(color: AppColors.successBg),
             ),
             child: Row(
               children: [
@@ -4236,7 +4240,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       Text(
                         'Restrictions are lifted until $hh:$mm.',
                         style: const TextStyle(
-                          color: Color(0xFF374151),
+                          color: AppColors.textPrimary,
                           fontSize: 12,
                           fontFeatures: _tabular,
                         ),
@@ -4288,7 +4292,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Color(0xFF374151),
+                        color: AppColors.textPrimary,
                         fontSize: 12,
                       ),
                     ),
@@ -4386,7 +4390,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               selected: selectedPreset == preset,
                               showCheckmark: false,
                               backgroundColor: Colors.white,
-                              selectedColor: const Color(0xFFDBEAFE),
+                              selectedColor: AppColors.primaryLight,
                               side: BorderSide(
                                 color: selectedPreset == preset
                                     ? _brandIndigo
@@ -4394,7 +4398,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               ),
                               labelStyle: TextStyle(
                                 color: selectedPreset == preset
-                                    ? const Color(0xFF2563EB)
+                                    ? AppColors.primary
                                     : _ink,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -4647,7 +4651,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         decoration: BoxDecoration(
           color: !hasReading
               ? _hairline
-              : (isToday ? _brandIndigo : const Color(0xFFC7D2FE)),
+              : (isToday ? _brandIndigo : AppColors.track),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
         ),
       ),
@@ -5117,7 +5121,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       iconTint = _amberTint;
     } else {
       iconColor = _slate;
-      iconTint = const Color(0xFFF1F5F9);
+      iconTint = AppColors.surfaceMuted;
     }
 
     return InkWell(
@@ -5339,7 +5343,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         width: 38,
         height: 38,
         decoration: BoxDecoration(
-          color: destructive ? _coralTint : const Color(0xFFE0E7FF),
+          color: destructive ? _coralTint : AppColors.primaryLight,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: accent, size: 20),
@@ -5374,7 +5378,7 @@ class _DashedLinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF94A3B8)
+      ..color = AppColors.textDisabled
       ..strokeWidth = 1;
     const dash = 4.0;
     const gap = 4.0;

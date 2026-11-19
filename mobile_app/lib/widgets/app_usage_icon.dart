@@ -2,24 +2,42 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+import 'brand_app_icon.dart';
+
 /// Renders the icon retrieved from the CHILD's actual installed package.
-/// No hardcoded social-media/game icon mapping is necessary.
+/// When the report has no icon for it (older report, app not used today),
+/// [label] / [packageName] let [BrandAppIcon] show the app's real website
+/// icon instead of a generic symbol.
 class AppUsageIcon extends StatelessWidget {
   const AppUsageIcon({
     super.key,
     required this.encoded,
     this.fallback = Icons.apps_rounded,
-    this.fallbackColor = const Color(0xFF4876B8),
+    this.fallbackColor = AppColors.primary,
     this.size = 48,
+    this.label,
+    this.packageName,
   });
 
   final String? encoded;
   final IconData fallback;
   final Color fallbackColor;
   final double size;
+  final String? label;
+  final String? packageName;
 
   @override
   Widget build(BuildContext context) {
+    final name = label;
+    if (name != null && name.isNotEmpty) {
+      return BrandAppIcon(
+        label: name,
+        packageName: packageName,
+        iconBase64: encoded,
+        size: size,
+      );
+    }
     final encodedIcon = encoded;
     Widget child = Icon(fallback, color: Colors.white, size: size * 0.58);
     if (encodedIcon != null && encodedIcon.isNotEmpty) {
