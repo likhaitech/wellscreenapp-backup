@@ -5,6 +5,7 @@ import '../widgets/wellscreen_ui.dart';
 import '../services/block_reason_label.dart';
 import '../services/location_geocoding_service.dart';
 import '../services/report_export_service.dart';
+import '../services/sms_alert_label.dart';
 import '../theme/app_theme.dart';
 import 'gps_map_screen.dart';
 import '../widgets/brand_app_icon.dart';
@@ -1052,7 +1053,7 @@ class ReportsScreen extends StatelessWidget {
       return const AppEmptyState(
         icon: Icons.sms_rounded,
         title: 'SMS Backup Alerts',
-        message: 'No SMS alerts sent yet. These fire automatically when a '
+        message: 'No SMS alerts sent yet. These are sent automatically when a '
             'restricted app is blocked on the child device (if SMS '
             'permission is granted and a parent phone number is set).',
       );
@@ -1066,16 +1067,14 @@ class ReportsScreen extends StatelessWidget {
         .where((entry) =>
             (entry['outcome'] as String? ?? '').startsWith('failed'))
         .length;
-    bool isSuccess(Map<String, dynamic> entry) {
-      final outcome = (entry['outcome'] ?? '').toString();
-      return outcome == 'sent' || outcome == 'delivered';
-    }
+    bool isSuccess(Map<String, dynamic> entry) =>
+        smsAlertSucceeded(entry['outcome'] as String?);
 
     final ordered = _prioritizeAttention(smsLog, isSuccess);
 
     String entryLabel(Map<String, dynamic> entry) =>
         '${_friendlyAppName(entry['packageName'] as String?)} · '
-        '${entry['outcome'] ?? 'unknown'}';
+        '${smsAlertOutcomeLabel(entry['outcome'] as String?)}';
 
     return _CollapsibleSection(
       // Alerts-tab sections now reorder by failure count (see _alertsTab),

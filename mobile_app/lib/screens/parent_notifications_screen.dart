@@ -182,6 +182,11 @@ class _ParentNotificationsScreenState
       case 'gps_location_stale':
         return Icons.location_off_outlined;
 
+      case 'device_admin_disable_attempt':
+      case 'device_admin_disabled':
+      case 'accessibility_disabled':
+        return Icons.gpp_maybe_outlined;
+
       case 'no_recent_connection':
       case 'monitoring_permission_disabled':
         return Icons.shield_outlined;
@@ -211,7 +216,11 @@ class _ParentNotificationsScreenState
     switch (kind) {
       case 'repeated_restricted_app_access':
       case 'restricted_content_attempt':
+      case 'device_admin_disabled':
+      case 'accessibility_disabled':
         return (AppColors.dangerBg, AppColors.danger);
+      case 'device_admin_disable_attempt':
+        return (AppColors.warningBg, AppColors.warning);
       case 'no_recent_connection':
       case 'monitoring_permission_disabled':
       case 'gps_location_stale':
@@ -233,9 +242,12 @@ class _ParentNotificationsScreenState
   String? _severityForAlertKind(String kind) {
     switch (kind) {
       case 'usage_warning_threshold':
+      case 'device_admin_disable_attempt':
         return 'Warning';
       case 'usage_high_threshold':
       case 'unhealthy_usage_pattern':
+      case 'device_admin_disabled':
+      case 'accessibility_disabled':
         return 'Danger';
       default:
         return null;

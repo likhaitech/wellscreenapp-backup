@@ -38,7 +38,42 @@ class WellScreenDeviceAdminReceiver : DeviceAdminReceiver() {
         context: Context,
         intent: Intent
     ): CharSequence {
+        // The child opened the turn-off screen: tell the guardian right
+        // away. Plain background thread, NOT goAsync(): DeviceAdminReceiver
+        // writes this warning into the broadcast's result extras after we
+        // return, which fails if the result was handed to goAsync().
+        sendDisableAttemptAlert(context.applicationContext)
         return "Disabling WellScreen removes its uninstall protection. Please discuss this with your parent or guardian before continuing."
+    }
+
+    /** Best effort, one try, never blocks the warning dialog. */
+    private fun sendDisableAttemptAlert(context: Context) {
+        try {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val profileId = prefs.getString(ACTIVE_PROFILE, null)
+            val user = runCatching {
+                FirebaseAuth.getInstance().currentUser
+            }.getOrNull()
+            if (user == null || profileId.isNullOrBlank()) return
+            val timestamp = System.currentTimeMillis()
+
+            Thread {
+                try {
+                    val sent = postAlert(
+                        prefs, user, profileId, timestamp,
+                        alertType = "device_admin_disable_attempt",
+                        title = "WellScreen uninstall protection",
+                        body = "Your child opened the screen to turn off " +
+                            "uninstall protection.",
+                    )
+                    Log.i(TAG, if (sent) "Disable attempt alert sent" else "Disable attempt alert not sent")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Disable attempt alert failed: ${e.javaClass.simpleName}")
+                }
+            }.start()
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to start disable attempt alert")
+        }
     }
 
     override fun onDisabled(context: Context, intent: Intent) {
@@ -159,6 +194,22 @@ class WellScreenDeviceAdminReceiver : DeviceAdminReceiver() {
         user: FirebaseUser,
         profileId: String,
         timestamp: Long
+    ): Boolean = postAlert(
+        prefs, user, profileId, timestamp,
+        alertType = "device_admin_disabled",
+        title = "WellScreen uninstall protection disabled",
+        body = "Device Admin protection has been disabled on your child's device.",
+    )
+
+    /** POST /alerts/notify for this paired child. True when the push was sent. */
+    private fun postAlert(
+        prefs: SharedPreferences,
+        user: FirebaseUser,
+        profileId: String,
+        timestamp: Long,
+        alertType: String,
+        title: String,
+        body: String,
     ): Boolean {
         val host = prefs.getString(BACKEND_URL, null)
             ?.trimEnd('/') ?: return false
@@ -204,12 +255,9 @@ class WellScreenDeviceAdminReceiver : DeviceAdminReceiver() {
 
         val payload = JSONObject()
             .put("parent_uid", parentUid)
-            .put("title", "WellScreen uninstall protection disabled")
-            .put(
-                "body",
-                "Device Admin protection has been disabled on your child's device."
-            )
-            .put("alert_type", "device_admin_disabled")
+            .put("title", title)
+            .put("body", body)
+            .put("alert_type", alertType)
             .put(
                 "data",
                 JSONObject()

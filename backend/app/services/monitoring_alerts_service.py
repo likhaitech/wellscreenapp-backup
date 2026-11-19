@@ -185,6 +185,47 @@ def _report_stale_gps(*, profile_id: str, parent_uid: str,
     )
 
 
+def _report_accessibility_off(*, snapshot: Any, parent_uid: str,
+                              child: dict[str, Any], now: datetime) -> bool:
+    """Alert once when the child's heartbeat says blocking is off.
+
+    The Accessibility service is what blocks apps and websites. The child
+    app writes accessibilityEnabled with every heartbeat. One alert per
+    "off" period: accessibilityOffAlertedAt is set after alerting and
+    cleared when blocking is reported on again.
+    """
+    enabled = child.get("accessibilityEnabled")
+    alerted_at = child.get("accessibilityOffAlertedAt")
+
+    if enabled is True:
+        if alerted_at is not None:
+            snapshot.reference.update({"accessibilityOffAlertedAt": None})
+        return False
+    if enabled is not False or alerted_at is not None:
+        return False
+
+    checked = _utc_datetime(child.get("accessibilityCheckedAt")) or now
+    name = str(child.get("childDisplayName")
+               or child.get("name")
+               or child.get("deviceName")
+               or "your child")[:100]
+    created = _create_and_dispatch(
+        profile_id=snapshot.id,
+        parent_uid=parent_uid,
+        alert_id="accessibility_off_" + str(int(checked.timestamp() * 1_000_000)),
+        kind="accessibility_disabled",
+        title="Blocking was turned off on your child's phone",
+        body=(f"WellScreen's Accessibility service is off on {name}'s phone, "
+              "so apps and websites are not being blocked. Ask your child "
+              "to turn it back on in Android Settings > Accessibility."),
+        occurred_at=checked,
+        details={"accessibilityCheckedAt": checked, "deviceName": name},
+    )
+    # Flag it even if the record already existed, so later sweeps stay quiet.
+    snapshot.reference.update({"accessibilityOffAlertedAt": now})
+    return created
+
+
 def sweep_missing_heartbeats() -> dict[str, int]:
     """Invoked by authenticated scheduler. Does not run in phone process."""
     db = get_firestore_client()
@@ -203,6 +244,13 @@ def sweep_missing_heartbeats() -> dict[str, int]:
             continue
         if _report_stale_gps(
             profile_id=snapshot.id,
+            parent_uid=parent_uid,
+            child=child,
+            now=now,
+        ):
+            alerted += 1
+        if _report_accessibility_off(
+            snapshot=snapshot,
             parent_uid=parent_uid,
             child=child,
             now=now,

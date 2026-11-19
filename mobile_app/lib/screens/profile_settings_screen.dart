@@ -11,6 +11,7 @@ import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
 import 'login_screen.dart';
 import 'phone_verification_screen.dart';
+import '../widgets/phone_verification_hint.dart';
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -714,6 +715,19 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               ? 'Child Account'
               : 'User Account';
 
+          Future<void> openPhoneVerification() async {
+            await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const PhoneVerificationScreen(),
+              ),
+            );
+            // Pass a newly verified number on to the children
+            // (no-op for child accounts).
+            await ParentPhoneSyncService.syncToChildProfiles();
+            if (mounted) setState(() {});
+          }
+
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
@@ -751,21 +765,18 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                             true
                         ? 'Verified: ${FirebaseAuth.instance.currentUser!.phoneNumber}'
                         : 'Verify a mobile number with an SMS code.',
-                    onTap: () async {
-                      await Navigator.push<bool>(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PhoneVerificationScreen(),
-                        ),
-                      );
-                      // Pass a newly verified number on to the children
-                      // (no-op for child accounts).
-                      await ParentPhoneSyncService.syncToChildProfiles();
-                      if (mounted) setState(() {});
-                    },
+                    onTap: openPhoneVerification,
                   ),
                 ],
               ),
+              if (shouldShowPhoneVerificationHint(
+                role: role,
+                verifiedPhoneNumber:
+                    FirebaseAuth.instance.currentUser?.phoneNumber,
+              )) ...[
+                const SizedBox(height: 10),
+                PhoneVerificationHint(onTap: openPhoneVerification),
+              ],
               const SizedBox(height: 16),
               _settingsSection(
                 title: 'Privacy and System',

@@ -3,6 +3,10 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.models.alert import AlertNotifyRequest, AlertNotifyResponse
+from app.services.device_admin_alert_service import (
+    DEVICE_ADMIN_ALERTS,
+    record_device_admin_alert,
+)
 from app.services.notification_service import (
     NoDeviceTokenError,
     NotAuthorizedError,
@@ -21,6 +25,8 @@ def notify(
     current_user: dict = Depends(require_user),
 ):
     caller_uid = current_user.get("uid")
+    result: dict | None = None
+    unexpected_error = False
 
     try:
         result = send_alert_notification(
@@ -30,7 +36,6 @@ def notify(
             body=payload.body,
             data={"alertType": payload.alert_type, **(payload.data or {})},
         )
-        return AlertNotifyResponse(**result)
     except NotAuthorizedError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -41,7 +46,7 @@ def notify(
         # notifications set up yet. 200 with a "failed" status lets the
         # caller distinguish "we tried and it didn't work" from "the server
         # is broken", matching AlertNotifyResponse's shape either way.
-        return AlertNotifyResponse(status="failed", error=str(exc))
+        result = {"status": "failed", "error": str(exc)}
     except Exception:
         # FIX: unlike admin_users.py/admin_logs.py/admin_settings.py (all
         # gated by require_admin - an already-trusted caller seeing their
@@ -54,7 +59,24 @@ def notify(
         # gRPC error details). Log the real exception server-side instead
         # and return a generic message to the client.
         logger.exception("Unexpected error sending alert notification")
+        unexpected_error = True
+
+    # Device Admin alerts also get an in-app record, even if the push failed.
+    if payload.alert_type in DEVICE_ADMIN_ALERTS:
+        try:
+            record_device_admin_alert(
+                caller_uid=caller_uid,
+                parent_uid=payload.parent_uid,
+                alert_type=payload.alert_type,
+                data=payload.data,
+                push_status=(result or {}).get("status", "failed"),
+            )
+        except Exception:
+            logger.exception("Could not save Device Admin alert record")
+
+    if unexpected_error or result is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to send alert notification.",
         )
+    return AlertNotifyResponse(**result)

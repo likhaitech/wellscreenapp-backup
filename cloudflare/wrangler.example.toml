@@ -10,3 +10,21 @@ crons = ["* * * * *"]
 
 # CHAT_CRON_SECRET must be set with `wrangler secret put`.
 # Never place the secret in this file or the Flutter app.
+
+# ---------------------------------------------------------------------
+# 90-day data cleanup (cleanup-cron-worker.js). Deploy it as a separate
+# Worker from its own copy of this file, e.g. wrangler.cleanup.toml:
+#
+# name = "wellscreen-data-cleanup"
+# main = "cleanup-cron-worker.js"
+# compatibility_date = "2026-11-01"
+#
+# [vars]
+# MONITORING_API_URL = "https://wellscreenapp-backup.onrender.com"
+#
+# [triggers]
+# crons = ["30 18 * * *"]   # once a day, 02:30 Manila time
+#
+# Then: npx wrangler secret put CLEANUP_TOKEN --config wrangler.cleanup.toml
+# using the same value as WELLSCREEN_CLEANUP_TOKEN on Render (32+ chars).
+# Never place the token in this file or the Flutter app.
