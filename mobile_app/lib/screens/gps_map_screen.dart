@@ -200,6 +200,20 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
                 child: Row(
                   children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.location_on_outlined,
+                        color: AppColors.primary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,6 +226,7 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
+                              fontFamily: AppFonts.heading,
                               color: darkText,
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
@@ -259,7 +274,7 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                     ),
                     const SizedBox(width: 12),
                     Material(
-                      color: AppColors.ink,
+                      color: AppColors.primary,
                       shape: const CircleBorder(),
                       child: IconButton(
                         tooltip: 'Refresh address',

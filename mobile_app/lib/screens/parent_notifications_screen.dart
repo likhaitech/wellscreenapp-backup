@@ -206,6 +206,26 @@ class _ParentNotificationsScreenState
     }
   }
 
+  /// Design D tint per alert type: (background, icon color).
+  (Color, Color) _kindColors(String kind) {
+    switch (kind) {
+      case 'repeated_restricted_app_access':
+      case 'restricted_content_attempt':
+        return (AppColors.dangerBg, AppColors.danger);
+      case 'no_recent_connection':
+      case 'monitoring_permission_disabled':
+        return (AppColors.warningBg, AppColors.warning);
+      case 'usage_warning_threshold':
+      case 'usage_high_threshold':
+      case 'unhealthy_usage_pattern':
+      case 'screen_time_limit_exceeded':
+      case 'late_night_usage':
+        return (AppColors.violetBg, AppColors.violet);
+      default:
+        return (AppColors.primaryLight, AppColors.primary);
+    }
+  }
+
   // The child app stores healthy/warning/unhealthy. "Danger" is a parent-side
   // presentation label for the existing unhealthy classification; it does not
   // change the pattern-detection thresholds or logic.
@@ -228,11 +248,11 @@ class _ParentNotificationsScreenState
       foreground = AppColors.success;
       background = AppColors.successBg;
     } else if (status == 'Warning') {
-      foreground = const Color(0xFF9A6400);
-      background = const Color(0xFFFFF1D4);
+      foreground = AppColors.warning;
+      background = AppColors.warningBg;
     } else if (status == 'Danger') {
-      foreground = const Color(0xFFB5252C);
-      background = const Color(0xFFFDE6E8);
+      foreground = AppColors.danger;
+      background = AppColors.dangerBg;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
@@ -392,12 +412,12 @@ class _ParentNotificationsScreenState
     final read = _readAlerts.contains(key);
 
     return Card(
-      color: Colors.white,
+      color: AppColors.surface,
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(AppRadius.card),
         side: const BorderSide(
           color: AppColors.border,
         ),
@@ -408,12 +428,17 @@ class _ParentNotificationsScreenState
             _markRead(parentUid, key);
           }
         },
-        leading: CircleAvatar(
-          backgroundColor: AppColors.primaryLight,
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: _kindColors(kind).$1,
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Icon(
             _iconForKind(kind),
-            color: _primary,
-            size: 22,
+            color: _kindColors(kind).$2,
+            size: 20,
           ),
         ),
         title: Row(
@@ -423,8 +448,8 @@ class _ParentNotificationsScreenState
                 title,
                 style: TextStyle(
                   fontWeight: read
-                      ? FontWeight.w700
-                      : FontWeight.w900,
+                      ? FontWeight.w600
+                      : FontWeight.w700,
                   color: AppColors.textPrimary,
                 ),
               ),

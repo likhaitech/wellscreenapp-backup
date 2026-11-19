@@ -21,13 +21,13 @@ class ProfileSettingsScreen extends StatefulWidget {
 
 class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   static const Color purple = AppColors.primary;
-  static const Color teal = AppColors.accent;
+  static const Color teal = AppColors.success;
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
   static const Color softPurple = AppColors.primaryLight;
   static const Color softGreen = AppColors.successBg;
-  static const Color softRed = Color(0xFFFFEFEF);
+  static const Color softRed = AppColors.dangerBg;
   static const Color softBlue = AppColors.infoBg;
 
   final fullNameController = TextEditingController();
@@ -852,6 +852,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           fullName,
           textAlign: TextAlign.center,
           style: const TextStyle(
+            fontFamily: AppFonts.heading,
             color: darkText,
             fontSize: 22,
             fontWeight: FontWeight.w800,
@@ -940,12 +941,21 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Icon(
-        icon,
-        color: destructive ? AppColors.danger : darkText,
-        size: 22,
+      // Design D: tinted rounded square behind the icon.
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: destructive ? AppColors.dangerBg : backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(
+          icon,
+          color: destructive ? AppColors.danger : iconColor,
+          size: 20,
+        ),
       ),
-      minLeadingWidth: 22,
+      minLeadingWidth: 38,
       title: Text(
         title,
         style: TextStyle(

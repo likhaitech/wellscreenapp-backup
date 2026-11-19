@@ -446,22 +446,33 @@ class ReportsScreen extends StatelessWidget {
                 height: 44,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: TabBar(
+                  // Design D: light indigo track, selected tab is a white pill.
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                    child: TabBar(
                     tabs: _tabs,
                     dividerColor: Colors.transparent,
                     splashBorderRadius: BorderRadius.circular(AppRadius.pill),
                     indicatorSize: TabBarIndicatorSize.tab,
-                    indicatorPadding: const EdgeInsets.symmetric(
-                      horizontal: 2,
-                      vertical: 4,
-                    ),
+                    indicatorPadding: EdgeInsets.zero,
                     indicator: BoxDecoration(
-                      color: AppColors.primary,
+                      color: AppColors.surface,
                       borderRadius: BorderRadius.circular(AppRadius.pill),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: AppColors.shadow,
+                          blurRadius: 6,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
                     ),
                     labelPadding: EdgeInsets.zero,
-                    labelColor: Colors.white,
-                    unselectedLabelColor: AppColors.textPrimary,
+                    labelColor: AppColors.textPrimary,
+                    unselectedLabelColor: AppColors.textSecondary,
                     labelStyle: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
@@ -470,6 +481,7 @@ class ReportsScreen extends StatelessWidget {
                       fontWeight: FontWeight.w500,
                       fontSize: 13,
                     ),
+                  ),
                   ),
                 ),
               ),
@@ -594,7 +606,7 @@ class ReportsScreen extends StatelessWidget {
         else
           const AppEmptyState(
             icon: Icons.psychology_alt_rounded,
-            title: 'AI Risk Assessment (Proposed Extension)',
+            title: 'AI Risk Assessment',
             message: 'Not synced yet - runs automatically the next time '
                 'usage data is synced.',
           ),
@@ -746,7 +758,7 @@ class ReportsScreen extends StatelessWidget {
           AppSectionHeader(
             icon: Icons.psychology_alt_rounded,
             iconColor: AppColors.accent,
-            title: 'AI Risk Assessment (Proposed Extension)',
+            title: 'AI Risk Assessment',
             trailing: AppBadge(
               label: confidencePercent != null ? '$label $confidencePercent%' : label,
               color: color,
@@ -756,7 +768,8 @@ class ReportsScreen extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(
-            'An experimental feature that estimates today\'s usage risk '
+            'WellScreen\'s AI assistant (Random Forest, on the child\'s '
+            'phone) estimates today\'s usage risk '
             'from activity patterns. It supplements the usage pattern '
             'summary above - it is not a medical or diagnostic assessment, '
             'and should not be used on its own.',
