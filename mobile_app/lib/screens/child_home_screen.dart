@@ -15,6 +15,7 @@ import 'package:usage_stats/usage_stats.dart';
 import '../models/app_rule.dart';
 import '../models/app_time_limit.dart';
 import '../models/app_usage_summary.dart';
+import '../models/daily_goal.dart';
 import '../models/usage_report.dart';
 import '../services/alert_notification_client.dart';
 import '../services/android_app_service.dart';
@@ -91,6 +92,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   final AppTimeLimitNotificationService _limitNotifications =
       AppTimeLimitNotificationService.instance;
   StreamSubscription<List<AppTimeLimit>>? _appTimeLimitSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _dailyGoalSubscription;
   String? _timeLimitProfileId;
   int _timeLimitWatchGeneration = 0;
   final UsageTrackingService _usageTrackingService = UsageTrackingService();
@@ -273,6 +276,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     final generation = ++_timeLimitWatchGeneration;
     final previous = _appTimeLimitSubscription;
     _appTimeLimitSubscription = null;
+    _dailyGoalSubscription?.cancel();
+    _dailyGoalSubscription = null;
     unawaited(
       _restartAppTimeLimitSubscription(previous, childProfileId, generation),
     );
@@ -299,12 +304,37 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     // profile, since Firestore users/{uid} is private to its owner.
     unawaited(_syncChildDisplayName(childProfileId));
     unawaited(_temporaryGrants.startForChild(childProfileId));
+    _watchDailyGoal(childProfileId);
     _appTimeLimitSubscription = _appTimeLimitService
         .watchForChildAndCache(childProfileId)
         .listen(
           (_) {},
           onError: (Object error, StackTrace trace) {
             debugPrint('Could not mirror app time limits: $error');
+          },
+        );
+  }
+
+  /// Follows the daily goal the guardian set for this child (age group or
+  /// their own value, see DailyGoal) and caches it on the phone, where the
+  /// home screen's goal bar and the usage alerts read it.
+  void _watchDailyGoal(String profileId) {
+    _dailyGoalSubscription?.cancel();
+    _dailyGoalSubscription = FirebaseFirestore.instance
+        .collection('child_profiles')
+        .doc(profileId)
+        .snapshots()
+        .listen(
+          (snapshot) async {
+            if (!snapshot.exists) return;
+            final goal = DailyGoal.durationFor(snapshot.data());
+            final current = await _dailyScreenTimeLimitService.getDailyLimit();
+            if (goal == current) return;
+            await _dailyScreenTimeLimitService.saveDailyLimit(goal);
+            if (mounted) unawaited(_loadUsageDashboard());
+          },
+          onError: (Object error) {
+            debugPrint('Could not read the daily goal: $error');
           },
         );
   }
@@ -337,6 +367,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _connectivitySubscription?.cancel();
     _timeLimitWatchGeneration++;
     _appTimeLimitSubscription?.cancel();
+    _dailyGoalSubscription?.cancel();
     unawaited(_temporaryGrants.detach());
     _locationAutoShareTimer?.cancel();
     _usageAutoSyncTimer?.cancel();
@@ -1536,6 +1567,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _appTimeLimitSubscription = null;
     _timeLimitProfileId = null;
     await previous?.cancel();
+    await _dailyGoalSubscription?.cancel();
+    _dailyGoalSubscription = null;
     await _temporaryGrants.stop();
     await _limitNotifications.stopForSignOut();
     await FirebaseAuth.instance.signOut();

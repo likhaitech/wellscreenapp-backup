@@ -4,12 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../models/daily_goal.dart';
 import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
 import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
-import '../services/pattern_detection_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
@@ -272,10 +272,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final stored = (report?['patternStatus'] ?? '').toString();
     final total = usageTotalDuration(data);
 
+    // This child's own goal (age group or the guardian's value).
+    final goal = DailyGoal.durationFor(data);
     String fromTotal = 'healthy';
-    if (total >= PatternDetectionService.unhealthyTotalUsageLimit) {
+    if (total >= goal + DailyGoal.highAlertExtra) {
       fromTotal = 'unhealthy';
-    } else if (total >= PatternDetectionService.warningTotalUsageLimit) {
+    } else if (total >= goal) {
       fromTotal = 'warning';
     }
 
@@ -1105,7 +1107,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Widget _screenTimeAndRiskSection(Map<String, dynamic>? child) {
     final hasReport = hasSyncedUsageReport(child);
     final total = usageTotalDuration(child);
-    const goal = PatternDetectionService.warningTotalUsageLimit;
+    final goal = DailyGoal.durationFor(child);
     final progress = hasReport
         ? (total.inMilliseconds / goal.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
@@ -1229,7 +1231,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                           ),
                         ),
                         Text(
-                          'of ${goal.inHours}h goal',
+                          'of ${DailyGoal.label(goal.inMinutes)} goal',
                           style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 12,
@@ -1503,7 +1505,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   /// Days with no reading stay empty rather than being guessed, and the
   /// card falls back to an empty state until the child's phone has synced.
   Widget _weeklyTrendSection(Map<String, dynamic>? child) {
-    const warningLimit = PatternDetectionService.warningTotalUsageLimit;
+    final warningLimit = DailyGoal.durationFor(child);
     const dayLabels = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const maxBarHeight = 110.0;
 
@@ -1530,7 +1532,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       children: [
         Expanded(child: _cardTitle('Weekly Screen Time')),
         Text(
-          '${warningLimit.inHours}h warning level',
+          '${DailyGoal.label(warningLimit.inMinutes)} daily goal',
           style: const TextStyle(color: grayText, fontSize: 12),
         ),
       ],
