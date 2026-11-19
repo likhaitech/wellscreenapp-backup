@@ -24,6 +24,7 @@ import 'alert_notification_client.dart';
 ///   grantedUntil: server timestamp the bypass expires at (approved only)
 class EmergencyAccessService {
   static const String _grantedUntilKey = 'emergency_access_granted_until_ms';
+  static const String _durationKey = 'emergency_access_duration_ms';
 
   static const Duration defaultGrantDuration = Duration(minutes: 30);
 
@@ -175,6 +176,9 @@ class EmergencyAccessService {
             'status': approve ? 'approved' : 'denied',
             'respondedAt': FieldValue.serverTimestamp(),
             'grantedUntil': grantedUntil,
+            // Lets the child phone end access on time even if its clock
+            // is changed (see GrantClock.kt).
+            'durationMinutes': approve ? duration.inMinutes : null,
           },
         }, SetOptions(merge: true));
   }
@@ -198,8 +202,12 @@ class EmergencyAccessService {
               : <String, dynamic>{};
 
           final grantedUntil = status['grantedUntil'];
+          final durationMinutes = status['durationMinutes'];
           await syncGrantedUntilLocally(
             grantedUntil is Timestamp ? grantedUntil.toDate() : null,
+            durationMinutes: durationMinutes is num
+                ? durationMinutes.toInt()
+                : null,
           );
 
           return status;
@@ -212,12 +220,22 @@ class EmergencyAccessService {
   /// already has the child profile data in hand (e.g. right after
   /// [respondToRequest] on a device that's somehow also the child device)
   /// can sync it without waiting for the next stream tick.
-  Future<void> syncGrantedUntilLocally(DateTime? grantedUntil) async {
+  Future<void> syncGrantedUntilLocally(
+    DateTime? grantedUntil, {
+    int? durationMinutes,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
 
     if (grantedUntil == null || grantedUntil.isBefore(DateTime.now())) {
       await prefs.remove(_grantedUntilKey);
+      await prefs.remove(_durationKey);
       return;
+    }
+
+    if (durationMinutes != null && durationMinutes > 0) {
+      await prefs.setInt(_durationKey, durationMinutes * 60000);
+    } else {
+      await prefs.remove(_durationKey);
     }
 
     // Android native AccessibilityService reads this local key.

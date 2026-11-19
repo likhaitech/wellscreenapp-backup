@@ -519,15 +519,10 @@ class WellScreenAccessibilityService : AccessibilityService() {
      * of truth, SharedPreferences is the native side's local mirror of it"
      * pattern getRestrictedPackages() below already uses for rules.
      */
-    private fun isEmergencyAccessActive(now: Long): Boolean {
-        return try {
-            val prefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
-            val grantedUntil = prefs.getLong("flutter.emergency_access_granted_until_ms", 0L)
-            grantedUntil > now
-        } catch (_: Exception) {
-            false
-        }
-    }
+    @Suppress("UNUSED_PARAMETER")
+    private fun isEmergencyAccessActive(now: Long): Boolean =
+        // F8: checked against the phone's boot clock, not the wall clock.
+        GrantClock.isEmergencyActive(this)
 
     private fun getRestrictedPackages(): Set<String> {
         return try {

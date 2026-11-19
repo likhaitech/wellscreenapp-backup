@@ -171,9 +171,7 @@ object SiteBlocker {
                 "FlutterSharedPreferences", Context.MODE_PRIVATE
             )
             val now = System.currentTimeMillis()
-            if (prefs.getLong("flutter.emergency_access_granted_until_ms", 0L) > now) {
-                return emptySet()
-            }
+            if (GrantClock.isEmergencyActive(context)) return emptySet()
             val raw = prefs.getString("flutter.restricted_packages_json", null)
                 ?: return emptySet()
             val array = JSONArray(raw)
