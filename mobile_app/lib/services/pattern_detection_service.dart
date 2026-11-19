@@ -1,9 +1,14 @@
 import '../models/app_usage_summary.dart';
+import '../models/daily_goal.dart';
 import '../models/usage_report.dart';
 
 class PatternDetectionService {
-  static const Duration warningTotalUsageLimit = Duration(hours: 3);
-  static const Duration unhealthyTotalUsageLimit = Duration(hours: 5);
+  /// Total-use thresholds follow the child's daily goal (age group or the
+  /// guardian's own value, see DailyGoal): warning at the goal, unhealthy
+  /// two hours past it. 3h / 5h until the goal is known.
+  static Duration get warningTotalUsageLimit => DailyGoal.activeGoal;
+  static Duration get unhealthyTotalUsageLimit =>
+      DailyGoal.activeGoal + DailyGoal.highAlertExtra;
 
   static const Duration warningSingleAppLimit = Duration(hours: 1, minutes: 30);
   static const Duration unhealthySingleAppLimit = Duration(hours: 3);
