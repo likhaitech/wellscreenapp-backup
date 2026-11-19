@@ -375,6 +375,7 @@ class WellScreenAccessibilityService : AccessibilityService() {
                         openBlockedScreen(currentPackage, timeLimitReached = dailyLimitReached)
                     }
                     RestrictionLogger.recordOutcome(this, currentPackage, "blocked", now)
+                    RepeatedAttemptAlert.onBlocked(this, currentPackage, null)
                 } catch (_: Exception) {
                     RestrictionLogger.recordOutcome(
                         this,
@@ -503,6 +504,7 @@ class WellScreenAccessibilityService : AccessibilityService() {
             RestrictionLogger.recordOutcome(
                 this, domain, "blocked", now, reason.source, reason.category,
             )
+            RepeatedAttemptAlert.onBlocked(this, domain, reason.source)
         } catch (_: Exception) {
             RestrictionLogger.recordOutcome(this, domain, "failed_exception", now)
         }

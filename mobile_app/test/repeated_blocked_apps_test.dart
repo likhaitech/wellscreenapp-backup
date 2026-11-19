@@ -38,9 +38,11 @@ void main() {
     });
   });
 
-  test('ignores WellScreen settings and bypasses', () {
+  test('ignores WellScreen settings, schedule blocks and bypasses', () {
     final log = [
       for (var i = 0; i < 5; i++) entry('WellScreen settings', now),
+      for (var i = 0; i < 5; i++)
+        entry('com.google.android.youtube', now, source: 'schedule'),
       for (var i = 0; i < 5; i++)
         entry('com.zhiliaoapp.musically', now,
             outcome: 'emergency_access_bypass'),
