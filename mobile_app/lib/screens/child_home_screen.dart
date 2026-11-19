@@ -3330,6 +3330,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       if (!connected) ...[_pairPromptBanner(), const SizedBox(height: 14)],
       _heroCard(),
       if (connected) ...[
+        const SizedBox(height: 12),
+        _askForTimeButton(),
         const SizedBox(height: 14),
         _activeRulesBento(data),
         const SizedBox(height: 14),
@@ -3674,162 +3676,120 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       );
     }
 
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    // Design D hero: the logo's indigo-to-violet gradient with today's
+    // screen time, the goal bar and the usage-pattern status.
+    final goal = state.screenTimeGoalResult;
+    final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0).toDouble();
+    final hasLimit = state.dailyScreenTimeLimit > Duration.zero;
+    final remaining = goal?.remainingDuration ?? Duration.zero;
+    final footer = !hasLimit
+        ? 'No daily goal set'
+        : (remaining > Duration.zero
+              ? '${_durationLabel(remaining)} left before your goal'
+              : 'You reached your daily goal');
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: AppColors.heroGradient,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: _whiteCard(
-              padding: const EdgeInsets.all(14),
-              child: _heroScreenTime(state),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Today',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  state.viewModel.statusLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              state.viewModel.totalUsageLabel,
+              style: const TextStyle(
+                fontFamily: AppFonts.heading,
+                color: Colors.white,
+                fontSize: 42,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1,
+                fontFeatures: _tabular,
+              ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _whiteCard(
-              padding: const EdgeInsets.all(14),
-              child: _heroUsagePattern(state),
+          Text(
+            hasLimit
+                ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} daily goal'
+                : 'Screen time today',
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: hasLimit ? progress : 0,
+              minHeight: 10,
+              color: AppColors.teal,
+              backgroundColor: Colors.white.withValues(alpha: 0.25),
             ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            footer,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            state.viewModel.unhealthyAppCountLabel,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ],
       ),
     );
   }
 
-  Widget _heroLabel(String text) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        text,
-        maxLines: 2,
-        style: const TextStyle(
-          color: _ink,
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          height: 1.2,
+  /// Teal "Ask for more time" button under the hero (design D). Opens the
+  /// chat, where the child's access-request form is.
+  Widget _askForTimeButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: FilledButton.icon(
+        onPressed: openFamilyChat,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.teal,
+          foregroundColor: AppColors.onTeal,
+          shape: const StadiumBorder(),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
         ),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Ask for more time'),
       ),
-    );
-  }
-
-  Widget _heroScreenTime(UsageDashboardControllerState state) {
-    final goal = state.screenTimeGoalResult;
-    final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0).toDouble();
-    final hasLimit = state.dailyScreenTimeLimit > Duration.zero;
-    final limitLabel = hasLimit
-        ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} daily goal'
-        : 'No daily goal set';
-
-    return Column(
-      children: [
-        _heroLabel('Screen Time Today'),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: 104,
-          height: 104,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox.expand(
-                child: CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: 6,
-                  strokeCap: StrokeCap.round,
-                  backgroundColor: _hairline,
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    AppColors.primary,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        state.viewModel.totalUsageLabel,
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          height: 1.1,
-                          fontFeatures: _tabular,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        limitLabel,
-                        style: const TextStyle(
-                          color: _slate,
-                          fontSize: 11,
-                          fontFeatures: _tabular,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _heroUsagePattern(UsageDashboardControllerState state) {
-    final status = state.viewModel.statusLabel;
-
-    Color tint;
-    IconData icon;
-    StatusTone tone;
-    switch (status) {
-      case 'Unhealthy':
-        tint = AppColors.danger;
-        icon = Icons.gpp_maybe_rounded;
-        tone = StatusTone.danger;
-        break;
-      case 'Warning':
-        tint = AppColors.warning;
-        icon = Icons.gpp_maybe_rounded;
-        tone = StatusTone.warning;
-        break;
-      case 'Healthy':
-        tint = AppColors.success;
-        icon = Icons.verified_user_rounded;
-        tone = StatusTone.success;
-        break;
-      default:
-        tint = AppColors.textDisabled;
-        icon = Icons.shield_outlined;
-        tone = StatusTone.neutral;
-    }
-
-    return Column(
-      children: [
-        _heroLabel('Risk Level'),
-        const SizedBox(height: 12),
-        Icon(icon, color: tint, size: 58),
-        const SizedBox(height: 10),
-        StatusPill(label: status, tone: tone),
-        const SizedBox(height: 6),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            state.viewModel.unhealthyAppCountLabel,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _slate,
-              fontSize: 11,
-              fontFeatures: _tabular,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
