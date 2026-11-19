@@ -37,7 +37,7 @@ class MonitoringUsageAlertService {
   }
 
   /// Shared with the native RepeatedAttemptAlert so the backend creates each
-  /// alert once: "rra_<target>_<yyyymmdd>" for 3 attempts (the original ID),
+  /// alert once: `rra_<target>_<yyyymmdd>` for 3 attempts (the original ID),
   /// with "_5" / "_10" added for the later milestones.
   static String repeatedAttemptEventId(String target, String day, int milestone) {
     final safe = target
