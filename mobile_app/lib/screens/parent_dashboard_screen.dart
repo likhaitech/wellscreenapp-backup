@@ -13,6 +13,7 @@ import '../widgets/app_usage_icon.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/daily_goal_sheet.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'all_apps_screen.dart';
 import 'device_pairing_screen.dart';
@@ -1260,9 +1261,89 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               ),
             ],
           ),
+          if (_primaryChildId != null) ...[
+            const SizedBox(height: 14),
+            Material(
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                onTap: () => _editDailyGoal(child),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.timer_outlined,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Daily goal: ${DailyGoal.summary(child)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Edit',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// Same goal editor as Devices: age group + the guardian's own value.
+  Future<void> _editDailyGoal(Map<String, dynamic>? child) async {
+    final profileId = _primaryChildId;
+    if (profileId == null) return;
+    final update = await showDailyGoalSheet(
+      context,
+      childName: childNameOf(child, fallback: 'your child'),
+      profile: child,
+    );
+    if (update == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .doc(profileId)
+          .update({
+            ...update,
+            DailyGoal.updatedAtField: FieldValue.serverTimestamp(),
+          })
+          .timeout(const Duration(seconds: 10));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Daily goal saved.')),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not save the daily goal. Check your connection.'),
+        ),
+      );
+    }
   }
 
   Widget _cardTitle(String text) {
