@@ -25,6 +25,7 @@ import '../services/app_rules_service.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
 import '../services/daily_screen_time_limit_service.dart';
+import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
 import '../services/ml_risk_classifier_service.dart';
 import '../services/site_category_service.dart';
@@ -1408,6 +1409,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         // Keep the previously synced list.
       }
 
+      Map<String, int> dailyUsageTotals = const {};
+      try {
+        dailyUsageTotals = await _dailyUsageTotalsForSync(
+          report.totalUsageDuration,
+        );
+      } catch (_) {
+        // Best-effort: the guardian's weekly chart just keeps its last data.
+      }
+
       // _attemptFirestoreSync handles offline detection, the write timeout
       // (cloud_firestore's set() hangs forever offline instead of throwing
       // - firebase/flutterfire#17643), local queuing for automatic retry on
@@ -1423,6 +1433,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           if (categorizedBrowsingLog.isNotEmpty)
             'browsingLog': categorizedBrowsingLog,
           'mlRiskAssessment': ?mlRiskAssessmentData,
+          if (dailyUsageTotals.isNotEmpty) 'dailyUsageTotals': dailyUsageTotals,
         },
         trigger: 'manual',
       );
@@ -2676,6 +2687,56 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   // ------------------------------ helpers ------------------------------
 
+  /// Total screen time between [start] and [end] from Android's
+  /// UsageStats, summarized the same way as today's total.
+  Future<Duration> _usageTotalForRange(DateTime start, DateTime end) async {
+    final usage = await UsageStats.queryAndAggregateUsageStats(start, end);
+    final milliseconds = <String, int>{
+      for (final entry in usage.entries)
+        entry.key: int.tryParse(entry.value.totalTimeInForeground ?? '0') ?? 0,
+    };
+    return _usageTrackingService
+        .summarizeUsage(milliseconds)
+        .fold<Duration>(
+          Duration.zero,
+          (total, app) => total + app.usageDuration,
+        );
+  }
+
+  /// Per-day totals for the guardian's 7-day chart and 30-day average
+  /// (see DailyUsageHistory). Today comes from the report being synced;
+  /// the previous 6 days are re-read from UsageStats once a day (Android
+  /// keeps about a week of daily history) and older days stay as last
+  /// stored. Best-effort: on any error the stored map is returned as-is.
+  Future<Map<String, int>> _dailyUsageTotalsForSync(Duration today) async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final stored = DailyUsageHistory.parse(
+      prefs.getString(DailyUsageHistory.prefsKey),
+    );
+    final fresh = <String, int>{
+      DailyUsageHistory.dayKey(todayStart): today.inMilliseconds,
+    };
+    final todayKey = DailyUsageHistory.dayKey(todayStart);
+    try {
+      if (prefs.getString(DailyUsageHistory.refreshedDayKey) != todayKey) {
+        for (var i = 1; i <= 6; i++) {
+          final start = DateTime(now.year, now.month, now.day - i);
+          final end = DateTime(now.year, now.month, now.day - i + 1);
+          final total = await _usageTotalForRange(start, end);
+          fresh[DailyUsageHistory.dayKey(start)] = total.inMilliseconds;
+        }
+        await prefs.setString(DailyUsageHistory.refreshedDayKey, todayKey);
+      }
+    } catch (error) {
+      debugPrint('Could not read past daily usage: $error');
+    }
+    final merged = DailyUsageHistory.merge(stored, fresh, now);
+    await prefs.setString(DailyUsageHistory.prefsKey, jsonEncode(merged));
+    return merged;
+  }
+
   /// Mon-Sun totals for the current week from Android's own usage history
   /// (the same UsageStats source and top-app summary used for today's
   /// total), so the Weekly Summary chart shows real readings only.
@@ -2695,18 +2756,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             ? now
             : DateTime(monday.year, monday.month, monday.day + i + 1);
 
-        final usage = await UsageStats.queryAndAggregateUsageStats(start, end);
-        final milliseconds = <String, int>{
-          for (final entry in usage.entries)
-            entry.key:
-                int.tryParse(entry.value.totalTimeInForeground ?? '0') ?? 0,
-        };
-        week[i] = _usageTrackingService
-            .summarizeUsage(milliseconds)
-            .fold<Duration>(
-              Duration.zero,
-              (total, app) => total + app.usageDuration,
-            );
+        week[i] = await _usageTotalForRange(start, end);
       }
 
       if (!mounted) return;

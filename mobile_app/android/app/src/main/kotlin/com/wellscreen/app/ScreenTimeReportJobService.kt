@@ -108,6 +108,11 @@ class ScreenTimeReportJobService : JobService() {
                                 updates["latestUsageReport.allAppsTotalUsageDurationMs"] = report.totalMs
                                 updates["latestUsageReport.capturedAt"] = report.capturedAt
                                 updates["usageReportUpdatedAt"] = FieldValue.serverTimestamp()
+                                // Today's total for the guardian's 7-day chart
+                                // (DailyUsageHistory in Dart); a dotted path so
+                                // the other stored days are left alone.
+                                val dayKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                                updates["dailyUsageTotals.$dayKey"] = report.totalMs
                             } else {
                                 Log.w(tag, "Usage Access missing; no dashboard overwrite")
                             }

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
 import '../widgets/app_usage_icon.dart';
 import '../services/pattern_detection_service.dart';
@@ -495,7 +496,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 const SizedBox(height: 14),
                 _screenTimeAndRiskSection(primaryChild),
                 const SizedBox(height: 14),
-                _weeklyTrendSection(),
+                _weeklyTrendSection(primaryChild),
                 const SizedBox(height: 14),
                 _topAppsSection(primaryChild),
               ],
@@ -1378,54 +1379,174 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
-  /// Only today's report is synced and stored (see syncUsageReport in
-  /// child_home_screen.dart) - there is no per-day history collection, so
-  /// a real weekly chart can't be drawn honestly. Shows the card in the new
-  /// style with an empty state instead of made-up bars.
-  Widget _weeklyTrendSection() {
+  /// Last 7 days of screen time from the child's synced `dailyUsageTotals`
+  /// (see DailyUsageHistory), plus a 30-day average of completed days.
+  /// Today's bar uses the same live total as the Screen Time card above.
+  /// Days with no reading stay empty rather than being guessed, and the
+  /// card falls back to an empty state until the child's phone has synced.
+  Widget _weeklyTrendSection(Map<String, dynamic>? child) {
     const warningLimit = PatternDetectionService.warningTotalUsageLimit;
+    const dayLabels = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const maxBarHeight = 110.0;
+
+    final now = DateTime.now();
+    final totals = DailyUsageHistory.parse(child?['dailyUsageTotals']);
+    final liveToday = usageTotalDuration(child);
+    if (totals.isNotEmpty && liveToday > Duration.zero) {
+      final todayKey = DailyUsageHistory.dayKey(now);
+      if ((totals[todayKey] ?? 0) < liveToday.inMilliseconds) {
+        totals[todayKey] = liveToday.inMilliseconds;
+      }
+    }
+    final days = DailyUsageHistory.lastSevenDays(totals, now);
+    final hasData = days.any((day) => day.value != null);
+    final average = DailyUsageHistory.averageOfCompletedDays(totals, now);
+
+    var maxMs = warningLimit.inMilliseconds;
+    for (final day in days) {
+      final ms = day.value?.inMilliseconds ?? 0;
+      if (ms > maxMs) maxMs = ms;
+    }
+
+    final header = Row(
+      children: [
+        Expanded(child: _cardTitle('Weekly Screen Time')),
+        Text(
+          '${warningLimit.inHours}h warning level',
+          style: const TextStyle(color: grayText, fontSize: 12),
+        ),
+      ],
+    );
+
+    if (!hasData) {
+      return BentoCard(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            header,
+            const SizedBox(height: 14),
+            const Center(
+              child: Icon(
+                Icons.bar_chart_rounded,
+                color: AppColors.textDisabled,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Center(
+              child: Text(
+                'No daily history yet',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: darkText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Center(
+              child: Text(
+                'The chart fills in after the child\'s phone syncs usage.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: grayText, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final warningTop =
+        maxBarHeight * warningLimit.inMilliseconds / maxMs;
 
     return BentoCard(
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(child: _cardTitle('Weekly Screen Time')),
-              Text(
-                '${warningLimit.inHours}h warning level',
-                style: const TextStyle(color: grayText, fontSize: 12),
-              ),
-            ],
-          ),
+          header,
           const SizedBox(height: 14),
-          const Center(
-            child: Icon(
-              Icons.bar_chart_rounded,
-              color: AppColors.textDisabled,
-              size: 40,
+          SizedBox(
+            height: maxBarHeight + 40,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 20 + warningTop,
+                  child: Container(height: 1, color: AppColors.warning),
+                ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (var i = 0; i < days.length; i++)
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Text(
+                              days[i].value == null
+                                  ? '-'
+                                  : formatDurationLabel(days[i].value!)
+                                      .split(' ')
+                                      .first,
+                              style: const TextStyle(
+                                color: grayText,
+                                fontSize: 10,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              width: 18,
+                              height: days[i].value == null
+                                  ? 2
+                                  : (maxBarHeight *
+                                            days[i].value!.inMilliseconds /
+                                            maxMs)
+                                        .clamp(2.0, maxBarHeight),
+                              decoration: BoxDecoration(
+                                color: days[i].value == null
+                                    ? AppColors.border
+                                    : days[i].value! >= warningLimit
+                                    ? AppColors.warning
+                                    : purple,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              i == days.length - 1
+                                  ? 'Today'
+                                  : dayLabels[days[i].key.weekday - 1],
+                              style: TextStyle(
+                                color: i == days.length - 1
+                                    ? darkText
+                                    : grayText,
+                                fontSize: 11,
+                                fontWeight: i == days.length - 1
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          const Center(
-            child: Text(
-              'Weekly trends aren\'t available yet',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: darkText,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Center(
-            child: Text(
-              'Only today\'s report is stored so far.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: grayText, fontSize: 12),
-            ),
+          const SizedBox(height: 10),
+          Text(
+            average == null
+                ? 'Last 30 days: not enough history yet.'
+                : 'Last 30 days: average '
+                      '${formatDurationLabel(average.average)} per day '
+                      '(${average.daysCounted} '
+                      '${average.daysCounted == 1 ? 'day' : 'days'} recorded)',
+            style: const TextStyle(color: grayText, fontSize: 12),
           ),
         ],
       ),
