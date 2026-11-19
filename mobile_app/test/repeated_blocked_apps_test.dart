@@ -49,4 +49,25 @@ void main() {
     ];
     expect(MonitoringUsageAlertService.repeatedBlockedApps(log, now), isEmpty);
   });
+
+  test('alerts at 3, 5 and 10 attempts', () {
+    expect(MonitoringUsageAlertService.attemptMilestone(2), 0);
+    expect(MonitoringUsageAlertService.attemptMilestone(3), 3);
+    expect(MonitoringUsageAlertService.attemptMilestone(4), 3);
+    expect(MonitoringUsageAlertService.attemptMilestone(7), 5);
+    expect(MonitoringUsageAlertService.attemptMilestone(25), 10);
+  });
+
+  test('event IDs match the native format', () {
+    expect(
+      MonitoringUsageAlertService.repeatedAttemptEventId(
+          'youtube.com', '20261119', 3),
+      'rra_youtube_com_20261119',
+    );
+    expect(
+      MonitoringUsageAlertService.repeatedAttemptEventId(
+          'youtube.com', '20261119', 10),
+      'rra_youtube_com_20261119_10',
+    );
+  });
 }

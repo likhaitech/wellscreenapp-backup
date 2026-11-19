@@ -24,6 +24,30 @@ class MonitoringUsageAlertService {
   /// the count. WellScreen's own settings screen and bedtime/focus/break
   /// blocks are left out. The native RepeatedAttemptAlert sends the same
   /// event (same ID) the moment the 3rd block happens.
+  /// Attempt counts that alert the guardian, once each per target per day.
+  static const List<int> attemptMilestones = [3, 5, 10];
+
+  /// The highest milestone [count] has reached, or 0 below the first.
+  static int attemptMilestone(int count) {
+    var reached = 0;
+    for (final milestone in attemptMilestones) {
+      if (count >= milestone) reached = milestone;
+    }
+    return reached;
+  }
+
+  /// Shared with the native RepeatedAttemptAlert so the backend creates each
+  /// alert once: "rra_<target>_<yyyymmdd>" for 3 attempts (the original ID),
+  /// with "_5" / "_10" added for the later milestones.
+  static String repeatedAttemptEventId(String target, String day, int milestone) {
+    final safe = target
+        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '_')
+        .padRight(3, '_');
+    final trimmed = safe.length > 60 ? safe.substring(0, 60) : safe;
+    final base = 'rra_${trimmed}_$day';
+    return milestone <= attemptMilestones.first ? base : '${base}_$milestone';
+  }
+
   static Map<String, int> repeatedBlockedApps(
     List<Map<String, dynamic>> restrictionLog,
     DateTime now, {
@@ -126,24 +150,23 @@ class MonitoringUsageAlertService {
       });
     }
 
-    // Repeated attempts to open a blocked app: one alert per app per day.
+    // Repeated attempts to open a blocked app or site: one alert at each
+    // milestone (3, 5, 10 attempts) per target per day.
     final names = {
       for (final app in appSummaries) app.packageName: app.displayName,
     };
     final repeated = repeatedBlockedApps(restrictionLog, now).entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     for (final attempt in repeated.take(10)) {
-      final safe = attempt.key
-          .replaceAll(RegExp(r'[^A-Za-z0-9]'), '_')
-          .padRight(3, '_');
-      final trimmed = safe.length > 60 ? safe.substring(0, 60) : safe;
+      final milestone = attemptMilestone(attempt.value);
+      if (milestone == 0) continue;
       events.add({
         'type': 'repeated_restricted_app_access',
-        'eventId': 'rra_${trimmed}_$day',
+        'eventId': repeatedAttemptEventId(attempt.key, day, milestone),
         'timestampMs': timestampMs,
         'subject': attempt.key,
         'label': '${names[attempt.key] ?? attempt.key} '
-            '(${attempt.value} attempts today)',
+            '($milestone attempts today)',
       });
     }
 

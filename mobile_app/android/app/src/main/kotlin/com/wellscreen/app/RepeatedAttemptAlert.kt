@@ -13,17 +13,17 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Tells the guardian straight away when the child hits the same blocked app
- * or website for the 3rd time today, without waiting for the app's next
+ * or website for the 3rd, 5th and 10th time today, without waiting for the app's next
  * usage sync (which only runs while WellScreen's screen is alive).
  *
- * Uses the same event ID as MonitoringUsageAlertService in Dart
- * ("rra_<target>_<yyyymmdd>"); the backend creates each alert once per ID,
+ * Uses the same event IDs as MonitoringUsageAlertService in Dart
+ * ("rra_<target>_<yyyymmdd>", plus "_5" / "_10" for the later milestones); the backend creates each alert once per ID,
  * so whichever path arrives first sends the push and the other is ignored.
  * Bedtime/focus/break blocks don't count: they cover every app.
  */
 internal object RepeatedAttemptAlert {
     private const val TAG = "WellScreenAlerts"
-    const val MIN_ATTEMPTS = 3
+    val MILESTONES = listOf(3, 5, 10)
     private const val SENT_PREFS = "WellScreenRepeatedAttempts"
 
     data class Entry(
@@ -42,11 +42,15 @@ internal object RepeatedAttemptAlert {
         return "${c.get(Calendar.YEAR)}$m$d"
     }
 
+    /** The highest milestone [count] has reached, or 0 below the first. */
+    fun milestone(count: Int): Int = MILESTONES.lastOrNull { count >= it } ?: 0
+
     /** Same shape as the Dart path's eventId so the backend de-duplicates. */
-    fun eventId(target: String, nowMs: Long): String {
+    fun eventId(target: String, nowMs: Long, milestone: Int = MILESTONES.first()): String {
         val safe = target.replace(Regex("[^A-Za-z0-9]"), "_").padEnd(3, '_')
         val trimmed = if (safe.length > 60) safe.substring(0, 60) else safe
-        return "rra_${trimmed}_${dayStamp(nowMs)}"
+        val base = "rra_${trimmed}_${dayStamp(nowMs)}"
+        return if (milestone <= MILESTONES.first()) base else "${base}_$milestone"
     }
 
     /** Today's blocked attempts on [target], schedule blocks excluded. */
@@ -72,12 +76,13 @@ internal object RepeatedAttemptAlert {
             val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val entries = parse(prefs.getString("flutter.restriction_log_json", null))
             val count = countToday(entries, target, now)
-            if (count < MIN_ATTEMPTS) return
-            val id = eventId(target, now)
+            val reached = milestone(count)
+            if (reached == 0) return
+            val id = eventId(target, now, reached)
             val sent = context.getSharedPreferences(SENT_PREFS, Context.MODE_PRIVATE)
             if (sent.getBoolean(id, false)) return
             synchronized(inFlight) { if (!inFlight.add(id)) return }
-            val label = "${labelFor(context, target)} ($count attempts today)"
+            val label = "${labelFor(context, target)} ($reached attempts today)"
             val app = context.applicationContext
             Thread {
                 try {

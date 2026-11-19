@@ -49,4 +49,14 @@ class RepeatedAttemptAlertTest {
         assertTrue(RepeatedAttemptAlert.isAlertable("com.roblox.client"))
         assertFalse(RepeatedAttemptAlert.isAlertable("WellScreen settings"))
     }
+
+    @Test
+    fun milestonesAre3And5And10() {
+        assertEquals(0, RepeatedAttemptAlert.milestone(2))
+        assertEquals(3, RepeatedAttemptAlert.milestone(4))
+        assertEquals(5, RepeatedAttemptAlert.milestone(9))
+        assertEquals(10, RepeatedAttemptAlert.milestone(30))
+        assertEquals("rra_youtube_com_20261119_5", RepeatedAttemptAlert.eventId("youtube.com", now, 5))
+        assertEquals("rra_youtube_com_20261119", RepeatedAttemptAlert.eventId("youtube.com", now, 3))
+    }
 }
