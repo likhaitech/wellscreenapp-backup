@@ -105,6 +105,16 @@ object BrowserUrlExtractor {
                 continue
             }
 
+            // While the child is typing, the address bar holds half-typed
+            // text plus the browser's autocomplete ("you" -> "youtube.com").
+            // Only check what is shown after the page actually opens.
+            if (matches.firstOrNull()?.isFocused == true) {
+                val typingMsg = "view '$viewId' is being edited, skipping until a page opens"
+                Log.d(CAPTURE_LOG_TAG, typingMsg)
+                CaptureDebugLogger.log(context, typingMsg)
+                return null
+            }
+
             val rawText = matches.firstOrNull()?.text?.toString()
             val loggedText = if (rawText == null) "null" else "\"$rawText\""
             val foundMsg = "view '$viewId' found, raw text = $loggedText"
