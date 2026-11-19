@@ -1287,6 +1287,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       // just whether the features are turned on. Reuses this same sync
       // button rather than adding separate ones.
       final prefs = await SharedPreferences.getInstance();
+      // These logs are written by the Android side (RestrictionLogger,
+      // SMS receivers), outside Dart's cached copy: re-read them, or a
+      // manual Sync misses every block since the app was opened (and the
+      // repeated-attempt alert never sees them).
+      await prefs.reload();
       final smsAlertLog = _decodeJsonList(
         prefs.getString('sms_alert_log_json'),
       );
