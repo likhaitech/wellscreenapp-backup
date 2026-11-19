@@ -501,17 +501,43 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   /// refuse a new field, the "online" check-in itself still succeeds.
   Future<void> _publishProtectionStatus(String profileId) async {
     final usageEnabled = _usageAccessEnabled;
-    if (usageEnabled == null) return;
+
+    // Location: phone GPS switched on AND WellScreen allowed to use it.
+    bool? locationEnabled;
+    try {
+      final serviceOn = await Geolocator.isLocationServiceEnabled();
+      final permission = await Geolocator.checkPermission();
+      locationEnabled =
+          serviceOn &&
+          (permission == LocationPermission.always ||
+              permission == LocationPermission.whileInUse);
+    } catch (_) {
+      locationEnabled = null;
+    }
+
+    // SMS backup alerts need the SMS permission on this phone.
+    bool? smsGranted;
+    try {
+      smsGranted = (await Permission.sms.status).isGranted;
+    } catch (_) {
+      smsGranted = null;
+    }
+
+    final update = <String, dynamic>{
+      if (usageEnabled != null) 'usageAccessEnabled': usageEnabled,
+      if (locationEnabled != null) 'locationEnabled': locationEnabled,
+      if (smsGranted != null) 'smsPermissionGranted': smsGranted,
+    };
+    if (update.isEmpty) return;
+    update['usageAccessCheckedAt'] = FieldValue.serverTimestamp();
+
     try {
       await FirebaseFirestore.instance
           .collection('child_profiles')
           .doc(profileId)
-          .update({
-            'usageAccessEnabled': usageEnabled,
-            'usageAccessCheckedAt': FieldValue.serverTimestamp(),
-          })
+          .update(update)
           .timeout(const Duration(seconds: 10));
-      _reportedUsageAccessEnabled = usageEnabled;
+      if (usageEnabled != null) _reportedUsageAccessEnabled = usageEnabled;
     } catch (error) {
       debugPrint('Child protection status update failed: $error');
     }
@@ -938,6 +964,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       'longitude': position.longitude,
       'accuracyMeters': position.accuracy,
       'capturedAt': position.timestamp.toIso8601String(),
+      // True when a fake-GPS app supplied this location (G2).
+      'isMocked': position.isMocked,
     };
 
     // Location isn't queued/auto-retried like usage data (see

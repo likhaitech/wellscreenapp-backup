@@ -151,6 +151,8 @@ service cloud.firestore {
             'accessibilityCheckedAt',
             'usageAccessEnabled',
             'usageAccessCheckedAt',
+            'locationEnabled',
+            'smsPermissionGranted',
             'emergencyAccess'
           ]);
       }

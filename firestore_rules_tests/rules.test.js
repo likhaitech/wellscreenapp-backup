@@ -669,11 +669,13 @@ describe('child_profiles - child-writable field allowlist', () => {
     );
   });
 
-  it('allows the child to report Usage Access status', async () => {
+  it('allows the child to report Usage Access, location and SMS status', async () => {
     await assertSucceeds(
       updateDoc(profile(child()), {
         usageAccessEnabled: false,
         usageAccessCheckedAt: serverTimestamp(),
+        locationEnabled: false,
+        smsPermissionGranted: false,
       })
     );
   });

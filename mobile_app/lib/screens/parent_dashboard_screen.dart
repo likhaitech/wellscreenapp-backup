@@ -898,8 +898,21 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     if (online == null) return 'Awaiting device check-in';
     final seen = child?['lastSeenAt'];
     final when = seen is Timestamp ? _relativeTime(seen.toDate()) : '';
-    if (online) return when.isEmpty ? 'Online' : 'Online • $when';
-    return when.isEmpty ? 'Offline' : 'Offline • $when';
+    // SMS backup alerts cannot be sent without the child's SMS permission.
+    final smsNote = child?['smsPermissionGranted'] == false
+        ? ' • SMS backup off'
+        : '';
+    final status = online ? 'Online' : 'Offline';
+    final base = when.isEmpty ? status : '$status • $when';
+    return '$base$smsNote';
+  }
+
+  /// Warning shown next to the location (G2, G3), or null.
+  String? _locationWarning(Map<String, dynamic>? child) {
+    final location = latestLocation(child);
+    if (location?['isMocked'] == true) return 'may be faked (fake GPS app)';
+    if (child?['locationEnabled'] == false) return 'turned off on child phone';
+    return null;
   }
 
   /// "2m ago" style label for the device card and the location footer.
@@ -1152,19 +1165,32 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Widget _locationFooter(Map<String, dynamic>? child) {
     final hasLocation = hasSharedLocation(child);
     final location = locationText(child);
+    final warning = _locationWarning(child);
+    final locationLine = hasLocation
+        ? 'Location • $location'
+        : 'Location • waiting for GPS update';
 
     return Row(
       children: [
-        const Icon(Icons.location_on_outlined, color: grayText, size: 20),
+        Icon(
+          warning == null
+              ? Icons.location_on_outlined
+              : Icons.location_off_outlined,
+          color: warning == null ? grayText : AppColors.danger,
+          size: 20,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            hasLocation
-                ? 'Location • $location'
-                : 'Location • waiting for GPS update',
-            maxLines: 1,
+            warning == null
+                ? locationLine
+                : '$locationLine\n⚠ Location $warning',
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: darkText, fontSize: 13),
+            style: TextStyle(
+              color: warning == null ? darkText : AppColors.danger,
+              fontSize: 13,
+            ),
           ),
         ),
         TextButton(
