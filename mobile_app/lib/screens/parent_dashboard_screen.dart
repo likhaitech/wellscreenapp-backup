@@ -228,6 +228,23 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return latestUsageReport(data) != null;
   }
 
+  /// When the child's phone last sent its usage report (server time).
+  DateTime? usageReportTime(Map<String, dynamic>? data) {
+    final value = data?['usageReportUpdatedAt'];
+    return value is Timestamp ? value.toDate().toLocal() : null;
+  }
+
+  /// The report is a running total for one day, so after midnight the last
+  /// report belongs to yesterday and must not be shown as today's time.
+  bool usageReportIsFromToday(Map<String, dynamic>? data, {DateTime? now}) {
+    final time = usageReportTime(data);
+    if (time == null) return hasSyncedUsageReport(data); // older profiles
+    final today = now ?? DateTime.now();
+    return time.year == today.year &&
+        time.month == today.month &&
+        time.day == today.day;
+  }
+
   List<Map<String, dynamic>> usageTopApps(Map<String, dynamic>? data) {
     final report = latestUsageReport(data);
     final rawApps = report?['topApps'];
@@ -1106,8 +1123,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   /// two cards it replaces (PatternDetectionService status, no made-up
   /// score).
   Widget _screenTimeAndRiskSection(Map<String, dynamic>? child) {
-    final hasReport = hasSyncedUsageReport(child);
-    final total = usageTotalDuration(child);
+    final hasAnyReport = hasSyncedUsageReport(child);
+    final hasReport = hasAnyReport && usageReportIsFromToday(child);
+    // Yesterday's total is not today's screen time.
+    final total = hasReport ? usageTotalDuration(child) : Duration.zero;
+    final lastReportAt = usageReportTime(child);
     final goal = DailyGoal.durationFor(child);
     final progress = hasReport
         ? (total.inMilliseconds / goal.inMilliseconds).clamp(0.0, 1.0)
@@ -1117,7 +1137,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final flagged = usageUnhealthyAppCount(child);
     final String statusLabel;
     final IconData statusIcon;
-    if (!hasReport) {
+    if (hasAnyReport && !hasReport) {
+      statusLabel = 'No report today';
+      statusIcon = Icons.hourglass_empty_rounded;
+    } else if (!hasReport) {
       statusLabel = 'Awaiting sync';
       statusIcon = Icons.hourglass_empty_rounded;
     } else if (statusRaw == 'unhealthy') {
@@ -1261,6 +1284,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               ),
             ],
           ),
+          if (hasAnyReport && !hasReport && lastReportAt != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'No report from the child\'s phone yet today. Last report: '
+              '${_shortDateTime(lastReportAt)}.',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
           if (_primaryChildId != null) ...[
             const SizedBox(height: 14),
             Material(
@@ -1312,6 +1343,17 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         ],
       ),
     );
+  }
+
+  String _shortDateTime(DateTime t) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final minute = t.minute.toString().padLeft(2, '0');
+    return '${months[t.month - 1]} ${t.day}, $hour:$minute '
+        '${t.hour < 12 ? 'AM' : 'PM'}';
   }
 
   /// Same goal editor as Devices: age group + the guardian's own value.

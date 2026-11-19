@@ -3861,7 +3861,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           ),
           Text(
             hasLimit
-                ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} daily goal'
+                ? 'of ${DailyGoal.label(state.dailyScreenTimeLimit.inMinutes)} daily goal'
                 : 'Screen time today',
             style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
