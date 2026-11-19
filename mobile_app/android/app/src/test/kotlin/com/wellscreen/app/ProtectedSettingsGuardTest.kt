@@ -45,12 +45,48 @@ class ProtectedSettingsGuardTest {
         assertFalse(
             guarded("WellScreen Uninstall Protection", "Activate this device admin app", "Cancel")
         )
+        // The title and explanation load before the Activate button.
+        assertFalse(
+            guarded(
+                "Activate device admin app?",
+                "WellScreen Uninstall Protection",
+                "Lets WellScreen warn your guardian before it can be removed.",
+            )
+        )
+        // Some Android versions show an "Uninstall app" button here; tapping
+        // it opens the uninstall dialog, which is still covered.
+        assertFalse(
+            guarded(
+                "Activate device admin app?",
+                "WellScreen Uninstall Protection",
+                "Activate this device admin app",
+                "Cancel",
+                "Uninstall app",
+            )
+        )
+        // The one-tap "always run in background" dialog.
+        assertFalse(
+            guarded(
+                "Let WellScreen always run in background?",
+                "Allowing WellScreen to always run in background may reduce battery life.",
+                "Deny",
+                "Allow",
+            )
+        )
         // Device admin list only shows the name.
         assertFalse(guarded("Device admin apps", "WellScreen Uninstall Protection", "Find My Device"))
         // Accessibility list, usage access, battery pages.
         assertFalse(guarded("Accessibility", "Downloaded apps", "WellScreen", "On"))
         assertFalse(guarded("Usage access", "WellScreen", "Permit usage access"))
         assertFalse(guarded("Battery optimization", "WellScreen", "Not optimized"))
+    }
+
+    @Test
+    fun activationWordsCannotUnlockAppInfo() {
+        // App info with an "activate" text somewhere must still be covered.
+        assertTrue(
+            guarded("App info", "WellScreen", "Activate device admin app", "Uninstall", "Force stop")
+        )
     }
 
     @Test

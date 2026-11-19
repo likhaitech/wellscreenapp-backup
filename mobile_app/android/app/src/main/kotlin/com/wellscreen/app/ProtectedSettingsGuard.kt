@@ -28,6 +28,13 @@ internal object ProtectedSettingsGuard {
 
     private const val DEVICE_ADMIN_LABEL = "wellscreen uninstall protection"
 
+    private val activationPhrases = listOf(
+        "activate this device admin",
+        "activate device admin",
+    )
+
+    private val appInfoControls = listOf("force stop", "clear storage", "clear data")
+
     private val dangerWords = listOf(
         "uninstall",
         "force stop",
@@ -84,10 +91,15 @@ internal object ProtectedSettingsGuard {
         // The Device Admin name contains "Uninstall"; it is not a danger word.
         val cleaned = lower.map { it.replace(DEVICE_ADMIN_LABEL, "") }
 
-        // Turning Device Admin ON (setup checklist) must stay possible.
+        // Turning Device Admin ON (setup checklist) must stay possible. The
+        // page title ("Activate device admin app?") loads before the
+        // "Activate this device admin app" button, so either one counts.
+        // "deactivate" contains "activate", hence the second check. App
+        // info controls never appear on this page, so they rule it out.
         val isActivationPage =
-            cleaned.any { it.contains("activate this device admin") } &&
-                cleaned.none { it.contains("deactivate") }
+            cleaned.any { text -> activationPhrases.any { text.contains(it) } } &&
+                cleaned.none { it.contains("deactivate") } &&
+                cleaned.none { text -> appInfoControls.any { text.contains(it) } }
         if (isActivationPage) return false
 
         return cleaned.any { text -> dangerWords.any { text.contains(it) } }

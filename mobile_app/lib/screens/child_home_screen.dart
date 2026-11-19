@@ -2963,7 +2963,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     if (!opened) {
       showMessage(
         'Could not open battery settings. Open Settings > Apps > '
-        'WellScreen > Battery and choose Unrestricted.',
+        'Special app access > Battery optimization and set WellScreen '
+        'to Not optimized.',
       );
     }
   }

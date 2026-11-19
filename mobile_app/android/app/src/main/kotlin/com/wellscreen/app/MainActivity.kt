@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -82,14 +83,28 @@ class MainActivity : FlutterActivity() {
                     result.success(power?.isIgnoringBatteryOptimizations(packageName))
                 }
                 "openBatteryOptimizationSettings" -> {
-                    try {
-                        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(intent)
-                        result.success(true)
-                    } catch (_: Exception) {
-                        result.success(false)
+                    // One-tap "Let WellScreen always run in background?"
+                    // dialog first. The general battery list is only a
+                    // fallback: on newer Android, reaching "Allow background
+                    // usage" from it goes through WellScreen's App info,
+                    // which the protected-settings guard covers while paired.
+                    val direct = Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:$packageName"),
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    var opened = false
+                    for (intent in listOf(direct, list)) {
+                        try {
+                            startActivity(intent)
+                            opened = true
+                            break
+                        } catch (_: Exception) {
+                            // Try the next screen.
+                        }
                     }
+                    result.success(opened)
                 }
                 "isDeviceAdminActive" -> {
                     val policy = getSystemService(Context.DEVICE_POLICY_SERVICE)
@@ -104,8 +119,8 @@ class MainActivity : FlutterActivity() {
                             .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
                             .putExtra(
                                 DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                                "Stops WellScreen from being uninstalled without " +
-                                    "your guardian knowing.",
+                                "Lets WellScreen warn your guardian before it " +
+                                    "can be removed from this phone.",
                             )
                         startActivity(intent)
                         result.success(true)
