@@ -178,6 +178,9 @@ class _ParentNotificationsScreenState
 
   IconData _iconForKind(String kind) {
     switch (kind) {
+      case 'gps_location_stale':
+        return Icons.location_off_outlined;
+
       case 'no_recent_connection':
       case 'monitoring_permission_disabled':
         return Icons.shield_outlined;
@@ -369,6 +372,7 @@ class _ParentNotificationsScreenState
       return 'Push: submitted (delivery unconfirmed)';
     }
 
+    if (status == 'not_requested') return '$channel: Not requested';
     return '$channel: $status';
   }
 

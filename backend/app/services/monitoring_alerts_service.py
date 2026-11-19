@@ -108,7 +108,8 @@ def _push(*, parent_uid: str, title: str, message: str,
 
 def _create_and_dispatch(*, profile_id: str, parent_uid: str, alert_id: str,
                          kind: str, title: str, body: str, occurred_at: datetime,
-                         details: dict[str, Any], force_sms: bool = False) -> bool:
+                         details: dict[str, Any], force_sms: bool = False,
+                         allow_sms: bool = True) -> bool:
     """Create-only alert claim prevents duplicate sends on repeat requests.
 
     Delivery is best effort: a worker crash between claiming and sending can
@@ -128,8 +129,11 @@ def _create_and_dispatch(*, profile_id: str, parent_uid: str, alert_id: str,
 
     push = _push(parent_uid=parent_uid, title=title, message=body,
                  alert_type=kind, profile_id=profile_id, event_id=alert_id)
-    sms = (_send_sms(parent_uid=parent_uid, message=f"{title}\n{body}")
-           if force_sms or push["status"] != "sent" else {"status": "backup_not_needed"})
+    if not allow_sms:
+        sms = {"status": "not_requested"}
+    else:
+        sms = (_send_sms(parent_uid=parent_uid, message=f"{title}\n{body}")
+               if force_sms or push["status"] != "sent" else {"status": "backup_not_needed"})
     alert_ref.update({"pushStatus": push["status"], "pushMessageId": push.get("messageId", ""),
                       "smsStatus": sms["status"], "smsProviderId": sms.get("providerId", ""),
                       "dispatchedAt": _utcnow()})
@@ -142,6 +146,43 @@ def _timeout_minutes() -> int:
     except ValueError:
         value = 90
     return max(60, min(1440, value))
+
+
+def _report_stale_gps(*, profile_id: str, parent_uid: str,
+                      child: dict[str, Any], now: datetime) -> bool:
+    """Notify once for each GPS timestamp older than one hour."""
+    updated = _utc_datetime(child.get("locationUpdatedAt"))
+
+    if updated is None or now - updated <= timedelta(hours=1):
+        return False
+
+    name = str(child.get("childDisplayName")
+               or child.get("name")
+               or child.get("deviceName")
+               or "Your child")[:100]
+
+    # A fresh GPS update produces a different incident ID.
+    # Repeated sweeps of the same timestamp cannot create duplicates.
+    alert_id = "gps_stale_" + str(int(updated.timestamp() * 1_000_000))
+
+    return _create_and_dispatch(
+        profile_id=profile_id,
+        parent_uid=parent_uid,
+        alert_id=alert_id,
+        kind="gps_location_stale",
+        title="Child's location is outdated",
+        body=(
+            f"GPS location for {name} has not been updated for over an hour. "
+            "The device may be offline or location services may be disabled."
+        ),
+        occurred_at=updated + timedelta(hours=1),
+        details={
+            "locationUpdatedAt": updated,
+            "deviceName": name,
+            "thresholdMinutes": 60,
+        },
+        allow_sms=False,
+    )
 
 
 def sweep_missing_heartbeats() -> dict[str, int]:
@@ -160,6 +201,14 @@ def sweep_missing_heartbeats() -> dict[str, int]:
         parent_uid = child.get("parentId")
         if not isinstance(parent_uid, str) or not parent_uid:
             continue
+        if _report_stale_gps(
+            profile_id=snapshot.id,
+            parent_uid=parent_uid,
+            child=child,
+            now=now,
+        ):
+            alerted += 1
+
         last_seen = _utc_datetime(child.get("lastSeenAt"))
         if not should_report_missing(last_seen, now, timeout):
             continue
