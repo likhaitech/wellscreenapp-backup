@@ -7,6 +7,7 @@ import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import org.json.JSONArray
 
 // Debug-only tag for the browsing-capture path specifically (not restricted-
@@ -66,6 +67,11 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 val activePackage = rootInActiveWindow?.packageName?.toString()
                 if (!activePackage.isNullOrEmpty() && activePackage != packageName) {
                     checkRestrictedApp(activePackage)
+                }
+                // Split screen and picture-in-picture: a restricted app can be
+                // visible without being the active window.
+                for (visiblePackage in otherVisibleAppPackages(activePackage)) {
+                    checkRestrictedApp(visiblePackage, notInFront = true)
                 }
             } catch (e: Exception) {
                 Log.w("WellScreenLimits", "Foreground limit check failed", e)
@@ -136,7 +142,24 @@ class WellScreenAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun checkRestrictedApp(currentPackage: String) {
+    /**
+     * Packages of other app windows on screen (the second half of split
+     * screen, a picture-in-picture window), excluding the active one and
+     * WellScreen itself.
+     */
+    private fun otherVisibleAppPackages(activePackage: String?): Set<String> {
+        return try {
+            windows
+                .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                .mapNotNull { it.root?.packageName?.toString() }
+                .filter { it.isNotEmpty() && it != activePackage && it != packageName }
+                .toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
+    private fun checkRestrictedApp(currentPackage: String, notInFront: Boolean = false) {
         val permanentlyRestricted = getRestrictedPackages().contains(currentPackage)
         // Keep temporary daily limits completely separate from the existing
         // permanent restrictions; a limited app must remain usable below its
@@ -204,7 +227,21 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 lastBlockTime = now
 
                 try {
-                    openBlockedScreen(currentPackage, timeLimitReached = dailyLimitReached)
+                    if (notInFront) {
+                        // Leave split screen first, otherwise the block screen
+                        // only covers one half. Wait for the home screen before
+                        // showing the block screen so it is not hidden behind it.
+                        performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                        limitPollHandler.postDelayed({
+                            try {
+                                openBlockedScreen(currentPackage, timeLimitReached = dailyLimitReached)
+                            } catch (e: Exception) {
+                                Log.w("WellScreenLimits", "Delayed block screen failed", e)
+                            }
+                        }, 400L)
+                    } else {
+                        openBlockedScreen(currentPackage, timeLimitReached = dailyLimitReached)
+                    }
                     RestrictionLogger.recordOutcome(this, currentPackage, "blocked", now)
                 } catch (_: Exception) {
                     RestrictionLogger.recordOutcome(

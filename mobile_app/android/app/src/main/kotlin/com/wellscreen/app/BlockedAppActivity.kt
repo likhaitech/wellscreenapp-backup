@@ -8,6 +8,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -49,6 +53,7 @@ class BlockedAppActivity : Activity() {
     private val statusExecutor = Executors.newSingleThreadExecutor()
     private val statusCheckInProgress = AtomicBoolean(false)
     private var listeningToPrefs = false
+    private var audioFocusRequest: AudioFocusRequest? = null
 
     private val cacheChangeListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -285,6 +290,7 @@ class BlockedAppActivity : Activity() {
     override fun onStart() {
         super.onStart()
         isShowing = true
+        pauseOtherAudio()
         if (isDailyTimeLimitBlock) {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .registerOnSharedPreferenceChangeListener(cacheChangeListener)
@@ -308,7 +314,53 @@ class BlockedAppActivity : Activity() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(recheckRunnable)
         statusExecutor.shutdownNow()
+        releaseAudioFocus()
         super.onDestroy()
+    }
+
+    /**
+     * Take audio focus so music or video from the blocked app (or one playing
+     * behind it) stops instead of continuing under the block screen.
+     */
+    private fun pauseOtherAudio() {
+        try {
+            val audio = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val request = audioFocusRequest ?: AudioFocusRequest.Builder(
+                    AudioManager.AUDIOFOCUS_GAIN
+                ).setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                ).setOnAudioFocusChangeListener { }.build()
+                audioFocusRequest = request
+                audio.requestAudioFocus(request)
+            } else {
+                @Suppress("DEPRECATION")
+                audio.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN,
+                )
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "Could not pause other audio", error)
+        }
+    }
+
+    private fun releaseAudioFocus() {
+        try {
+            val audio = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { audio.abandonAudioFocusRequest(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                audio.abandonAudioFocus(null)
+            }
+        } catch (_: Exception) {
+            // Nothing else to release.
+        }
     }
 
     private fun checkForGrantedTime() {
