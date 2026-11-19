@@ -760,7 +760,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: AppColors.border),
-        boxShadow: const [BoxShadow(color: Color(0x0D214989), blurRadius: 9)],
+        boxShadow: const [BoxShadow(color: AppColors.shadow, blurRadius: 9)],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

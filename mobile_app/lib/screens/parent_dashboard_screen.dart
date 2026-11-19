@@ -43,8 +43,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
-  static const Color _amberFill = Color(0xFFFDF6EC);
-  static const Color _amberBorder = Color(0xFFFDE9C8);
+  static const Color _amberFill = AppColors.warningBg;
+  static const Color _amberBorder = Color(0xFFF6DDAF);
 
 
   int currentIndex = 0;

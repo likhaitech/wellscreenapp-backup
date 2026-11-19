@@ -288,11 +288,11 @@ class _ParentNotificationsScreenState
     } else if (rawStatus == 'warning') {
       status = 'Warning';
       icon = Icons.warning_amber_rounded;
-      iconColor = const Color(0xFF9A6400);
+      iconColor = AppColors.warning;
     } else if (rawStatus == 'unhealthy') {
       status = 'Danger';
       icon = Icons.error_outline_rounded;
-      iconColor = const Color(0xFFB5252C);
+      iconColor = AppColors.danger;
     }
 
     final syncedAt = child['usageReportUpdatedAt'];
@@ -577,7 +577,7 @@ class _ParentNotificationsScreenState
                   'Firestore read rule and the '
                   'signed-in parent account.',
                   style: TextStyle(
-                    color: Colors.redAccent,
+                    color: AppColors.badge,
                   ),
                 ),
               );
@@ -780,7 +780,7 @@ class _ParentNotificationsScreenState
               'Could not load paired child '
               'devices for security history.',
               style: TextStyle(
-                color: Colors.redAccent,
+                color: AppColors.badge,
               ),
             ),
           );

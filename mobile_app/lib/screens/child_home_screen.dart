@@ -198,10 +198,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   static const Color _hairline = AppColors.border;
   static const Color _emerald = AppColors.success;
   static const Color _emeraldTint = AppColors.successBg;
-  static const Color _amber = Color(0xFFF59E0B);
-  static const Color _amberTint = Color(0xFFFFFBEB);
-  static const Color _coral = Color(0xFFEF4444);
-  static const Color _coralTint = Color(0xFFFEE2E2);
+  static const Color _amber = AppColors.warning;
+  static const Color _amberTint = AppColors.warningBg;
+  static const Color _coral = AppColors.danger;
+  static const Color _coralTint = AppColors.dangerBg;
   static const List<FontFeature> _tabular = [FontFeature.tabularFigures()];
 
   final LocationGeocodingService _geocodingService = LocationGeocodingService();
@@ -1638,15 +1638,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   ? 'Not Verified'
                   : 'Connected';
               final statusColor = loading || loadFailed
-                  ? const Color(0xFFB7791F)
+                  ? AppColors.warning
                   : verified
                   ? AppColors.success
                   : AppColors.danger;
               final statusBackground = loading || loadFailed
-                  ? const Color(0xFFFFF2D6)
+                  ? AppColors.warningBg
                   : verified
                   ? AppColors.successBg
-                  : const Color(0xFFFFE1E1);
+                  : AppColors.dangerBg;
               final heading = verified
                   ? 'Parent Account\nConnected'
                   : loading
@@ -2300,7 +2300,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           Icon(
             Icons.circle,
             size: 8,
-            color: _isOnline ? teal : Colors.redAccent,
+            color: _isOnline ? teal : AppColors.danger,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -2877,8 +2877,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     const palette = <Color>[
       AppColors.primary,
       AppColors.success,
-      Color(0xFFDB2777),
-      Color(0xFFD97706),
+      AppColors.danger,
+      AppColors.warning,
       AppColors.violet,
       AppColors.success,
     ];
@@ -3324,6 +3324,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   List<Widget> _homeTab(Map<String, dynamic> data, bool connected) {
     return [
+      _childGreeting(data, connected),
+      const SizedBox(height: 12),
       if (connected) ...[_monitoringStrip(), const SizedBox(height: 12)],
       _deviceStatusCard(data, connected),
       const SizedBox(height: 14),
@@ -3342,6 +3344,39 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       const SizedBox(height: 14),
       _topAppsCard(),
     ];
+  }
+
+  /// "Hi, Mika" + protection line at the top of Home (design D).
+  Widget _childGreeting(Map<String, dynamic> data, bool connected) {
+    final fullName = (data['fullName'] ??
+            FirebaseAuth.instance.currentUser?.displayName ??
+            '')
+        .toString()
+        .trim();
+    final first = fullName.isEmpty ? '' : fullName.split(RegExp(r'\s+')).first;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            connected ? 'Protection is on' : 'Waiting for your parent',
+            style: const TextStyle(color: _slate, fontSize: 13),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            first.isEmpty ? 'Hi there' : 'Hi, $first',
+            style: const TextStyle(
+              fontFamily: AppFonts.heading,
+              color: _ink,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _deviceStatusCard(Map<String, dynamic> data, bool connected) {
@@ -3574,7 +3609,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       decoration: BoxDecoration(
         color: _amberTint,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFFDE68A)),
+        border: Border.all(color: AppColors.warningBg),
       ),
       child: Row(
         children: [
@@ -3949,7 +3984,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           name: appTitle(rule),
           status: 'Blocked',
           statusBackground: _coralTint,
-          statusForeground: const Color(0xFFDC2626),
+          statusForeground: AppColors.danger,
         ),
       for (final limit in limited)
         _ruleChip(
@@ -4230,8 +4265,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: const Color(0xFFFDF6EC),
-            border: Border.all(color: const Color(0xFFFDE9C8)),
+            color: AppColors.warningBg,
+            border: Border.all(color: AppColors.warningBg),
             borderRadius: BorderRadius.circular(AppRadius.card),
           ),
           child: Row(
@@ -4270,7 +4305,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.ink,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0x66111827),
+                  disabledBackgroundColor: AppColors.textDisabled,
                   disabledForegroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 18,
@@ -4410,7 +4445,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                   }
                                 },
                           style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFDC2626),
+                            backgroundColor: AppColors.danger,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: const StadiumBorder(),
@@ -5122,7 +5157,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                         _pill(
                           label: 'Setup Needed',
                           background: _amberTint,
-                          foreground: const Color(0xFFB45309),
+                          foreground: AppColors.warning,
                         ),
                     ],
                   ),
@@ -5311,7 +5346,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       title: Text(
         title,
         style: TextStyle(
-          color: destructive ? const Color(0xFFDC2626) : _ink,
+          color: destructive ? AppColors.danger : _ink,
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),

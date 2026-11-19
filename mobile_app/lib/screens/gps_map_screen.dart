@@ -354,7 +354,7 @@ class GpsMapPreview extends StatelessWidget {
                         hasLocation
                             ? Icons.location_pin
                             : Icons.location_searching_rounded,
-                        color: hasLocation ? Colors.redAccent : purple,
+                        color: hasLocation ? AppColors.danger : purple,
                         size: hasLocation ? 54 : 42,
                       ),
                     ),

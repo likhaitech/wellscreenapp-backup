@@ -278,7 +278,7 @@ class StatusPill extends StatelessWidget {
       case StatusTone.success:
         return AppColors.success;
       case StatusTone.warning:
-        return const Color(0xFFB45309);
+        return AppColors.warning;
       case StatusTone.danger:
         return AppColors.danger;
       case StatusTone.info:
@@ -399,7 +399,7 @@ class FloatingPillDock extends StatelessWidget {
             border: Border.all(color: AppColors.border),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x1A111827),
+                color: Color(0x1A161A4A),
                 blurRadius: 20,
                 offset: Offset(0, 6),
               ),
