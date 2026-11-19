@@ -11,6 +11,7 @@ import '../theme/app_theme.dart';
 import '../widgets/verify_email_dialog.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'login_screen.dart';
+import '../utils/child_name.dart';
 
 class DevicePairingScreen extends StatefulWidget {
   const DevicePairingScreen({super.key});
@@ -28,7 +29,6 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   static const Color softGreen = AppColors.successBg;
   static const Color softOrange = AppColors.warningBg;
 
-  final childNameController = TextEditingController();
 
   // Detect new successful pairings while the parent is on this screen.
   // The initial server snapshot establishes a baseline, so existing
@@ -158,7 +158,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     );
 
     final childNames = newlyConnected
-        .map((doc) => (doc.data()['name'] ?? 'Child').toString())
+        .map((doc) => childNameOf(doc.data(), fallback: 'Your child'))
         .toList();
 
     // Update before showing dialogs to prevent duplicate confirmations on
@@ -223,7 +223,6 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
 
   bool isGenerating = false;
   String generatedCode = '';
-  String generatedChildName = '';
   String generatedChildProfileId = '';
   DateTime? generatedExpiry;
   final Set<String> _removingProfileIds = {};
@@ -231,7 +230,6 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   @override
   void dispose() {
     _connectionSubscription?.cancel();
-    childNameController.dispose();
     super.dispose();
   }
 
@@ -252,31 +250,26 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
       return;
     }
 
-    final childName = childNameController.text.trim();
-
-    if (childName.isEmpty) {
-      showMessage('Enter the child name first.');
-      return;
-    }
-
     setState(() => isGenerating = true);
 
     try {
       final result = await runWithEmailVerification(
         context,
-        () => PairingApiService().generateCode(childName: childName),
+        // The child's own account Full Name replaces this after pairing
+        // (see childNameOf); the backend still requires a value.
+        () => PairingApiService().generateCode(
+          childName: pairingPlaceholderChildName,
+        ),
       );
 
       if (!mounted) return;
 
       setState(() {
         generatedCode = result.code;
-        generatedChildName = childName;
         generatedChildProfileId = result.childProfileId;
         generatedExpiry = result.expiresAt;
       });
 
-      childNameController.clear();
       showMessage('Pairing code generated.');
     } catch (e) {
       if (!mounted) return;
@@ -341,7 +334,6 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
       setState(() {
         if (generatedChildProfileId == childProfileId) {
           generatedCode = '';
-          generatedChildName = '';
           generatedChildProfileId = '';
           generatedExpiry = null;
         }
@@ -492,15 +484,9 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           _cardTitle('Generate Pairing Code'),
           const SizedBox(height: 6),
           const Text(
-            'Enter the child name and generate a 6-digit code. The '
-            'child enters or scans it on their device.',
+            'Generate a 6-digit code. The child enters or scans it on '
+            'their device, and their account name shows here once paired.',
             style: TextStyle(color: grayText, fontSize: 13, height: 1.35),
-          ),
-          const SizedBox(height: 14),
-          WellScreenField(
-            label: 'Child Name',
-            controller: childNameController,
-            textInputAction: TextInputAction.done,
           ),
           const SizedBox(height: 14),
           AppPillButton(
@@ -527,8 +513,10 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             spacing: 6,
             runSpacing: 6,
             children: [
-              StatusPill(label: generatedChildName, tone: StatusTone.info),
-              const StatusPill(label: 'child'),
+              const StatusPill(
+                label: 'Waiting for child',
+                tone: StatusTone.info,
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -670,7 +658,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   }
 
   Widget _childDeviceCard(String childProfileId, Map<String, dynamic> data) {
-    final name = (data['name'] ?? 'Child Device').toString();
+    final name = childNameOf(data, fallback: 'Child Device');
     final email = (data['childEmail'] ?? 'Not connected yet').toString();
     final connected = isConnected(data);
     final connectedAt = formatTimestamp(data['connectedAt']);

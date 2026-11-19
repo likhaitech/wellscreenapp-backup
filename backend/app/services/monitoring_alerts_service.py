@@ -164,7 +164,7 @@ def sweep_missing_heartbeats() -> dict[str, int]:
         if not should_report_missing(last_seen, now, timeout):
             continue
         assert last_seen is not None
-        name = str(child.get("deviceName") or child.get("name") or "Child's Device")[:100]
+        name = str(child.get("deviceName") or child.get("childDisplayName") or child.get("name") or "Child's Device")[:100]
         last_label = last_seen.strftime("%Y-%m-%d %H:%M UTC")
         title = "WellScreen Security Alert"
         body = (f"{name} has not reported recently. Last seen: {last_label}. "

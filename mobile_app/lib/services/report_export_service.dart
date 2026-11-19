@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
+import '../utils/child_name.dart';
 
 /// Builds a PDF export of a child profile's latest report data (usage,
 /// browsing, location, alerts) and hands it to the platform share sheet so
@@ -33,7 +34,7 @@ class ReportExportService {
     }
 
     final data = snapshot.data() ?? <String, dynamic>{};
-    final childName = (data['name'] ?? 'Child Profile').toString();
+    final childName = childNameOf(data, fallback: 'Child Profile');
     final generatedAt = DateTime.now();
 
     final pdf = pw.Document();

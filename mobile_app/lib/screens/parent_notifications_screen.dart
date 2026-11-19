@@ -6,6 +6,7 @@ import '../widgets/wellscreen_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'chat_notifications_screen.dart';
+import '../utils/child_name.dart';
 
 /// Parent notification center.
 ///
@@ -483,8 +484,7 @@ class _ParentNotificationsScreenState
   }) {
     final name =
         (child['deviceName'] ??
-                child['name'] ??
-                'Child device')
+                childNameOf(child, fallback: 'Child device'))
             .toString();
 
     final oldSms = child['smsAlertLog'];

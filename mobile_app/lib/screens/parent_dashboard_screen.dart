@@ -23,6 +23,7 @@ import '../services/chat_notifications_service.dart';
 import 'profile_settings_screen.dart';
 import 'reports_screen.dart';
 import 'rules/rules_screen.dart';
+import '../utils/child_name.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -696,7 +697,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   Widget _monitoringSecurityAlertCard(Map<String, dynamic> child) {
     final alert = child['monitoringSecurityAlert'] as Map;
-    final name = (alert['deviceName'] ?? child['name'] ?? 'Child device')
+    final name = (alert['deviceName'] ?? childNameOf(child, fallback: 'Child device'))
         .toString();
     final seen = alert['lastSeenAt'];
     return BentoCard(
@@ -760,7 +761,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final reason = emergencyAccess is Map
         ? (emergencyAccess['reason'] ?? '').toString()
         : '';
-    final childName = (child['name'] ?? 'Your child').toString();
+    final childName = childNameOf(child, fallback: 'Your child');
 
     return BentoCard(
       color: _amberFill,
@@ -862,7 +863,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Widget _deviceProfileCard(Map<String, dynamic>? child) {
-    final childName = (child?['name'] ?? 'Child Profile').toString();
+    final childName = childNameOf(child, fallback: 'Child Profile');
     final childEmail = (child?['childEmail'] ?? 'Pair a child account first')
         .toString();
     final connected = child != null && isChildConnected(child);
