@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../services/location_geocoding_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/location_age.dart';
 import '../widgets/wellscreen_ui.dart';
 
 class GpsMapScreen extends StatefulWidget {
@@ -44,11 +47,25 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
 
   bool _isResolvingAddress = true;
   String? _resolvedPlaceName;
+  Timer? _locationAgeTimer;
 
   @override
   void initState() {
     super.initState();
     _resolveAddress();
+
+    _locationAgeTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) {
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _locationAgeTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -110,6 +127,12 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
   @override
   Widget build(BuildContext context) {
     final locationPoint = LatLng(widget.latitude, widget.longitude);
+
+    final locationWarning = locationAgeWarning(
+      hasLocation: widget.hasLocation,
+      updatedAt: widget.updatedAt,
+      now: DateTime.now(),
+    );
     final latLabel =
         '${widget.latitude.abs().toStringAsFixed(4)}\u00B0 '
         '${widget.latitude >= 0 ? 'N' : 'S'}';
@@ -213,6 +236,24 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                               fontSize: 12,
                             ),
                           ),
+                          if (widget.hasLocation && locationWarning != null) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF7ED),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                locationWarning,
+                                style: const TextStyle(
+                                  color: Color(0xFF92400E),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
