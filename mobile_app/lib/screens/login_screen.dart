@@ -198,19 +198,23 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _logoHeader() {
-    return const WellScreenBrandHeader();
+    return const WellScreenBrandHeader(
+      title: 'Welcome back',
+      tagline: 'Log in to keep your family\u2019s screen time healthy.',
+    );
   }
 
   Widget _loginCard() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        BentoCard(
-          child: Column(
+        Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               WellScreenField(
-                label: 'Email Address',
+                label: 'Email address',
+                hintText: 'you@example.com',
+                prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
                 controller: emailController,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
@@ -218,6 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 14),
               WellScreenField(
                 label: 'Password',
+                prefixIcon: const Icon(Icons.key_rounded, size: 20),
                 controller: passwordController,
                 obscureText: obscurePassword,
                 textInputAction: TextInputAction.done,
@@ -248,11 +253,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
             ],
-          ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
         AppPillButton(
-          label: 'Log In',
+          label: 'Log in',
           expand: true,
           loading: isLoading,
           onPressed: loginUser,
@@ -262,7 +266,7 @@ class _LoginScreenState extends State<LoginScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text(
-              'No account yet?',
+              'New here?',
               style: TextStyle(color: grayText, fontSize: 13),
             ),
             TextButton(

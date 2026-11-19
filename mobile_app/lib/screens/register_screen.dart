@@ -188,7 +188,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: selected ? AppColors.primaryLight : AppColors.surface,
               borderRadius: BorderRadius.circular(AppRadius.card),
               border: Border.all(
                 color: selected ? AppColors.primary : AppColors.border,
@@ -253,68 +253,50 @@ class _RegisterScreenState extends State<RegisterScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+          padding: const EdgeInsets.fromLTRB(16, 12, 20, 24),
           children: [
-            const WellScreenBrandHeader(),
-            const SizedBox(height: 28),
-            BentoCard(
-              child: Column(
-                children: [
-                  WellScreenField(
-                    label: 'Full Name',
-                    controller: nameController,
-                    textInputAction: TextInputAction.next,
+            // Design D: title row, role first, then the account fields.
+            Row(
+              children: [
+                IconButton(
+                  tooltip: 'Back',
+                  onPressed: isLoading ? null : () => Navigator.maybePop(context),
+                  icon: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: AppColors.textPrimary,
                   ),
-                  const SizedBox(height: 14),
-                  WellScreenField(
-                    label: 'Email Address',
-                    controller: emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 14),
-                  WellScreenField(
-                    label: 'Password',
-                    controller: passwordController,
-                    obscureText: obscurePassword,
-                    suffixIcon: IconButton(
-                      tooltip: obscurePassword
-                          ? 'Show password'
-                          : 'Hide password',
-                      icon: Icon(
-                        obscurePassword
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        color: AppColors.textSecondary,
-                        size: 20,
-                      ),
-                      onPressed: () {
-                        setState(() => obscurePassword = !obscurePassword);
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    PasswordPolicy.hint,
+                ),
+                const SizedBox(width: 4),
+                const Expanded(
+                  child: Text(
+                    'Create account',
                     style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      height: 1.35,
+                      fontFamily: AppFonts.heading,
+                      color: AppColors.textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
                     ),
                   ),
-                ],
-              ),
+                ),
+                Image.asset(
+                  'assets/icons/wellscreen_icon.png',
+                  width: 36,
+                  height: 36,
+                  semanticLabel: 'WellScreen',
+                ),
+              ],
             ),
             const SizedBox(height: 20),
             const Text(
-              'I am registering as...',
+              'I am a\u2026',
               style: TextStyle(
                 color: AppColors.textPrimary,
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Row(
               children: [
                 _roleCard(
@@ -330,7 +312,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               roleDescription,
               style: const TextStyle(
@@ -339,9 +321,55 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 height: 1.4,
               ),
             ),
+            const SizedBox(height: 18),
+            WellScreenField(
+              label: 'Full name',
+              hintText: 'Juan Dela Cruz',
+              prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
+              controller: nameController,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 14),
+            WellScreenField(
+              label: 'Email address',
+              hintText: 'you@example.com',
+              prefixIcon: const Icon(Icons.mail_outline_rounded, size: 20),
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 14),
+            WellScreenField(
+              label: 'Password',
+              prefixIcon: const Icon(Icons.key_rounded, size: 20),
+              controller: passwordController,
+              obscureText: obscurePassword,
+              suffixIcon: IconButton(
+                tooltip: obscurePassword ? 'Show password' : 'Hide password',
+                icon: Icon(
+                  obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  color: AppColors.textSecondary,
+                  size: 20,
+                ),
+                onPressed: () {
+                  setState(() => obscurePassword = !obscurePassword);
+                },
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              PasswordPolicy.hint,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
             const SizedBox(height: 22),
             AppPillButton(
-              label: 'Create Account',
+              label: 'Create account',
               expand: true,
               loading: isLoading,
               onPressed: registerUser,

@@ -110,18 +110,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: pageBg,
-      appBar: WellScreenAppBar.subPage(
-        title: 'WellScreen Admin',
-        showBack: false,
-        actions: [
-          IconButton(
-            tooltip: 'Logout',
-            onPressed: logout,
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
-      ),
-      body: isChecking
+      body: SafeArea(
+        child: isChecking
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primary),
             )
@@ -129,86 +119,102 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               onRefresh: loadStats,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                 children: [
                   _header(),
                   const SizedBox(height: 16),
                   _statsSection(),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
                   BentoCard(
-                    padding: const EdgeInsets.fromLTRB(0, 14, 0, 4),
+                    padding: const EdgeInsets.symmetric(vertical: 6),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(16, 0, 16, 6),
-                          child: Text(
-                            'Quick Actions',
-                            style: TextStyle(
-                              color: darkText,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
                         _menuCard(
-                          icon: Icons.manage_accounts_outlined,
-                          title: 'Manage Users',
-                          subtitle:
-                              'View, update, deactivate, or delete user accounts.',
+                          icon: Icons.group_outlined,
+                          tint: AppColors.primaryLight,
+                          color: AppColors.primary,
+                          title: 'Manage users',
+                          subtitle: 'Edit, reset password, deactivate',
                           onTap: () => open(const AdminUsersScreen()),
                         ),
-                        const Divider(indent: 52),
                         _menuCard(
-                          icon: Icons.system_update_alt_rounded,
-                          title: 'System Patch',
-                          subtitle: 'Validate and apply a configuration patch.',
+                          icon: Icons.code_rounded,
+                          tint: AppColors.violetBg,
+                          color: AppColors.violet,
+                          title: 'System patch',
+                          subtitle: 'Validate and apply a configuration patch',
                           onTap: () => open(const AdminPatchScreen()),
                         ),
-                        const Divider(indent: 52),
                         _menuCard(
-                          icon: Icons.receipt_long_outlined,
-                          title: 'System Logs',
-                          subtitle: 'Search activity, error, and sync logs.',
+                          icon: Icons.description_outlined,
+                          tint: AppColors.successBg,
+                          color: AppColors.success,
+                          title: 'System logs',
+                          subtitle: 'Activity, errors and sync',
                           onTap: () => open(const AdminLogsScreen()),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 12),
                   _recentActivity(),
                 ],
               ),
             ),
+      ),
     );
   }
 
   Widget _header() {
-    final email = FirebaseAuth.instance.currentUser?.email ?? 'Administrator';
+    final email = FirebaseAuth.instance.currentUser?.email ?? 'admin';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        const Text(
-          'Welcome, Administrator',
-          style: TextStyle(
-            color: darkText,
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'WellScreen Admin',
+                style: TextStyle(
+                  fontFamily: AppFonts.heading,
+                  color: darkText,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Signed in as $email',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: grayText, fontSize: 13),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 2),
-        Text(
-          email,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: grayText, fontSize: 13),
+        IconButton(
+          tooltip: 'Logout',
+          onPressed: logout,
+          icon: const Icon(Icons.logout_rounded, color: grayText),
         ),
-        const SizedBox(height: 8),
-        const StatusPill(
-          label: 'Admin Access',
-          tone: StatusTone.info,
-          icon: Icons.verified_user_outlined,
+        Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: AppColors.primaryLight,
+            shape: BoxShape.circle,
+          ),
+          child: const Text(
+            'AD',
+            style: TextStyle(
+              fontFamily: AppFonts.heading,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ],
     );
@@ -251,62 +257,51 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       children: [
         Row(
           children: [
-            _statTile('Total Users', users.length, Icons.groups_outlined,
-                purple),
-            const SizedBox(width: 12),
-            _statTile('Guardians', guardians, Icons.shield_outlined,
-                AppColors.info),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            _statTile('Children', children, Icons.face_outlined,
-                AppColors.success),
-            const SizedBox(width: 12),
-            _statTile('Deactivated', deactivated, Icons.block_rounded,
+            _statTile('Users', users.length, purple),
+            const SizedBox(width: 10),
+            _statTile('Children', children, AppColors.success),
+            const SizedBox(width: 10),
+            _statTile('Deactivated', deactivated,
                 deactivated > 0 ? AppColors.danger : grayText),
           ],
         ),
-        if (admins > 0) ...[
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '$admins administrator account${admins == 1 ? '' : 's'}',
-              style: const TextStyle(color: grayText),
-            ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            '$guardians guardian${guardians == 1 ? '' : 's'} · '
+            '$admins administrator${admins == 1 ? '' : 's'}',
+            style: const TextStyle(color: grayText, fontSize: 12),
           ),
-        ],
+        ),
       ],
     );
   }
 
-  Widget _statTile(String label, int value, IconData icon, Color color) {
+  Widget _statTile(String label, int value, Color color) {
     return Expanded(
       child: BentoCard(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 10),
             Text(
               '$value',
-              style: const TextStyle(
-                color: darkText,
-                fontSize: 26,
+              style: TextStyle(
+                fontFamily: AppFonts.heading,
+                color: color,
+                fontSize: 24,
                 fontWeight: FontWeight.w800,
                 height: 1.1,
                 fontFeatures: kTabularFigures,
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 4),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: grayText, fontSize: 13),
+              style: const TextStyle(color: grayText, fontSize: 12),
             ),
           ],
         ),
@@ -328,14 +323,24 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AppSectionHeader(
-                icon: Icons.history_rounded,
-                iconColor: purple,
-                title: 'Recent Activity',
-                trailing: TextButton(
-                  onPressed: () => open(const AdminLogsScreen()),
-                  child: const Text('View all'),
-                ),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Recent activity',
+                      style: TextStyle(
+                        fontFamily: AppFonts.heading,
+                        color: darkText,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => open(const AdminLogsScreen()),
+                    child: const Text('View all'),
+                  ),
+                ],
               ),
               if (snapshot.hasError)
                 const Text('Unable to load recent activity.')
@@ -358,33 +363,31 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
     if (ts is Timestamp) {
       final d = ts.toDate().toLocal();
-      when = '${d.month.toString().padLeft(2, '0')}/'
-          '${d.day.toString().padLeft(2, '0')} '
-          '${d.hour.toString().padLeft(2, '0')}:'
-          '${d.minute.toString().padLeft(2, '0')}';
+      final hour = d.hour % 12 == 0 ? 12 : d.hour % 12;
+      when = '${d.month}/${d.day} $hour:'
+          '${d.minute.toString().padLeft(2, '0')} '
+          '${d.hour < 12 ? 'AM' : 'PM'}';
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
       child: Row(
         children: [
-          Icon(
-            isProblem ? Icons.warning_amber_rounded : Icons.check_circle_outline,
-            size: 18,
-            color: isProblem ? AppColors.warning : AppColors.success,
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Text(
               (data['action'] ?? 'Unknown action').toString(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: darkText,
-                fontWeight: FontWeight.w700,
+              style: TextStyle(
+                color: isProblem ? AppColors.danger : darkText,
+                fontSize: 13,
               ),
             ),
           ),
+          const SizedBox(width: 8),
           Text(when, style: const TextStyle(color: grayText, fontSize: 12)),
         ],
       ),
@@ -393,31 +396,56 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
   Widget _menuCard({
     required IconData icon,
+    required Color tint,
+    required Color color,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Icon(icon, color: darkText, size: 22),
-      minLeadingWidth: 22,
-      title: Text(
-        title,
-        style: const TextStyle(
-          color: darkText,
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: tint,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: darkText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: grayText, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: grayText,
+              size: 20,
+            ),
+          ],
         ),
       ),
-      subtitle: Text(
-        subtitle,
-        style: const TextStyle(color: grayText, fontSize: 12),
-      ),
-      trailing: const Icon(
-        Icons.chevron_right_rounded,
-        color: AppColors.textDisabled,
-      ),
-      onTap: onTap,
     );
   }
 }

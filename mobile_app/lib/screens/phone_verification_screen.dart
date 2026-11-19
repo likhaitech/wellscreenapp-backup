@@ -465,6 +465,30 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
+            // Design D header: violet phone icon and why the number matters.
+            Center(
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppColors.violetBg,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.phone_iphone_rounded,
+                  color: AppColors.violet,
+                  size: 32,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Your verified number lets WellScreen send SMS alerts when '
+              'the internet is down.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
             BentoCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -515,7 +539,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                       decoration: InputDecoration(
                         isDense: true,
                         filled: true,
-                        fillColor: AppColors.surfaceMuted,
+                        fillColor: AppColors.surface,
                         labelText: 'Philippine mobile number',
                         floatingLabelBehavior: FloatingLabelBehavior.never,
                         hintText: '+639171234567',
@@ -532,16 +556,16 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                           vertical: 14,
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          borderSide: BorderSide.none,
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppColors.border),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          borderSide: BorderSide.none,
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppColors.border),
                         ),
                         disabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          borderSide: BorderSide.none,
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(color: AppColors.border),
                         ),
                       ),
                     ),

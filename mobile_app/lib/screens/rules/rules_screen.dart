@@ -10,6 +10,7 @@ import '../../services/quick_block_sites.dart';
 import '../../services/site_category_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/wellscreen_ui.dart';
+import '../../widgets/brand_app_icon.dart';
 import 'schedules_card.dart';
 
 class RulesScreen extends StatefulWidget {
@@ -31,6 +32,8 @@ class _RulesScreenState extends State<RulesScreen> {
   String? _websiteError;
 
   bool _loading = true;
+  /// Design D tabs: 0 Apps, 1 Websites, 2 Schedules.
+  int _tab = 0;
   bool _saving = false;
   String? _loadError;
 
@@ -42,6 +45,8 @@ class _RulesScreenState extends State<RulesScreen> {
   /// shown is this phone's own apps.
   bool _usingLocalAppList = false;
   Map<String, AppRule> _rulesByPackage = {};
+  /// Real icons from the child's usage report (see BrandAppIcon).
+  final Map<String, String> _iconByPackage = {};
 
   @override
   void initState() {
@@ -182,6 +187,12 @@ class _RulesScreenState extends State<RulesScreen> {
           children: [
             for (final site in quickBlockSites)
               FilterChip(
+                avatar: BrandAppIcon(
+                  label: site.name,
+                  domain: site.domains.first,
+                  size: 22,
+                ),
+                showCheckmark: false,
                 label: Text(site.name),
                 selected: site.isBlockedIn(_websiteRules.blockedDomains),
                 onSelected: canEdit && !_savingWebsite
@@ -197,172 +208,273 @@ class _RulesScreenState extends State<RulesScreen> {
   Widget _websiteRuleList({
     required String title,
     required List<String> domains,
-    required Color color,
-    required IconData icon,
+    required bool blocked,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              '$title (${domains.length})',
-              style: TextStyle(color: color, fontWeight: FontWeight.w800),
-            ),
-          ],
-        ),
-        if (domains.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
+    final fg = blocked ? AppColors.danger : AppColors.success;
+    final bg = blocked ? AppColors.dangerBg : AppColors.successBg;
+    return BentoCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8, bottom: 6),
             child: Text(
-              'No websites added yet.',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-          )
-        else
-          ...domains.map(
-            (domain) => ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(domain),
-              trailing: IconButton(
-                tooltip: 'Remove custom rule',
-                onPressed: _savingWebsite
-                    ? null
-                    : () => _changeWebsiteRule(domain, null),
-                icon: const Icon(Icons.delete_outline),
+              '$title (${domains.length})',
+              style: const TextStyle(
+                fontFamily: AppFonts.heading,
+                color: AppColors.textPrimary,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
-      ],
+          if (domains.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Text(
+                'No websites added yet.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+              ),
+            )
+          else
+            for (final domain in domains)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                child: Row(
+                  children: [
+                    BrandAppIcon(
+                      label: domain,
+                      domain: domain,
+                      size: 36,
+                      radius: 10,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        domain,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    AppBadge(
+                      label: blocked ? 'Blocked' : 'Allowed',
+                      color: fg,
+                      background: bg,
+                    ),
+                    IconButton(
+                      tooltip: 'Remove $domain',
+                      onPressed: _savingWebsite
+                          ? null
+                          : () => _changeWebsiteRule(domain, null),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: AppColors.textSecondary,
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
     );
   }
 
   Widget _websiteRulesCard() {
     final canEdit =
         !_loadingWebsites && !_savingWebsite && _websiteError == null;
-    return BentoCard(
-      padding: EdgeInsets.zero,
-      child: ExpansionTile(
-        initiallyExpanded: true,
-        shape: const Border(),
-        collapsedShape: const Border(),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        leading: const Icon(Icons.language_rounded, color: AppColors.primary),
-        title: const Text(
-          'Website Rules',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        subtitle: const Text(
-          'Block or allow specific websites.',
-          style: TextStyle(color: AppColors.textSecondary),
-        ),
-        children: [
-          if (_loadingWebsites)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: LinearProgressIndicator(),
-            )
-          else if (_websiteError != null) ...[
+    if (_loadingWebsites) {
+      return const BentoCard(
+        child: LinearProgressIndicator(),
+      );
+    }
+    if (_websiteError != null) {
+      return BentoCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(_websiteError!),
             TextButton(
               onPressed: _loadWebsiteRules,
               child: const Text('Retry'),
             ),
-          ] else ...[
-            const Text(
-              'Rules apply to the website and its subdomains. '
-              'Allowed websites override blocked and automatic category rules.',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _websiteController,
-              enabled: canEdit,
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              decoration: InputDecoration(
-                labelText: 'Website or URL',
-                hintText: 'example.com',
-                prefixIcon: const Icon(Icons.link),
-                floatingLabelBehavior: FloatingLabelBehavior.never,
-                filled: true,
-                fillColor: AppColors.surfaceMuted,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                  borderSide: BorderSide.none,
+          ],
+        ),
+      );
+    }
+    final fieldBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: const BorderSide(color: AppColors.border),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        BentoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Website or URL',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: canEdit
-                        ? () => _changeWebsiteRule(
-                            _websiteController.text,
-                            WebsiteRuleAction.block,
-                          )
-                        : null,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.ink,
+              const SizedBox(height: 6),
+              TextField(
+                controller: _websiteController,
+                enabled: canEdit,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: InputDecoration(
+                  hintText: 'example.com',
+                  filled: true,
+                  fillColor: AppColors.surface,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  border: fieldBorder,
+                  enabledBorder: fieldBorder,
+                  disabledBorder: fieldBorder,
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: AppColors.primary,
+                      width: 1.5,
                     ),
-                    icon: const Icon(Icons.block_rounded),
-                    label: const Text('Block'),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: canEdit
-                        ? () => _changeWebsiteRule(
-                            _websiteController.text,
-                            WebsiteRuleAction.allow,
-                          )
-                        : null,
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('Allow'),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: canEdit
+                          ? () => _changeWebsiteRule(
+                              _websiteController.text,
+                              WebsiteRuleAction.block,
+                            )
+                          : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.danger,
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      icon: const Icon(Icons.lock_outline_rounded, size: 18),
+                      label: const Text('Block'),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: canEdit
+                          ? () => _changeWebsiteRule(
+                              _websiteController.text,
+                              WebsiteRuleAction.allow,
+                            )
+                          : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryLight,
+                        foregroundColor: AppColors.primary,
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      icon: const Icon(Icons.check_rounded, size: 18),
+                      label: const Text('Allow'),
+                    ),
+                  ),
+                ],
+              ),
+              if (_savingWebsite) ...[
+                const SizedBox(height: 10),
+                const LinearProgressIndicator(),
               ],
-            ),
-            const SizedBox(height: 14),
-            _quickBlockSection(canEdit),
-            const SizedBox(height: 8),
-            if (_savingWebsite) const LinearProgressIndicator(),
-            const SizedBox(height: 8),
-            const Text(
-              'Website changes save immediately.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            _websiteRuleList(
-              title: 'Blocked Websites',
-              domains: _websiteRules.blockedDomains,
-              color: AppColors.danger,
-              icon: Icons.block_rounded,
-            ),
-            const Divider(),
-            _websiteRuleList(
-              title: 'Allowed Websites',
-              domains: _websiteRules.allowedDomains,
-              color: AppColors.primary,
-              icon: Icons.check_circle_outline,
-            ),
-          ],
-        ],
-      ),
+              const SizedBox(height: 8),
+              const Text(
+                'Rules cover the site and its subdomains and save '
+                'immediately. Allowed sites override blocked and automatic '
+                'rules.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Automatic harmful-site blocking has no off switch in WellScreen,
+        // so this shows its state instead of a toggle that does nothing.
+        BentoCard(
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.violetBg,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: AppColors.violet,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Harmful sites are blocked automatically',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Harmful categories from the UT1 list, plus on-device AI '
+                      'at 90%+ confidence',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const AppBadge(
+                label: 'Always on',
+                color: AppColors.success,
+                background: AppColors.successBg,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _websiteRuleList(
+          title: 'Blocked websites',
+          domains: _websiteRules.blockedDomains,
+          blocked: true,
+        ),
+        const SizedBox(height: 12),
+        _websiteRuleList(
+          title: 'Allowed websites',
+          domains: _websiteRules.allowedDomains,
+          blocked: false,
+        ),
+      ],
     );
   }
 
@@ -414,6 +526,13 @@ class _RulesScreenState extends State<RulesScreen> {
         if (used is List) {
           for (final app in used) {
             add(app, 'displayName');
+            if (app is Map) {
+              final package = (app['packageName'] ?? '').toString();
+              final icon = app['iconBase64'];
+              if (package.isNotEmpty && icon is String && icon.isNotEmpty) {
+                _iconByPackage[package] = icon;
+              }
+            }
           }
         }
       }
@@ -570,7 +689,7 @@ class _RulesScreenState extends State<RulesScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: WellScreenAppBar.subPage(
-        title: 'App Rules',
+        title: 'Rules',
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -605,7 +724,7 @@ class _RulesScreenState extends State<RulesScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _loading || _loadError != null
+      bottomNavigationBar: _loading || _loadError != null || _tab != 0
           ? null
           : SafeArea(
               top: false,
@@ -639,8 +758,38 @@ class _RulesScreenState extends State<RulesScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                    child: _rulesTabs(),
+                  ),
+                ),
+                if (_tab == 1)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      child: _websiteRulesCard(),
+                    ),
+                  ),
+                if (_tab == 2)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      child: SchedulesCard(),
+                    ),
+                  ),
+                if (_tab == 0) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                     child: Column(
                       children: [
+                        BentoCard(
+                          padding: const EdgeInsets.all(16),
+                          child: _quickBlockSection(
+                            !_loadingWebsites &&
+                                !_savingWebsite &&
+                                _websiteError == null,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
                         TextField(
                           decoration: InputDecoration(
                             isDense: true,
@@ -700,16 +849,12 @@ class _RulesScreenState extends State<RulesScreen> {
                                 count: restrictedRules.length,
                                 label: 'Restricted',
                                 icon: Icons.lock_outline_rounded,
-                                background: const Color(0xFFFECACA),
-                                foreground: const Color(0xFF991B1B),
+                                background: AppColors.dangerBg,
+                                foreground: AppColors.danger,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 14),
-                        const SchedulesCard(),
-                        const SizedBox(height: 14),
-                        _websiteRulesCard(),
                         if (_usingLocalAppList) ...[
                           const SizedBox(height: 12),
                           const Text(
@@ -763,6 +908,7 @@ class _RulesScreenState extends State<RulesScreen> {
 
                           return _AppRuleRow(
                             app: app,
+                            iconBase64: _iconByPackage[app.packageName],
                             monitorEnabled: rule?.monitorEnabled ?? false,
                             restrictEnabled: rule?.restrictEnabled ?? false,
                             onMonitorChanged: (value) {
@@ -776,8 +922,64 @@ class _RulesScreenState extends State<RulesScreen> {
                       ),
                     ),
                   ),
+                ],
               ],
             ),
+    );
+  }
+
+  /// Apps / Websites / Schedules pill tabs (design D).
+  Widget _rulesTabs() {
+    const labels = ['Apps', 'Websites', 'Schedules'];
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: Semantics(
+                selected: _tab == i,
+                button: true,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  onTap: () => setState(() => _tab = i),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _tab == i ? AppColors.surface : Colors.transparent,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      boxShadow: _tab == i
+                          ? const [
+                              BoxShadow(
+                                color: AppColors.shadow,
+                                blurRadius: 6,
+                                offset: Offset(0, 1),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Text(
+                      labels[i],
+                      style: TextStyle(
+                        color: _tab == i
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                        fontWeight: _tab == i ? FontWeight.w700 : FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -885,6 +1087,7 @@ class _PermissionsHeader extends StatelessWidget {
 
 class _AppRuleRow extends StatelessWidget {
   final InstalledAppInfo app;
+  final String? iconBase64;
   final bool monitorEnabled;
   final bool restrictEnabled;
   final ValueChanged<bool> onMonitorChanged;
@@ -892,6 +1095,7 @@ class _AppRuleRow extends StatelessWidget {
 
   const _AppRuleRow({
     required this.app,
+    this.iconBase64,
     required this.monitorEnabled,
     required this.restrictEnabled,
     required this.onMonitorChanged,
@@ -904,22 +1108,11 @@ class _AppRuleRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
       child: Row(
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceMuted,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              app.appName.isNotEmpty ? app.appName[0].toUpperCase() : '?',
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+          BrandAppIcon(
+            label: app.appName,
+            packageName: app.packageName,
+            iconBase64: iconBase64,
+            size: 40,
           ),
           const SizedBox(width: 12),
           Expanded(

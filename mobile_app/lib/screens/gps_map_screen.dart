@@ -164,8 +164,8 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                       CircleMarker(
                         point: locationPoint,
                         radius: 44,
-                        color: const Color(0x332563EB),
-                        borderColor: const Color(0x552563EB),
+                        color: AppColors.primaryA20,
+                        borderColor: AppColors.primaryA33,
                         borderStrokeWidth: 1,
                       ),
                     ],
@@ -200,6 +200,20 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
                 child: Row(
                   children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.location_on_outlined,
+                        color: AppColors.primary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,6 +226,7 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
+                              fontFamily: AppFonts.heading,
                               color: darkText,
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
@@ -241,16 +256,29 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFFF7ED),
-                                borderRadius: BorderRadius.circular(8),
+                                color: AppColors.warningBg,
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              child: Text(
-                                locationWarning,
-                                style: const TextStyle(
-                                  color: Color(0xFF92400E),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(
+                                    Icons.schedule_rounded,
+                                    color: AppColors.warning,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      locationWarning,
+                                      style: const TextStyle(
+                                        color: AppColors.warning,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -259,7 +287,7 @@ class _GpsMapScreenState extends State<GpsMapScreen> {
                     ),
                     const SizedBox(width: 12),
                     Material(
-                      color: AppColors.ink,
+                      color: AppColors.primary,
                       shape: const CircleBorder(),
                       child: IconButton(
                         tooltip: 'Refresh address',
@@ -339,7 +367,7 @@ class GpsMapPreview extends StatelessWidget {
                         hasLocation
                             ? Icons.location_pin
                             : Icons.location_searching_rounded,
-                        color: hasLocation ? Colors.redAccent : purple,
+                        color: hasLocation ? AppColors.danger : purple,
                         size: hasLocation ? 54 : 42,
                       ),
                     ),

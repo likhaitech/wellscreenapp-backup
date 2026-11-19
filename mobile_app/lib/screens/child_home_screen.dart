@@ -45,6 +45,7 @@ import 'parent_child_chat_screen.dart';
 import 'chat_notifications_screen.dart';
 import 'profile_settings_screen.dart';
 import 'qr_scan_screen.dart';
+import '../widgets/brand_app_icon.dart';
 
 /// Thrown by [_ChildHomeScreenState._getCurrentPositionOrThrow] specifically
 /// when Android's device-wide location services (GPS) are off - as opposed
@@ -195,12 +196,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   static const Color _ink = AppColors.textPrimary;
   static const Color _slate = AppColors.textSecondary;
   static const Color _hairline = AppColors.border;
-  static const Color _emerald = Color(0xFF10B981);
-  static const Color _emeraldTint = Color(0xFFECFDF5);
-  static const Color _amber = Color(0xFFF59E0B);
-  static const Color _amberTint = Color(0xFFFFFBEB);
-  static const Color _coral = Color(0xFFEF4444);
-  static const Color _coralTint = Color(0xFFFEE2E2);
+  static const Color _emerald = AppColors.success;
+  static const Color _emeraldTint = AppColors.successBg;
+  static const Color _amber = AppColors.warning;
+  static const Color _amberTint = AppColors.warningBg;
+  static const Color _coral = AppColors.danger;
+  static const Color _coralTint = AppColors.dangerBg;
   static const List<FontFeature> _tabular = [FontFeature.tabularFigures()];
 
   final LocationGeocodingService _geocodingService = LocationGeocodingService();
@@ -1637,15 +1638,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   ? 'Not Verified'
                   : 'Connected';
               final statusColor = loading || loadFailed
-                  ? const Color(0xFFB7791F)
+                  ? AppColors.warning
                   : verified
-                  ? const Color(0xFF05884A)
+                  ? AppColors.success
                   : AppColors.danger;
               final statusBackground = loading || loadFailed
-                  ? const Color(0xFFFFF2D6)
+                  ? AppColors.warningBg
                   : verified
-                  ? const Color(0xFFD0FBE5)
-                  : const Color(0xFFFFE1E1);
+                  ? AppColors.successBg
+                  : AppColors.dangerBg;
               final heading = verified
                   ? 'Parent Account\nConnected'
                   : loading
@@ -1687,7 +1688,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                           CircleAvatar(
                             radius: 49,
                             backgroundColor: verified
-                                ? const Color(0xFFDDF7EB)
+                                ? AppColors.successBg
                                 : statusBackground,
                             child: loading
                                 ? const CircularProgressIndicator(color: purple)
@@ -1726,22 +1727,22 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                             width: double.infinity,
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFECF4FF),
+                              color: AppColors.surfaceMuted,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: const Color(0xFFD2E4FC),
+                                color: AppColors.primaryLight,
                               ),
                             ),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const CircleAvatar(
-                                  backgroundColor: Color(0xFFCCE2FF),
+                                  backgroundColor: AppColors.primaryLight,
                                   radius: 31,
                                   child: Icon(
                                     Icons.person_rounded,
                                     size: 36,
-                                    color: Color(0xFF2563EB),
+                                    color: AppColors.primary,
                                   ),
                                 ),
                                 const SizedBox(width: 13),
@@ -1828,7 +1829,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               onPressed: () =>
                                   Navigator.of(dialogContext).pop(),
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF2563EB),
+                                backgroundColor: AppColors.primary,
                                 padding: const EdgeInsets.symmetric(
                                   vertical: 15,
                                 ),
@@ -2106,93 +2107,142 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     );
   }
 
+  /// "Pair with parent" from the design D mockup: logo, six digit boxes
+  /// (one hidden text field drives them), Pair device, or, Scan QR code.
   Widget _pairingCard() {
-    return _whiteCard(
-      child: Column(
-        children: [
-          const Icon(Icons.link_rounded, color: purple, size: 62),
-          const SizedBox(height: 12),
-          const Text(
-            'Connect to Parent Dashboard',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: darkText,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
+    final code = pairingCodeController.text;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 4),
+        const Text(
+          'Pair with parent',
+          style: TextStyle(
+            fontFamily: AppFonts.heading,
+            color: _ink,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Center(
+          child: Image.asset(
+            'assets/icons/wellscreen_icon.png',
+            width: 90,
+            height: 90,
+            semanticLabel: 'WellScreen',
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Ask your parent for the 6-digit code on their WellScreen app.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _slate, fontSize: 14, height: 1.4),
+        ),
+        const SizedBox(height: 16),
+        Semantics(
+          label: 'Pairing code',
+          textField: true,
+          child: SizedBox(
+            height: 56,
+            child: Stack(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < 6; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Container(
+                        width: 44,
+                        height: 56,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: i == code.length.clamp(0, 5)
+                                ? _brandIndigo
+                                : _hairline,
+                            width: i == code.length.clamp(0, 5) ? 2 : 1,
+                          ),
+                        ),
+                        child: Text(
+                          i < code.length ? code[i] : '',
+                          style: const TextStyle(
+                            fontFamily: AppFonts.heading,
+                            color: _ink,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                // Invisible field on top: taps open the number keyboard and
+                // typed digits fill the boxes.
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0,
+                    child: TextField(
+                      controller: pairingCodeController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      showCursor: false,
+                      enableInteractiveSelection: false,
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        counterText: '',
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Enter the 6-digit pairing code generated from the parent account.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: grayText,
-              height: 1.35,
-              fontWeight: FontWeight.w600,
-            ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 52,
+          child: FilledButton(
+            onPressed: isPairing ? null : pairWithParent,
+            style: FilledButton.styleFrom(backgroundColor: _brandIndigo),
+            child: Text(isPairing ? 'Connecting...' : 'Pair device'),
           ),
-          const SizedBox(height: 18),
-          TextField(
-            controller: pairingCodeController,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 7,
+        ),
+        const SizedBox(height: 14),
+        const Row(
+          children: [
+            Expanded(child: Divider(color: _hairline)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10),
+              child: Text('or', style: TextStyle(color: _slate, fontSize: 12)),
             ),
-            decoration: InputDecoration(
-              counterText: '',
-              hintText: '000000',
-              filled: true,
-              fillColor: pageBg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: purple, width: 2),
-              ),
+            Expanded(child: Divider(color: _hairline)),
+          ],
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 52,
+          child: FilledButton.icon(
+            onPressed: isPairing ? null : scanQrCode,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primaryLight,
+              foregroundColor: _brandIndigo,
             ),
+            icon: const Icon(Icons.photo_camera_outlined),
+            label: const Text('Scan QR code'),
           ),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 54,
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: isPairing ? null : pairWithParent,
-              style: FilledButton.styleFrom(
-                backgroundColor: purple,
-                shape: const StadiumBorder(),
-              ),
-              icon: const Icon(Icons.verified_rounded),
-              label: Text(
-                isPairing ? 'Connecting...' : 'Pair Student Device',
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 50,
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: isPairing ? null : scanQrCode,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: purple,
-                side: const BorderSide(color: purple, width: 1.4),
-                shape: const StadiumBorder(),
-              ),
-              icon: const Icon(Icons.qr_code_scanner_rounded),
-              label: const Text(
-                'Scan QR Code Instead',
-                style: TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'Pairing lets your parent see your screen time, rules and '
+          'location. You can read exactly what they see in Settings.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: _slate, fontSize: 12, height: 1.4),
+        ),
+      ],
     );
   }
 
@@ -2218,7 +2268,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         children: [
           const CircleAvatar(
             radius: 22,
-            backgroundColor: Color(0xFFDBEAFE),
+            backgroundColor: AppColors.primaryLight,
             child: Icon(Icons.bar_chart_rounded, color: purple, size: 24),
           ),
           const SizedBox(width: 12),
@@ -2299,7 +2349,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           Icon(
             Icons.circle,
             size: 8,
-            color: _isOnline ? teal : Colors.redAccent,
+            color: _isOnline ? teal : AppColors.danger,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -2867,17 +2917,19 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         ),
       );
     }
-    return _initialAvatar(name, size);
+    // Not installed (e.g. a restricted app the child never had): show the
+    // app's real website icon, with the letter only as a last resort.
+    return BrandAppIcon(label: name, packageName: packageName, size: size);
   }
 
   Widget _initialAvatar(String name, double size) {
     const palette = <Color>[
-      Color(0xFF2563EB),
-      Color(0xFF0D9488),
-      Color(0xFFDB2777),
-      Color(0xFFD97706),
-      Color(0xFF7C3AED),
-      Color(0xFF059669),
+      AppColors.primary,
+      AppColors.success,
+      AppColors.danger,
+      AppColors.warning,
+      AppColors.violet,
+      AppColors.success,
     ];
     final trimmed = name.trim();
     final letter = trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
@@ -3041,7 +3093,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         border: Border.all(color: _hairline),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0A111827),
+            color: AppColors.shadow,
             blurRadius: 16,
             offset: Offset(0, 4),
           ),
@@ -3062,8 +3114,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           child: Text(
             title,
             style: const TextStyle(
+              fontFamily: AppFonts.heading,
               color: _ink,
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -3320,12 +3373,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   List<Widget> _homeTab(Map<String, dynamic> data, bool connected) {
     return [
+      _childGreeting(data, connected),
+      const SizedBox(height: 12),
       if (connected) ...[_monitoringStrip(), const SizedBox(height: 12)],
       _deviceStatusCard(data, connected),
       const SizedBox(height: 14),
       if (!connected) ...[_pairPromptBanner(), const SizedBox(height: 14)],
       _heroCard(),
       if (connected) ...[
+        const SizedBox(height: 12),
+        _askForTimeButton(),
         const SizedBox(height: 14),
         _activeRulesBento(data),
         const SizedBox(height: 14),
@@ -3336,6 +3393,39 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       const SizedBox(height: 14),
       _topAppsCard(),
     ];
+  }
+
+  /// "Hi, Mika" + protection line at the top of Home (design D).
+  Widget _childGreeting(Map<String, dynamic> data, bool connected) {
+    final fullName = (data['fullName'] ??
+            FirebaseAuth.instance.currentUser?.displayName ??
+            '')
+        .toString()
+        .trim();
+    final first = fullName.isEmpty ? '' : fullName.split(RegExp(r'\s+')).first;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            connected ? 'Protection is on' : 'Waiting for your parent',
+            style: const TextStyle(color: _slate, fontSize: 13),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            first.isEmpty ? 'Hi there' : 'Hi, $first',
+            style: const TextStyle(
+              fontFamily: AppFonts.heading,
+              color: _ink,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _deviceStatusCard(Map<String, dynamic> data, bool connected) {
@@ -3568,7 +3658,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       decoration: BoxDecoration(
         color: _amberTint,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFFDE68A)),
+        border: Border.all(color: AppColors.warningBg),
       ),
       child: Row(
         children: [
@@ -3589,7 +3679,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 SizedBox(height: 2),
                 Text(
                   'Connect this phone to a parent account.',
-                  style: TextStyle(color: Color(0xFF374151), fontSize: 12),
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
                 ),
               ],
             ),
@@ -3670,162 +3760,120 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       );
     }
 
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    // Design D hero: the logo's indigo-to-violet gradient with today's
+    // screen time, the goal bar and the usage-pattern status.
+    final goal = state.screenTimeGoalResult;
+    final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0).toDouble();
+    final hasLimit = state.dailyScreenTimeLimit > Duration.zero;
+    final remaining = goal?.remainingDuration ?? Duration.zero;
+    final footer = !hasLimit
+        ? 'No daily goal set'
+        : (remaining > Duration.zero
+              ? '${_durationLabel(remaining)} left before your goal'
+              : 'You reached your daily goal');
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: AppColors.heroGradient,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: _whiteCard(
-              padding: const EdgeInsets.all(14),
-              child: _heroScreenTime(state),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Today',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  state.viewModel.statusLabel,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              state.viewModel.totalUsageLabel,
+              style: const TextStyle(
+                fontFamily: AppFonts.heading,
+                color: Colors.white,
+                fontSize: 42,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -1,
+                fontFeatures: _tabular,
+              ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _whiteCard(
-              padding: const EdgeInsets.all(14),
-              child: _heroUsagePattern(state),
+          Text(
+            hasLimit
+                ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} daily goal'
+                : 'Screen time today',
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: hasLimit ? progress : 0,
+              minHeight: 10,
+              color: AppColors.teal,
+              backgroundColor: Colors.white.withValues(alpha: 0.25),
             ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            footer,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            state.viewModel.unhealthyAppCountLabel,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ],
       ),
     );
   }
 
-  Widget _heroLabel(String text) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        text,
-        maxLines: 2,
-        style: const TextStyle(
-          color: _ink,
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          height: 1.2,
+  /// Teal "Ask for more time" button under the hero (design D). Opens the
+  /// chat, where the child's access-request form is.
+  Widget _askForTimeButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: FilledButton.icon(
+        onPressed: openFamilyChat,
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.teal,
+          foregroundColor: AppColors.onTeal,
+          shape: const StadiumBorder(),
+          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
         ),
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Ask for more time'),
       ),
-    );
-  }
-
-  Widget _heroScreenTime(UsageDashboardControllerState state) {
-    final goal = state.screenTimeGoalResult;
-    final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0).toDouble();
-    final hasLimit = state.dailyScreenTimeLimit > Duration.zero;
-    final limitLabel = hasLimit
-        ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} daily goal'
-        : 'No daily goal set';
-
-    return Column(
-      children: [
-        _heroLabel('Screen Time Today'),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: 104,
-          height: 104,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox.expand(
-                child: CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: 6,
-                  strokeCap: StrokeCap.round,
-                  backgroundColor: _hairline,
-                  valueColor: const AlwaysStoppedAnimation<Color>(
-                    AppColors.primary,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        state.viewModel.totalUsageLabel,
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          height: 1.1,
-                          fontFeatures: _tabular,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        limitLabel,
-                        style: const TextStyle(
-                          color: _slate,
-                          fontSize: 11,
-                          fontFeatures: _tabular,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _heroUsagePattern(UsageDashboardControllerState state) {
-    final status = state.viewModel.statusLabel;
-
-    Color tint;
-    IconData icon;
-    StatusTone tone;
-    switch (status) {
-      case 'Unhealthy':
-        tint = AppColors.danger;
-        icon = Icons.gpp_maybe_rounded;
-        tone = StatusTone.danger;
-        break;
-      case 'Warning':
-        tint = AppColors.warning;
-        icon = Icons.gpp_maybe_rounded;
-        tone = StatusTone.warning;
-        break;
-      case 'Healthy':
-        tint = AppColors.success;
-        icon = Icons.verified_user_rounded;
-        tone = StatusTone.success;
-        break;
-      default:
-        tint = AppColors.textDisabled;
-        icon = Icons.shield_outlined;
-        tone = StatusTone.neutral;
-    }
-
-    return Column(
-      children: [
-        _heroLabel('Risk Level'),
-        const SizedBox(height: 12),
-        Icon(icon, color: tint, size: 58),
-        const SizedBox(height: 10),
-        StatusPill(label: status, tone: tone),
-        const SizedBox(height: 6),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            state.viewModel.unhealthyAppCountLabel,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: _slate,
-              fontSize: 11,
-              fontFeatures: _tabular,
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -3985,23 +4033,23 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           name: appTitle(rule),
           status: 'Blocked',
           statusBackground: _coralTint,
-          statusForeground: const Color(0xFFDC2626),
+          statusForeground: AppColors.danger,
         ),
       for (final limit in limited)
         _ruleChip(
           packageName: limit.packageName,
           name: limit.appName.trim().isEmpty ? limit.packageName : limit.appName,
           status: _durationLabel(Duration(minutes: limit.limitMinutes)),
-          statusBackground: const Color(0xFFF1F5F9),
-          statusForeground: const Color(0xFF4B5563),
+          statusBackground: AppColors.surfaceMuted,
+          statusForeground: AppColors.textSecondary,
         ),
       for (final rule in monitored)
         _ruleChip(
           packageName: rule.packageName,
           name: appTitle(rule),
           status: 'Monitored',
-          statusBackground: const Color(0xFFDBEAFE),
-          statusForeground: const Color(0xFF2563EB),
+          statusBackground: AppColors.primaryLight,
+          statusForeground: AppColors.primary,
         ),
     ];
   }
@@ -4157,8 +4205,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                       label: _durationLabel(
                                         Duration(minutes: limit.limitMinutes),
                                       ),
-                                      background: const Color(0xFFF1F5F9),
-                                      foreground: const Color(0xFF4B5563),
+                                      background: AppColors.surfaceMuted,
+                                      foreground: AppColors.textSecondary,
                                       fontSize: 12,
                                     ),
                                   ],
@@ -4210,7 +4258,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             decoration: BoxDecoration(
               color: _emeraldTint,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFA7F3D0)),
+              border: Border.all(color: AppColors.successBg),
             ),
             child: Row(
               children: [
@@ -4236,7 +4284,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       Text(
                         'Restrictions are lifted until $hh:$mm.',
                         style: const TextStyle(
-                          color: Color(0xFF374151),
+                          color: AppColors.textPrimary,
                           fontSize: 12,
                           fontFeatures: _tabular,
                         ),
@@ -4266,8 +4314,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: const Color(0xFFFDF6EC),
-            border: Border.all(color: const Color(0xFFFDE9C8)),
+            color: AppColors.warningBg,
+            border: Border.all(color: AppColors.warningBg),
             borderRadius: BorderRadius.circular(AppRadius.card),
           ),
           child: Row(
@@ -4288,7 +4336,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     Text(
                       subtitle,
                       style: const TextStyle(
-                        color: Color(0xFF374151),
+                        color: AppColors.textPrimary,
                         fontSize: 12,
                       ),
                     ),
@@ -4306,7 +4354,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.ink,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: const Color(0x66111827),
+                  disabledBackgroundColor: AppColors.textDisabled,
                   disabledForegroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 18,
@@ -4386,7 +4434,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               selected: selectedPreset == preset,
                               showCheckmark: false,
                               backgroundColor: Colors.white,
-                              selectedColor: const Color(0xFFDBEAFE),
+                              selectedColor: AppColors.primaryLight,
                               side: BorderSide(
                                 color: selectedPreset == preset
                                     ? _brandIndigo
@@ -4394,7 +4442,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               ),
                               labelStyle: TextStyle(
                                 color: selectedPreset == preset
-                                    ? const Color(0xFF2563EB)
+                                    ? AppColors.primary
                                     : _ink,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -4446,7 +4494,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                   }
                                 },
                           style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFDC2626),
+                            backgroundColor: AppColors.danger,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: const StadiumBorder(),
@@ -4647,7 +4695,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         decoration: BoxDecoration(
           color: !hasReading
               ? _hairline
-              : (isToday ? _brandIndigo : const Color(0xFFC7D2FE)),
+              : (isToday ? _brandIndigo : AppColors.track),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
         ),
       ),
@@ -4839,79 +4887,106 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
     return _whiteCard(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: connected ? _emeraldTint : _coralTint,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  connected
-                      ? Icons.location_on_rounded
-                      : Icons.location_off_rounded,
-                  color: connected ? _emerald : _coral,
-                  size: 24,
+              const Expanded(
+                child: Text(
+                  'My location',
+                  style: TextStyle(
+                    fontFamily: AppFonts.heading,
+                    color: _ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'GPS LOCATION',
-                      style: TextStyle(
-                        color: _slate,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      primary,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      secondary,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _slate,
-                        fontSize: 12,
-                        fontFeatures: _tabular,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Share GPS now',
-                onPressed: connected && !isSharingLocation
-                    ? () => shareCurrentLocation(data)
-                    : null,
-                icon: Icon(
-                  isSharingLocation
-                      ? Icons.sync_rounded
-                      : Icons.my_location_rounded,
-                  color: connected ? _brandIndigo : _slate,
-                  size: 26,
-                ),
+              _pill(
+                label: connected ? 'Shared' : 'Not paired',
+                background: connected ? _emeraldTint : AppColors.surfaceMuted,
+                foreground: connected ? _emerald : _slate,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                fontSize: 12,
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceMuted,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: connected ? AppColors.primaryLight : _coralTint,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(
+                    connected
+                        ? Icons.location_on_rounded
+                        : Icons.location_off_rounded,
+                    color: connected ? _brandIndigo : _coral,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        primary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        secondary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _slate,
+                          fontSize: 12,
+                          fontFeatures: _tabular,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              onPressed: connected && !isSharingLocation
+                  ? () => shareCurrentLocation(data)
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primaryLight,
+                foregroundColor: _brandIndigo,
+              ),
+              icon: Icon(
+                isSharingLocation
+                    ? Icons.sync_rounded
+                    : Icons.my_location_rounded,
+                size: 20,
+              ),
+              label: Text(isSharingLocation ? 'Sharing...' : 'Share GPS now'),
+            ),
           ),
           // Passive nudge set by either the manual "Share GPS" button or
           // the periodic background auto-share timer detecting Android's
@@ -4999,37 +5074,57 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         ? (_loadingUsageDashboard ? null : false)
         : usageState.viewModel.hasUsagePermission;
 
+    final steps = <bool?>[
+      connected,
+      connected && _smsPermissionGranted && hasPhoneNumber,
+      usageGranted,
+      _accessibilityEnabled,
+      _batteryUnrestricted,
+      _deviceAdminActive,
+    ];
+    final doneCount = steps.where((d) => d == true).length;
+
     return _whiteCard(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Protection & Setup',
-            style: TextStyle(
-              color: _ink,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Protection & setup',
+                  style: TextStyle(
+                    fontFamily: AppFonts.heading,
+                    color: _ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '$doneCount of ${steps.length} done',
+                style: const TextStyle(color: _slate, fontSize: 12),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           _checklistRow(
             icon: Icons.link_rounded,
-            title: 'Device Pairing',
+            title: 'Device pairing',
             subtitle: connected
                 ? 'Connected to a parent account. Tap to view details.'
                 : 'Not paired yet. Enter the code from the parent account.',
             done: connected,
-            actionLabel: connected ? null : 'Pair Device',
+            actionLabel: connected ? null : 'Pair',
             onAction: connected
                 ? null
                 : () => _scrollToSection(_pairingSectionKey),
             onTap: connected ? showConnectedSuccessDialog : null,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.sms_outlined,
-            title: 'SMS Backup Alerts',
+            title: 'SMS alerts',
             subtitle: smsSubtitle,
             done: connected && _smsPermissionGranted && hasPhoneNumber,
             actionLabel: connected && !_smsPermissionGranted ? 'Enable' : null,
@@ -5037,10 +5132,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 ? _requestSmsPermission
                 : null,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.bar_chart_rounded,
-            title: 'Usage Access',
+            title: 'Usage access',
             subtitle: usageGranted == true
                 ? 'Allowed. Screen time is read from this phone.'
                 : 'Needed to show real screen time and app usage.',
@@ -5050,10 +5144,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 ? () => _usageTrackingService.openUsageAccessSettings()
                 : null,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.accessibility_new_rounded,
-            title: 'Accessibility Service',
+            title: 'Accessibility',
             subtitle: _accessibilityEnabled == true
                 ? 'On. Restricted apps and websites are blocked.'
                 : 'Needed to block restricted apps. Switch WellScreen on in '
@@ -5062,10 +5155,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             actionLabel: _accessibilityEnabled == true ? null : 'Open',
             onAction: _openAccessibilitySettings,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.battery_charging_full_rounded,
-            title: 'Run in Background',
+            title: 'Run in background',
             subtitle: _batteryUnrestricted == true
                 ? 'Allowed. Battery saver will not stop WellScreen.'
                 : 'Set WellScreen to "Not optimized" / "Unrestricted" so '
@@ -5076,17 +5168,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 ? _openBatterySettings
                 : null,
           ),
-          const Divider(height: 1, color: _hairline),
           _checklistRow(
             icon: Icons.shield_outlined,
-            title: 'Uninstall Protection',
+            title: 'Uninstall protection',
             subtitle: _deviceAdminActive == true
                 ? 'On. WellScreen cannot be uninstalled without turning '
                       'this off, and your guardian is told.'
                 : 'Optional. Stops WellScreen from being uninstalled '
                       'without your guardian knowing.',
             done: _deviceAdminActive,
-            actionLabel: _deviceAdminActive == false ? 'Turn On' : null,
+            actionLabel: _deviceAdminActive == false ? 'Turn on' : null,
             onAction: _deviceAdminActive == false
                 ? _requestDeviceAdmin
                 : null,
@@ -5096,8 +5187,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     );
   }
 
-  /// [done]: true = emerald check, false = amber "Setup Needed" badge,
-  /// null = status not known to the app (no badge).
+  /// Mockup checklist row: round status dot (teal check when done, clock
+  /// otherwise), title + subtitle, then "Done" or an action button.
+  /// [done] null = status not known to the app yet.
   Widget _checklistRow({
     required IconData icon,
     required String title,
@@ -5107,62 +5199,46 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     VoidCallback? onAction,
     VoidCallback? onTap,
   }) {
-    final Color iconColor;
-    final Color iconTint;
-    if (done == true) {
-      iconColor = _emerald;
-      iconTint = _emeraldTint;
-    } else if (done == false) {
-      iconColor = _amber;
-      iconTint = _amberTint;
-    } else {
-      iconColor = _slate;
-      iconTint = const Color(0xFFF1F5F9);
-    }
-
+    final isDone = done == true;
     return InkWell(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: _hairline)),
+        ),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: iconTint,
-                borderRadius: BorderRadius.circular(12),
+            Semantics(
+              label: isDone ? 'Done' : 'Not done',
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: isDone ? AppColors.teal : AppColors.primaryLight,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isDone ? Icons.check_rounded : Icons.schedule_rounded,
+                  color: isDone ? AppColors.onTeal : _brandIndigo,
+                  size: 15,
+                ),
               ),
-              child: Icon(icon, color: iconColor, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (done == false)
-                        _pill(
-                          label: 'Setup Needed',
-                          background: _amberTint,
-                          foreground: const Color(0xFFB45309),
-                        ),
-                    ],
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: const TextStyle(
@@ -5184,7 +5260,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   minimumSize: const Size(0, 34),
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: const StadiumBorder(),
                 ),
                 child: Text(
                   actionLabel,
@@ -5194,14 +5269,13 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   ),
                 ),
               )
-            else if (done == true)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Icon(
-                  Icons.check_circle_rounded,
-                  color: _emerald,
-                  size: 22,
-                ),
+            else if (isDone)
+              _pill(
+                label: 'Done',
+                background: _emeraldTint,
+                foreground: _emerald,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                fontSize: 12,
               ),
           ],
         ),
@@ -5225,26 +5299,108 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       );
     }
 
+    final initials = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .take(2)
+        .map((p) => p[0].toUpperCase())
+        .join();
+
     return [
-      _settingsGroup('Account', [
-        _settingsTile(
-          icon: Icons.person_outline_rounded,
-          title: fullName,
-          subtitle: email.isEmpty ? 'Account and profile' : email,
-          onTap: openProfile,
+      // Profile card from the mockup: initials, name, pairing, Child pill.
+      _whiteCard(
+        padding: EdgeInsets.zero,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            onTap: openProfile,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: AppColors.primaryLight,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      initials.isEmpty ? '?' : initials,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.heading,
+                        color: _brandIndigo,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: AppFonts.heading,
+                            color: _ink,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          connected
+                              ? 'Paired with your parent'
+                              : (email.isEmpty ? 'Not paired yet' : email),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: _slate, fontSize: 13),
+                        ),
+                        const SizedBox(height: 6),
+                        _pill(
+                          label: 'Child',
+                          background: _emeraldTint,
+                          foreground: _emerald,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 3,
+                          ),
+                          fontSize: 12,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: _slate,
+                    size: 22,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
+      ),
+      const SizedBox(height: 12),
+      _settingsGroup(null, [
         _settingsTile(
-          icon: Icons.sms_outlined,
-          title: 'Parent Phone Number (SMS Backup)',
+          icon: Icons.phone_outlined,
+          color: AppColors.violet,
+          tint: AppColors.violetBg,
+          title: 'Parent\'s phone number',
           subtitle: hasPhoneNumber
-              ? 'Backup alerts text '
+              ? 'SMS backup alerts go to '
                     '${_maskPhoneNumber(_cachedParentPhoneNumber!)}'
               : 'Not added yet. Your parent sets this in their Profile '
                     'Settings.',
         ),
-      ]),
-      const SizedBox(height: 14),
-      _settingsGroup('App', [
         _settingsTile(
           icon: Icons.notifications_none_rounded,
           title: 'Notifications',
@@ -5257,25 +5413,26 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         if (connected)
           _settingsTile(
             icon: Icons.sync_rounded,
-            title: isSyncingUsage ? 'Syncing...' : 'Sync Usage Now',
+            color: _emerald,
+            tint: _emeraldTint,
+            title: isSyncingUsage ? 'Syncing...' : 'Sync usage now',
             subtitleWidget: _syncStatusIndicator(),
             onTap: isSyncingUsage ? null : () => syncUsageReport(data),
           ),
       ]),
-      const SizedBox(height: 14),
-      _settingsGroup('Privacy', [
-        _settingsTile(
-          icon: Icons.privacy_tip_outlined,
-          title: 'Privacy & Monitoring Notice',
-          subtitle: 'What WellScreen monitors and what it never reads',
-          onTap: _showMonitoringSheet,
-        ),
-      ]),
-      const SizedBox(height: 14),
+      const SizedBox(height: 12),
       _settingsGroup(null, [
         _settingsTile(
+          icon: Icons.visibility_outlined,
+          color: _emerald,
+          tint: _emeraldTint,
+          title: 'Privacy & monitoring notice',
+          subtitle: 'What your parent can see, and what WellScreen never reads',
+          onTap: _showMonitoringSheet,
+        ),
+        _settingsTile(
           icon: Icons.logout_rounded,
-          title: 'Logout',
+          title: 'Log out',
           subtitle: 'Sign out from this WellScreen account',
           destructive: true,
           onTap: _confirmLogout,
@@ -5308,14 +5465,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             borderRadius: BorderRadius.circular(20),
             side: const BorderSide(color: _hairline),
           ),
-          child: Column(
-            children: [
-              for (var i = 0; i < tiles.length; i++) ...[
-                if (i > 0)
-                  const Divider(height: 1, indent: 64, color: _hairline),
-                tiles[i],
-              ],
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(children: tiles),
           ),
         ),
       ],
@@ -5329,8 +5481,10 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     Widget? subtitleWidget,
     VoidCallback? onTap,
     bool destructive = false,
+    Color? color,
+    Color? tint,
   }) {
-    final accent = destructive ? _coral : _brandIndigo;
+    final accent = destructive ? _coral : (color ?? _brandIndigo);
 
     return ListTile(
       onTap: onTap,
@@ -5339,7 +5493,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         width: 38,
         height: 38,
         decoration: BoxDecoration(
-          color: destructive ? _coralTint : const Color(0xFFE0E7FF),
+          color: destructive
+              ? _coralTint
+              : (tint ?? AppColors.primaryLight),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: accent, size: 20),
@@ -5347,9 +5503,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       title: Text(
         title,
         style: TextStyle(
-          color: destructive ? const Color(0xFFDC2626) : _ink,
+          color: destructive ? AppColors.danger : _ink,
           fontSize: 14,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
         ),
       ),
       subtitle:
@@ -5374,7 +5530,7 @@ class _DashedLinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF94A3B8)
+      ..color = AppColors.textDisabled
       ..strokeWidth = 1;
     const dash = 4.0;
     const gap = 4.0;

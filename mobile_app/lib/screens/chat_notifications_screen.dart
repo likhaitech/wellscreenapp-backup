@@ -89,11 +89,11 @@ class ChatNotificationsPanel extends StatelessWidget {
                   clipBehavior: Clip.antiAlias,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(AppRadius.card),
-                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+                    side: const BorderSide(color: AppColors.border),
                   ),
                   child: ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: const Color(0xFFDBEAFE),
+                      backgroundColor: AppColors.primaryLight,
                       child: Icon(
                         _iconFor((doc.data()['type'] ?? '').toString()),
                         color: AppColors.primary,
@@ -177,7 +177,7 @@ class ChatNotificationsScreen extends StatelessWidget {
   const ChatNotificationsScreen({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFFF1F5F9),
+    backgroundColor: AppColors.surfaceMuted,
     appBar: const WellScreenAppBar.subPage(title: 'Notifications'),
     body: ListView(
       padding: EdgeInsets.all(18),

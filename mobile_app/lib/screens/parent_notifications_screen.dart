@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_notifications_screen.dart';
 import '../utils/child_name.dart';
 import '../services/parent_alert_badge_service.dart';
+import '../theme/app_theme.dart';
 
 /// Parent notification center.
 ///
@@ -34,8 +35,8 @@ class ParentNotificationsScreen extends StatefulWidget {
 
 class _ParentNotificationsScreenState
     extends State<ParentNotificationsScreen> {
-  static const Color _primary = Color(0xFF2563EB);
-  static const Color _pageBackground = Color(0xFFFAF9F6);
+  static const Color _primary = AppColors.primary;
+  static const Color _pageBackground = AppColors.background;
 
   final Set<String> _readAlerts = <String>{};
 
@@ -205,6 +206,27 @@ class _ParentNotificationsScreenState
     }
   }
 
+  /// Design D tint per alert type: (background, icon color).
+  (Color, Color) _kindColors(String kind) {
+    switch (kind) {
+      case 'repeated_restricted_app_access':
+      case 'restricted_content_attempt':
+        return (AppColors.dangerBg, AppColors.danger);
+      case 'no_recent_connection':
+      case 'monitoring_permission_disabled':
+      case 'gps_location_stale':
+        return (AppColors.warningBg, AppColors.warning);
+      case 'usage_warning_threshold':
+      case 'usage_high_threshold':
+      case 'unhealthy_usage_pattern':
+      case 'screen_time_limit_exceeded':
+      case 'late_night_usage':
+        return (AppColors.violetBg, AppColors.violet);
+      default:
+        return (AppColors.primaryLight, AppColors.primary);
+    }
+  }
+
   // The child app stores healthy/warning/unhealthy. "Danger" is a parent-side
   // presentation label for the existing unhealthy classification; it does not
   // change the pattern-detection thresholds or logic.
@@ -221,17 +243,17 @@ class _ParentNotificationsScreenState
   }
 
   Widget _severityBadge(String status) {
-    Color foreground = const Color(0xFF6B7280);
-    Color background = const Color(0xFFE5E7EB);
+    Color foreground = AppColors.textSecondary;
+    Color background = AppColors.border;
     if (status == 'Healthy') {
-      foreground = const Color(0xFF116B47);
-      background = const Color(0xFFE2F5EB);
+      foreground = AppColors.success;
+      background = AppColors.successBg;
     } else if (status == 'Warning') {
-      foreground = const Color(0xFF9A6400);
-      background = const Color(0xFFFFF1D4);
+      foreground = AppColors.warning;
+      background = AppColors.warningBg;
     } else if (status == 'Danger') {
-      foreground = const Color(0xFFB5252C);
-      background = const Color(0xFFFDE6E8);
+      foreground = AppColors.danger;
+      background = AppColors.dangerBg;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
@@ -259,19 +281,19 @@ class _ParentNotificationsScreenState
 
     String status = report == null ? 'Awaiting data' : 'Unavailable';
     IconData icon = Icons.help_outline_rounded;
-    Color iconColor = const Color(0xFF6B7280);
+    Color iconColor = AppColors.textSecondary;
     if (rawStatus == 'healthy') {
       status = 'Healthy';
       icon = Icons.verified_user_outlined;
-      iconColor = const Color(0xFF116B47);
+      iconColor = AppColors.success;
     } else if (rawStatus == 'warning') {
       status = 'Warning';
       icon = Icons.warning_amber_rounded;
-      iconColor = const Color(0xFF9A6400);
+      iconColor = AppColors.warning;
     } else if (rawStatus == 'unhealthy') {
       status = 'Danger';
       icon = Icons.error_outline_rounded;
-      iconColor = const Color(0xFFB5252C);
+      iconColor = AppColors.danger;
     }
 
     final syncedAt = child['usageReportUpdatedAt'];
@@ -287,13 +309,13 @@ class _ParentNotificationsScreenState
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
-            backgroundColor: const Color(0xFFFAF9F6),
+            backgroundColor: AppColors.background,
             child: Icon(icon, color: iconColor),
           ),
           const SizedBox(width: 12),
@@ -306,7 +328,7 @@ class _ParentNotificationsScreenState
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF111827),
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 7),
@@ -315,7 +337,7 @@ class _ParentNotificationsScreenState
                 Text(
                   syncLabel,
                   style: const TextStyle(
-                    color: Color(0xFF6B7280),
+                    color: AppColors.textSecondary,
                     fontSize: 12,
                   ),
                 ),
@@ -324,7 +346,7 @@ class _ParentNotificationsScreenState
                   Text(
                     '$count app${count == 1 ? '' : 's'} flagged',
                     style: const TextStyle(
-                      color: Color(0xFF6B7280),
+                      color: AppColors.textSecondary,
                       fontSize: 12,
                     ),
                   ),
@@ -391,14 +413,14 @@ class _ParentNotificationsScreenState
     final read = _readAlerts.contains(key);
 
     return Card(
-      color: Colors.white,
+      color: AppColors.surface,
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(AppRadius.card),
         side: const BorderSide(
-          color: Color(0xFFE5E7EB),
+          color: AppColors.border,
         ),
       ),
       child: ExpansionTile(
@@ -407,12 +429,17 @@ class _ParentNotificationsScreenState
             _markRead(parentUid, key);
           }
         },
-        leading: CircleAvatar(
-          backgroundColor: const Color(0xFFDBEAFE),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: _kindColors(kind).$1,
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Icon(
             _iconForKind(kind),
-            color: _primary,
-            size: 22,
+            color: _kindColors(kind).$2,
+            size: 20,
           ),
         ),
         title: Row(
@@ -422,9 +449,9 @@ class _ParentNotificationsScreenState
                 title,
                 style: TextStyle(
                   fontWeight: read
-                      ? FontWeight.w700
-                      : FontWeight.w900,
-                  color: const Color(0xFF111827),
+                      ? FontWeight.w600
+                      : FontWeight.w700,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ),
@@ -444,7 +471,7 @@ class _ParentNotificationsScreenState
           child: Text(
             _formatTime(occurredAt),
             style: const TextStyle(
-              color: Color(0xFF6B7280),
+              color: AppColors.textSecondary,
               fontSize: 12,
             ),
           ),
@@ -472,7 +499,7 @@ class _ParentNotificationsScreenState
                 ? 'Legacy child-device SMS log'
                 : _deliveryLabel('Push', pushStatus),
             style: const TextStyle(
-              color: Color(0xFF6B7280),
+              color: AppColors.textSecondary,
               fontSize: 12,
             ),
           ),
@@ -482,7 +509,7 @@ class _ParentNotificationsScreenState
                 ? 'SMS: $smsStatus'
                 : _deliveryLabel('SMS', smsStatus),
             style: const TextStyle(
-              color: Color(0xFF6B7280),
+              color: AppColors.textSecondary,
               fontSize: 12,
             ),
           ),
@@ -551,7 +578,7 @@ class _ParentNotificationsScreenState
                   'Firestore read rule and the '
                   'signed-in parent account.',
                   style: TextStyle(
-                    color: Colors.redAccent,
+                    color: AppColors.badge,
                   ),
                 ),
               );
@@ -625,7 +652,7 @@ class _ParentNotificationsScreenState
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF6B7280),
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ),
@@ -683,7 +710,7 @@ class _ParentNotificationsScreenState
                       '(child device)',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF6B7280),
+                        color: AppColors.textSecondary,
                       ),
                     ),
                   ),
@@ -754,7 +781,7 @@ class _ParentNotificationsScreenState
               'Could not load paired child '
               'devices for security history.',
               style: TextStyle(
-                color: Colors.redAccent,
+                color: AppColors.badge,
               ),
             ),
           );
@@ -838,7 +865,7 @@ class _ParentNotificationsScreenState
                     'Security, usage, '
                     'and SMS alert history',
                     style: TextStyle(
-                      color: Color(0xFF6B7280),
+                      color: AppColors.textSecondary,
                       fontSize: 13,
                     ),
                   ),

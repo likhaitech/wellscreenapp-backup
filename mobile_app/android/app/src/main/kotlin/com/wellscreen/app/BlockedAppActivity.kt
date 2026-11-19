@@ -141,9 +141,33 @@ class BlockedAppActivity : Activity() {
         val density = resources.displayMetrics.density
         fun dp(value: Int): Int = (value * density).toInt()
 
-        val ink = Color.parseColor("#111827")
-        val slate = Color.parseColor("#6B7280")
-        val canvas = Color.parseColor("#FAF9F6")
+        // WellScreen Light (design D) palette, same tokens as AppColors.
+        val ink = Color.parseColor("#161A4A")
+        val slate = Color.parseColor("#565B7D")
+        val canvas = Color.parseColor("#F5F6FB")
+        val primary = Color.parseColor("#3438B8")
+        val border = Color.parseColor("#E3E5F2")
+        val surfaceMuted = Color.parseColor("#EEF0FA")
+        // Accent + tint per block kind, matching the mockup's block screens.
+        val (accent, accentTint) = when {
+            isProtectedSettings ->
+                Color.parseColor("#9A5B00") to Color.parseColor("#FDF0D9")
+            isSignInRequired ->
+                primary to Color.parseColor("#E7E8F9")
+            scheduleReason != null ->
+                Color.parseColor("#7024B8") to Color.parseColor("#F0E5FA")
+            else ->
+                Color.parseColor("#C62F4B") to Color.parseColor("#FBE4E9")
+        }
+        // Outfit ships inside the Flutter assets; fall back to the system bold.
+        val headingFace: Typeface = try {
+            Typeface.createFromAsset(
+                assets,
+                "flutter_assets/assets/fonts/Outfit-Bold.ttf",
+            )
+        } catch (e: Exception) {
+            Typeface.DEFAULT_BOLD
+        }
 
         fun pill(fill: Int): GradientDrawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
@@ -160,14 +184,25 @@ class BlockedAppActivity : Activity() {
             setPadding(dp(24), dp(48), dp(24), dp(48))
         }
 
-        val icon = ImageView(this).apply {
+        val iconImage = ImageView(this).apply {
             if (appIcon != null) {
                 setImageDrawable(appIcon)
             } else {
                 setImageResource(android.R.drawable.ic_lock_lock)
-                setColorFilter(Color.parseColor("#2563EB"))
+                setColorFilter(accent)
             }
-            layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
+            layoutParams = LinearLayout.LayoutParams(dp(56), dp(56))
+        }
+        // 96dp tinted rounded square holding the app icon (or a lock).
+        val icon = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(28).toFloat()
+                setColor(accentTint)
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(96), dp(96))
+            addView(iconImage)
         }
 
         val badge = TextView(this).apply {
@@ -183,13 +218,13 @@ class BlockedAppActivity : Activity() {
             }
             textSize = 12f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.parseColor("#DC2626"))
-            background = pill(Color.parseColor("#FEE2E2"))
-            setPadding(dp(12), dp(4), dp(12), dp(4))
+            setTextColor(accent)
+            background = pill(accentTint)
+            setPadding(dp(14), dp(5), dp(14), dp(5))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(10) }
+            ).apply { topMargin = dp(18) }
         }
 
         val title = TextView(this).apply {
@@ -202,14 +237,14 @@ class BlockedAppActivity : Activity() {
                 blockedDomain != null -> "Website blocked"
                 else -> "$displayName is paused"
             }
-            textSize = 26f
-            setTypeface(typeface, Typeface.BOLD)
+            textSize = 30f
+            typeface = headingFace
             setTextColor(ink)
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(18) }
+            ).apply { topMargin = dp(14) }
         }
 
         val message = TextView(this).apply {
@@ -256,7 +291,7 @@ class BlockedAppActivity : Activity() {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(20).toFloat()
                 setColor(Color.WHITE)
-                setStroke(dp(1), Color.parseColor("#E5E7EB"))
+                setStroke(dp(1), border)
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -266,8 +301,8 @@ class BlockedAppActivity : Activity() {
 
         val cardTitle = TextView(this).apply {
             text = "Emergency Access"
-            textSize = 16f
-            setTypeface(typeface, Typeface.BOLD)
+            textSize = 17f
+            typeface = headingFace
             setTextColor(ink)
         }
 
@@ -285,7 +320,7 @@ class BlockedAppActivity : Activity() {
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            background = pill(ink)
+            background = pill(primary)
             isClickable = true
             isFocusable = true
             layoutParams = LinearLayout.LayoutParams(
@@ -314,9 +349,9 @@ class BlockedAppActivity : Activity() {
             }
             textSize = 15f
             setTypeface(typeface, Typeface.BOLD)
-            setTextColor(ink)
+            setTextColor(primary)
             gravity = Gravity.CENTER
-            background = pill(Color.parseColor("#F1F5F9"))
+            background = pill(surfaceMuted)
             isClickable = true
             isFocusable = true
             layoutParams = LinearLayout.LayoutParams(
@@ -339,7 +374,7 @@ class BlockedAppActivity : Activity() {
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            background = pill(ink)
+            background = pill(primary)
             isClickable = true
             isFocusable = true
             layoutParams = LinearLayout.LayoutParams(

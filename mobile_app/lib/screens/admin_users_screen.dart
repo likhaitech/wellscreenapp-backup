@@ -457,33 +457,80 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 
-  Widget _filterChip(String label, _UserFilter value) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: _filter == value,
-        onSelected: (_) => setState(() => _filter = value),
+  Widget _searchField() {
+    return TextField(
+      controller: _searchController,
+      onChanged: (value) => setState(() => _query = value),
+      decoration: InputDecoration(
+        hintText: 'Search by name or email',
+        prefixIcon: const Icon(Icons.search_rounded),
+        prefixIconColor: grayText,
+        filled: true,
+        fillColor: AppColors.surface,
+        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        ),
       ),
     );
   }
 
-  Widget _userCard(AdminManagedUser user) {
+  (Color, Color) _roleColors(String role) {
+    switch (role) {
+      case 'child':
+        return (AppColors.success, AppColors.successBg);
+      case 'admin':
+        return (AppColors.violet, AppColors.violetBg);
+      default:
+        return (purple, AppColors.primaryLight);
+    }
+  }
+
+  String _initials(String text) {
+    final parts = text
+        .split(RegExp(r'[\s@._-]+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return '?';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts[0].substring(0, 1) + parts[1].substring(0, 1)).toUpperCase();
+  }
+
+  Widget _userCard(AdminManagedUser user, {bool first = false}) {
     final title = user.displayName.isEmpty ? user.email : user.displayName;
-    final initial = title.isEmpty ? '?' : title.substring(0, 1).toUpperCase();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: AppCard(
-        onTap: () => _openDetails(user),
+    final (roleFg, roleBg) = _roleColors(user.role);
+    return InkWell(
+      onTap: () => _openDetails(user),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          border: first
+              ? null
+              : const Border(top: BorderSide(color: AppColors.border)),
+        ),
         child: Row(
           children: [
-            CircleAvatar(
-              backgroundColor: AppColors.primaryLight,
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: AppColors.primaryLight,
+                shape: BoxShape.circle,
+              ),
               child: Text(
-                initial,
+                _initials(user.displayName.isEmpty
+                    ? user.email
+                    : user.displayName),
                 style: const TextStyle(
+                  fontFamily: AppFonts.heading,
                   color: purple,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -498,38 +545,41 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: darkText,
-                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  if (user.displayName.isNotEmpty)
+                  if (user.displayName.isNotEmpty) ...[
+                    const SizedBox(height: 2),
                     Text(
                       user.email,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: grayText),
+                      style: const TextStyle(color: grayText, fontSize: 12),
                     ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      AppBadge(
-                        label: _roleLabel(user.role),
-                        color: purple,
-                        background: AppColors.primaryLight,
-                      ),
-                      if (user.disabled)
-                        const AppBadge(
-                          label: 'Deactivated',
-                          color: AppColors.danger,
-                          background: AppColors.dangerBg,
-                        ),
-                    ],
-                  ),
+                  ],
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: grayText),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                AppBadge(
+                  label: _roleLabel(user.role),
+                  color: roleFg,
+                  background: roleBg,
+                ),
+                if (user.disabled) ...[
+                  const SizedBox(height: 4),
+                  const AppBadge(
+                    label: 'Deactivated',
+                    color: AppColors.danger,
+                    background: AppColors.dangerBg,
+                  ),
+                ],
+              ],
+            ),
           ],
         ),
       ),
@@ -542,7 +592,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: WellScreenAppBar.subPage(
-        title: 'Manage Users',
+        title: 'Manage users',
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -570,34 +620,24 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (value) => setState(() => _query = value),
-                    decoration: InputDecoration(
-                      hintText: 'Search by name or email',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
+                  child: _searchField(),
                 ),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
+                Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      _filterChip('All (${_users.length})', _UserFilter.all),
-                      _filterChip('Guardians', _UserFilter.guardians),
-                      _filterChip('Children', _UserFilter.children),
-                      _filterChip('Admins', _UserFilter.admins),
-                      _filterChip('Deactivated', _UserFilter.deactivated),
+                  child: WellScreenPillTabs(
+                    labels: [
+                      'All (${_users.length})',
+                      'Guardians',
+                      'Children',
+                      'Admins',
+                      'Deactivated',
                     ],
+                    selected: _filter.index,
+                    onChanged: (i) =>
+                        setState(() => _filter = _UserFilter.values[i]),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Expanded(
                   child: RefreshIndicator(
                     onRefresh: _load,
@@ -613,11 +653,22 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                               ),
                             ],
                           )
-                        : ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                            itemCount: visible.length,
-                            itemBuilder: (context, index) =>
-                                _userCard(visible[index]),
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                            children: [
+                              BentoCard(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 4,
+                                ),
+                                child: Column(
+                                  children: [
+                                    for (var i = 0; i < visible.length; i++)
+                                      _userCard(visible[i], first: i == 0),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                   ),
                 ),

@@ -43,10 +43,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
   static const Color pageBg = AppColors.background;
-  static const Color _amberFill = Color(0xFFFDF6EC);
-  static const Color _amberBorder = Color(0xFFFDE9C8);
-  static const Color softGreen = AppColors.successBg;
-  static const Color softBlue = AppColors.infoBg;
+  static const Color _amberFill = AppColors.warningBg;
+  static const Color _amberBorder = Color(0xFFF6DDAF);
 
 
   int currentIndex = 0;
@@ -503,8 +501,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             }
 
             return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
               children: [
+                _greetingHeader(),
+                const SizedBox(height: 12),
                 _deviceProfileCard(primaryChild),
                 if (_isMonitoringSecurityAlertActive(primaryChild)) ...[
                   const SizedBox(height: 14),
@@ -868,6 +868,39 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     }
   }
 
+  /// "Good evening" + today's date, as in design D.
+  Widget _greetingHeader() {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final now = DateTime.now();
+    final greeting = now.hour < 12
+        ? 'Good morning'
+        : (now.hour < 18 ? 'Good afternoon' : 'Good evening');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]}',
+            style: const TextStyle(color: grayText, fontSize: 13),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            greeting,
+            style: const TextStyle(
+              fontFamily: AppFonts.heading,
+              color: darkText,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _deviceProfileCard(Map<String, dynamic>? child) {
     final childName = childNameOf(child, fallback: 'Child Profile');
     final childEmail = (child?['childEmail'] ?? 'Pair a child account first')
@@ -876,28 +909,51 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
     return BentoCard(
       padding: const EdgeInsets.all(14),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _profileAvatar(connected),
-          const SizedBox(width: 12),
-          Expanded(
-            child: _profileInfo(
-              childName: childName,
-              childEmail: childEmail,
-              connected: connected,
-              presenceText: _childPresenceLabel(child, connected, childEmail),
-              presenceColor: _childPresenceColor(child, connected),
+          Row(
+            children: [
+              _profileAvatar(connected, childName),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _profileInfo(
+                  childName: childName,
+                  childEmail: childEmail,
+                  connected: connected,
+                  presenceText: _childPresenceLabel(child, connected, childEmail),
+                  presenceColor: _childPresenceColor(child, connected),
+                ),
+              ),
+              const SizedBox(width: 10),
+              AppPillButton(
+                label: connected ? 'App Rules' : 'Pair',
+                compact: true,
+                style: AppPillStyle.brand,
+                onPressed: connected
+                    ? openRulesScreen
+                    : () => handleBottomNavTap(2),
+              ),
+            ],
+          ),
+          if (connected) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                child['accessibilityEnabled'] == false
+                    ? const StatusPill(label: 'Blocking off', tone: StatusTone.danger)
+                    : const StatusPill(label: 'Protection on', tone: StatusTone.success),
+                if (child['usageAccessEnabled'] == false)
+                  const StatusPill(label: 'Usage Access off', tone: StatusTone.danger),
+                if (child['smsPermissionGranted'] == false)
+                  const StatusPill(label: 'SMS backup off', tone: StatusTone.warning),
+                if (child['locationEnabled'] == false)
+                  const StatusPill(label: 'Location off', tone: StatusTone.warning),
+              ],
             ),
-          ),
-          const SizedBox(width: 10),
-          AppPillButton(
-            label: connected ? 'App Rules' : 'Pair',
-            compact: true,
-            style: AppPillStyle.brand,
-            onPressed: connected
-                ? openRulesScreen
-                : () => handleBottomNavTap(2),
-          ),
+          ],
         ],
       ),
     );
@@ -967,15 +1023,32 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return online ? AppColors.success : AppColors.danger;
   }
 
-  Widget _profileAvatar(bool connected) {
+  Widget _profileAvatar(bool connected, String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part.characters.first.toUpperCase())
+        .join();
     return CircleAvatar(
       radius: 24,
-      backgroundColor: connected ? softGreen : softBlue,
-      child: Icon(
-        connected ? Icons.person_rounded : Icons.person_add_alt_rounded,
-        color: connected ? AppColors.success : purple,
-        size: 26,
-      ),
+      backgroundColor: AppColors.primaryLight,
+      child: connected && parts.isNotEmpty
+          ? Text(
+              parts,
+              style: const TextStyle(
+                fontFamily: AppFonts.heading,
+                color: AppColors.primary,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            )
+          : const Icon(
+              Icons.person_add_alt_rounded,
+              color: AppColors.primary,
+              size: 26,
+            ),
     );
   }
 
@@ -990,7 +1063,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          connected ? "$childName's Phone" : childName,
+          childName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
@@ -1025,14 +1098,166 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  /// Design D hero: the logo's indigo-to-violet gradient, today's screen
+  /// time against the goal, and the synced safety status. Same data as the
+  /// two cards it replaces (PatternDetectionService status, no made-up
+  /// score).
   Widget _screenTimeAndRiskSection(Map<String, dynamic>? child) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    final hasReport = hasSyncedUsageReport(child);
+    final total = usageTotalDuration(child);
+    const goal = PatternDetectionService.warningTotalUsageLimit;
+    final progress = hasReport
+        ? (total.inMilliseconds / goal.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+    final remaining = total >= goal ? Duration.zero : goal - total;
+    final statusRaw = usagePatternStatus(child);
+    final flagged = usageUnhealthyAppCount(child);
+    final String statusLabel;
+    final IconData statusIcon;
+    if (!hasReport) {
+      statusLabel = 'Awaiting sync';
+      statusIcon = Icons.hourglass_empty_rounded;
+    } else if (statusRaw == 'unhealthy') {
+      statusLabel = 'Unhealthy';
+      statusIcon = Icons.gpp_maybe_rounded;
+    } else if (statusRaw == 'warning') {
+      statusLabel = 'Warning';
+      statusIcon = Icons.gpp_maybe_rounded;
+    } else {
+      statusLabel = 'Healthy';
+      statusIcon = Icons.verified_user_rounded;
+    }
+
+    Widget stat(String label, String value) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: const TextStyle(
+            fontFamily: AppFonts.heading,
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            fontFeatures: kTabularFigures,
+          ),
+        ),
+      ],
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: AppColors.heroGradient,
+        borderRadius: BorderRadius.circular(AppRadius.card + 4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: _screenTimeCard(child)),
-          const SizedBox(width: 12),
-          Expanded(child: _riskCard(child)),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Screen time today',
+                  style: TextStyle(
+                    fontFamily: AppFonts.heading,
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(statusIcon, color: Colors.white, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      statusLabel,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              SizedBox(
+                width: 112,
+                height: 112,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 112,
+                      height: 112,
+                      child: CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 10,
+                        strokeCap: StrokeCap.round,
+                        color: AppColors.teal,
+                        backgroundColor: Colors.white.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          hasReport ? formatDurationLabel(total) : 'No data',
+                          style: const TextStyle(
+                            fontFamily: AppFonts.heading,
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            fontFeatures: kTabularFigures,
+                          ),
+                        ),
+                        Text(
+                          'of ${goal.inHours}h goal',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    stat('Safety status', statusLabel),
+                    const SizedBox(height: 10),
+                    stat('Apps flagged', hasReport ? '$flagged' : '—'),
+                    const SizedBox(height: 10),
+                    stat(
+                      'Left before goal',
+                      hasReport ? formatDurationLabel(remaining) : '—',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1042,154 +1267,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return Text(
       text,
       style: const TextStyle(
+        fontFamily: AppFonts.heading,
         color: darkText,
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: FontWeight.w700,
-      ),
-    );
-  }
-
-  /// Real data synced from the paired child's device via
-  /// [PatternDetectionService] / [UsageTrackingService] (see
-  /// child_home_screen.dart's syncUsageReport). Shows an honest
-  /// "no data yet" state instead of a placeholder number when nothing has
-  /// synced.
-  Widget _screenTimeCard(Map<String, dynamic>? child) {
-    final hasReport = hasSyncedUsageReport(child);
-    final totalDuration = usageTotalDuration(child);
-    const warningLimit = PatternDetectionService.warningTotalUsageLimit;
-    final progress = hasReport
-        ? (totalDuration.inMilliseconds / warningLimit.inMilliseconds).clamp(
-            0.0,
-            1.0,
-          )
-        : 0.0;
-    final hours = totalDuration.inHours;
-    final minutes = totalDuration.inMinutes.remainder(60);
-    final limitHours = warningLimit.inHours;
-    final limitMinutes = warningLimit.inMinutes
-        .remainder(60)
-        .toString()
-        .padLeft(2, '0');
-
-    return BentoCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _cardTitle('Screen Time'),
-          const SizedBox(height: 12),
-          Center(
-            child: SizedBox(
-              width: 112,
-              height: 112,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  SizedBox(
-                    width: 112,
-                    height: 112,
-                    child: CircularProgressIndicator(
-                      value: progress,
-                      strokeWidth: 6,
-                      strokeCap: StrokeCap.round,
-                      color: purple,
-                      backgroundColor: AppColors.border,
-                    ),
-                  ),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        hasReport ? '${hours}h ${minutes}m' : 'No data',
-                        style: TextStyle(
-                          color: hasReport ? darkText : grayText,
-                          fontSize: hasReport ? 20 : 15,
-                          fontWeight: FontWeight.w800,
-                          fontFeatures: kTabularFigures,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'of ${limitHours}h ${limitMinutes}m',
-                        style: const TextStyle(
-                          color: grayText,
-                          fontSize: 12,
-                          fontFeatures: kTabularFigures,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Real pattern status synced from the child device. There is no 0-100
-  /// numeric "risk score" anywhere in the real detection logic
-  /// ([PatternDetectionService] only produces healthy/warning/unhealthy),
-  /// so this intentionally does not fabricate one.
-  Widget _riskCard(Map<String, dynamic>? child) {
-    final hasReport = hasSyncedUsageReport(child);
-    final statusRaw = usagePatternStatus(child);
-    final unhealthyCount = usageUnhealthyAppCount(child);
-
-    Color statusColor;
-    String statusLabel;
-    IconData statusIcon;
-    StatusTone tone;
-
-    if (!hasReport) {
-      statusColor = AppColors.textDisabled;
-      statusLabel = 'No Data';
-      statusIcon = Icons.shield_outlined;
-      tone = StatusTone.neutral;
-    } else if (statusRaw == 'unhealthy') {
-      statusColor = AppColors.danger;
-      statusLabel = 'Unhealthy';
-      statusIcon = Icons.gpp_maybe_rounded;
-      tone = StatusTone.danger;
-    } else if (statusRaw == 'warning') {
-      statusColor = AppColors.warning;
-      statusLabel = 'Warning';
-      statusIcon = Icons.gpp_maybe_rounded;
-      tone = StatusTone.warning;
-    } else {
-      statusColor = AppColors.success;
-      statusLabel = 'Healthy';
-      statusIcon = Icons.verified_user_rounded;
-      tone = StatusTone.success;
-    }
-
-    return BentoCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _cardTitle('Safety Status'),
-          const SizedBox(height: 12),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(statusIcon, color: statusColor, size: 60),
-                const SizedBox(height: 10),
-                StatusPill(label: statusLabel, tone: tone),
-                const SizedBox(height: 6),
-                Text(
-                  hasReport
-                      ? '$unhealthyCount app${unhealthyCount == 1 ? '' : 's'} flagged'
-                      : 'Awaiting sync',
-                  style: const TextStyle(color: grayText, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1316,6 +1397,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         icon: _iconForApp(displayName),
         iconColor: purple,
         iconBase64: _usageIconForPackage(child, packageName),
+        packageName: packageName,
         appName: displayName,
         time: formatDurationLabel(Duration(milliseconds: durationMs)),
         value: ratio.clamp(0.0, 1.0),
@@ -1350,6 +1432,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     required IconData icon,
     required Color iconColor,
     String? iconBase64,
+    String? packageName,
     required String appName,
     required String time,
     required double value,
@@ -1363,6 +1446,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             fallback: icon,
             fallbackColor: iconColor,
             size: 34,
+            label: appName,
+            packageName: packageName,
           ),
           const SizedBox(width: 12),
           Expanded(

@@ -85,10 +85,12 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.shield_rounded,
-                  color: AppColors.primary,
-                  size: 24,
+                // The real WellScreen logo, not a stand-in icon.
+                Image.asset(
+                  'assets/icons/wellscreen_icon.png',
+                  width: 28,
+                  height: 28,
+                  semanticLabel: 'WellScreen',
                 ),
                 const SizedBox(width: 8),
                 Flexible(
@@ -97,6 +99,7 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
+                      fontFamily: AppFonts.heading,
                       color: AppColors.textPrimary,
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
@@ -157,6 +160,7 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
+              fontFamily: AppFonts.heading,
               color: AppColors.textPrimary,
               fontSize: 20,
               fontWeight: FontWeight.w800,
@@ -230,7 +234,7 @@ class BentoCard extends StatelessWidget {
         border: Border.all(color: borderColor),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0A111827),
+            color: AppColors.shadow,
             blurRadius: 16,
             offset: Offset(0, 4),
           ),
@@ -272,9 +276,9 @@ class StatusPill extends StatelessWidget {
   static Color foregroundFor(StatusTone tone) {
     switch (tone) {
       case StatusTone.success:
-        return const Color(0xFF047857);
+        return AppColors.success;
       case StatusTone.warning:
-        return const Color(0xFFB45309);
+        return AppColors.warning;
       case StatusTone.danger:
         return AppColors.danger;
       case StatusTone.info:
@@ -378,7 +382,7 @@ class FloatingPillDock extends StatelessWidget {
   final List<DockItem> items;
   final ValueChanged<int> onTap;
 
-  static const Color _inactive = Color(0xFF4B5563);
+  static const Color _inactive = AppColors.textSecondary;
 
   @override
   Widget build(BuildContext context) {
@@ -395,7 +399,7 @@ class FloatingPillDock extends StatelessWidget {
             border: Border.all(color: AppColors.border),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x1A111827),
+                color: Color(0x1A161A4A),
                 blurRadius: 20,
                 offset: Offset(0, 6),
               ),
@@ -480,20 +484,29 @@ class FloatingPillDock extends StatelessWidget {
 class WellScreenBrandHeader extends StatelessWidget {
   const WellScreenBrandHeader({
     super.key,
+    this.title = 'WellScreen',
     this.tagline = 'Build healthy digital habits together',
   });
 
+  final String title;
   final String tagline;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const Icon(Icons.shield_rounded, color: AppColors.primary, size: 52),
+        Image.asset(
+          'assets/icons/wellscreen_icon.png',
+          width: 84,
+          height: 84,
+          semanticLabel: 'WellScreen',
+        ),
         const SizedBox(height: 8),
-        const Text(
-          'WellScreen',
-          style: TextStyle(
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: AppFonts.heading,
             color: AppColors.textPrimary,
             fontSize: 28,
             fontWeight: FontWeight.w800,
@@ -542,9 +555,10 @@ class WellScreenField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Design D: rounded rectangle with a hairline border on white.
     OutlineInputBorder border(Color color, [double width = 1]) =>
         OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
+          borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: color, width: width),
         );
 
@@ -574,16 +588,17 @@ class WellScreenField extends StatelessWidget {
             counterText: '',
             isDense: true,
             filled: true,
-            fillColor: AppColors.surfaceMuted,
+            fillColor: AppColors.surface,
             prefixIcon: prefixIcon,
+            prefixIconColor: AppColors.textSecondary,
             suffixIcon: suffixIcon,
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 13,
+              horizontal: 16,
+              vertical: 15,
             ),
-            border: border(Colors.transparent),
-            enabledBorder: border(Colors.transparent),
-            disabledBorder: border(Colors.transparent),
+            border: border(AppColors.border),
+            enabledBorder: border(AppColors.border),
+            disabledBorder: border(AppColors.border),
             focusedBorder: border(AppColors.primary, 1.5),
           ),
         ),
@@ -675,4 +690,90 @@ Future<void> showPasswordRequirementsDialog(
       ],
     ),
   );
+}
+
+/// Segmented pill tabs from the design D mockups (Manage users, System
+/// logs). The selected tab is a white pill on the primaryLight track.
+/// With more than four labels the row scrolls instead of squeezing.
+class WellScreenPillTabs extends StatelessWidget {
+  const WellScreenPillTabs({
+    super.key,
+    required this.labels,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scrolls = labels.length > 4;
+    Widget tab(int i) {
+      final on = selected == i;
+      return Semantics(
+        selected: on,
+        button: true,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          onTap: () => onChanged(i),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            height: 38,
+            alignment: Alignment.center,
+            padding: EdgeInsets.symmetric(horizontal: scrolls ? 14 : 4),
+            decoration: BoxDecoration(
+              color: on ? AppColors.surface : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              boxShadow: on
+                  ? const [
+                      BoxShadow(
+                        color: AppColors.shadow,
+                        blurRadius: 6,
+                        offset: Offset(0, 1),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Text(
+              labels[i],
+              maxLines: 1,
+              style: TextStyle(
+                color: on ? AppColors.textPrimary : AppColors.textSecondary,
+                fontWeight: on ? FontWeight.w700 : FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final track = BoxDecoration(
+      color: AppColors.primaryLight,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+    );
+    if (scrolls) {
+      return Container(
+        padding: const EdgeInsets.all(4),
+        decoration: track,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [for (var i = 0; i < labels.length; i++) tab(i)],
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: track,
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++) Expanded(child: tab(i)),
+        ],
+      ),
+    );
+  }
 }

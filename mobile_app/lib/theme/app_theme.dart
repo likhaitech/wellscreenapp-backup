@@ -31,62 +31,78 @@ import 'package:flutter/material.dart';
 class AppColors {
   AppColors._();
 
-  // Brand - "Trust Blue": a confident mid-blue primary (the color most
-  // associated with trust/calm/safety in UX research, and the dominant
-  // choice among parental-control competitors) plus a teal-green accent
-  // that echoes the existing `success` semantic color, so brand and status
-  // reinforce each other instead of competing.
-  static const Color primary = Color(0xFF2563EB);
-  static const Color primaryDark = Color(0xFF1D4ED8);
-  static const Color primaryLight = Color(0xFFDBEAFE);
-  static const Color accent = Color(0xFF14A38A); // teal-green - used sparingly for AI/ML-specific accents, so "AI-detected" content reads as visually distinct from a plain alert
+  // Brand - design D ("WellScreen Light", Nov 2026): the three colors of
+  // the WellScreen logo. Indigo (left figure) is the primary, teal (right
+  // figure) means healthy / OK, violet (end of the heart) marks highlights
+  // and over-goal values. The heart's indigo-to-violet blend is
+  // [heroGradient], used only on the main screen-time cards.
+  static const Color primary = Color(0xFF3438B8);
+  static const Color primaryDark = Color(0xFF262A8F);
+  static const Color primaryLight = Color(0xFFE7E8F9);
+  /// Logo violet - AI/ML accents and "over goal" highlights.
+  static const Color accent = Color(0xFF7024B8);
+  static const Color violet = Color(0xFF7024B8);
+  static const Color violetBg = Color(0xFFF0E5FA);
+  /// Logo teal as a fill (progress, chips). Text on it uses [onTeal].
+  static const Color teal = Color(0xFF52B8A0);
+  static const Color onTeal = Color(0xFF0B2E27);
 
-  // Neutrals
-  static const Color background = Color(0xFFFAF9F6);
+  /// The logo heart's indigo-to-violet blend, for hero cards only.
+  static const LinearGradient heroGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF3438B8), Color(0xFF5A2EBA), Color(0xFF7024B8)],
+  );
+
+  // Neutrals - an indigo-tinted ink and greys so text matches the brand.
+  static const Color background = Color(0xFFF5F6FB);
   static const Color surface = Colors.white;
-  static const Color border = Color(0xFFE5E7EB);
-  static const Color textPrimary = Color(0xFF111827);
-  static const Color textSecondary = Color(0xFF6B7280);
-  static const Color textDisabled = Color(0xFF9CA3AF);
+  static const Color border = Color(0xFFE3E5F2);
+  static const Color textPrimary = Color(0xFF161A4A);
+  static const Color textSecondary = Color(0xFF565B7D);
+  static const Color textDisabled = Color(0xFF9A9DB8);
 
-  // Semantic - consistent across every screen; a "High Risk" label means
-  // the same red everywhere, not a different red per screen. Unchanged by
-  // the re-theme - these were already coordinated with the new primary
-  // (info in particular was already almost this exact blue).
-  static const Color success = Color(0xFF10B981);
-  static const Color successBg = Color(0xFFDCFCE7);
-  static const Color warning = Color(0xFFD97706);
-  static const Color warningBg = Color(0xFFFEF3C7);
-  static const Color danger = Color(0xFFDC2626);
-  static const Color dangerBg = Color(0xFFFEE2E2);
-  static const Color info = Color(0xFF2563EB);
-  static const Color infoBg = Color(0xFFDBEAFE);
+  // Semantic - consistent across every screen. Success is the logo teal,
+  // darkened so it passes 4.5:1 as text on white.
+  static const Color success = Color(0xFF1F7F6B);
+  static const Color successBg = Color(0xFFDDF3EE);
+  static const Color warning = Color(0xFF9A5B00);
+  static const Color warningBg = Color(0xFFFDF0D9);
+  static const Color danger = Color(0xFFC62F4B);
+  static const Color dangerBg = Color(0xFFFBE4E9);
+  static const Color info = primary;
+  static const Color infoBg = primaryLight;
 
   // Detection-source tags (SiteCategoryService's three mechanisms) - one
-  // fixed color per source everywhere it's shown, instead of the ad hoc
-  // string suffixes ("(AI-detected)"/"(keyword match)") previously used
-  // with no visual distinction at all.
+  // fixed color per source everywhere it's shown.
   static const Color sourceLookup = primary;
   static const Color sourceKeyword = warning;
   static const Color sourceMl = accent;
 
-  // Neutral track/background gray - was duplicated as the literal
-  // Color(0xFFD1D5DB) in 6 separate places across 4 files (bottom nav
-  // background, progress-bar/slider track backgrounds) before being
-  // consolidated here. Distinct from `border` (lighter, for card/input
-  // outlines) - this one is for a filled inactive track or subtle section
-  // background that needs a bit more contrast than a hairline border.
-  static const Color track = Color(0xFFD1D5DB);
+  /// Filled inactive track (progress bars, switches off, chart bars).
+  static const Color track = Color(0xFFD3D5EC);
 
-  // Design-spec additions (Nov 2026 redesign).
   /// Primary call-to-action fill ("Approve", "Copy Code", "Export PDF").
-  static const Color ink = Color(0xFF111827);
+  static const Color ink = primary;
   /// Inputs, incoming chat bubbles and soft secondary buttons.
-  static const Color surfaceMuted = Color(0xFFF1F5F9);
+  static const Color surfaceMuted = Color(0xFFEEF0FA);
   /// Outgoing chat bubble and chat composer actions.
-  static const Color messenger = Color(0xFF0084FF);
+  static const Color messenger = primary;
   /// Unread dot on the bottom bar.
-  static const Color badge = Color(0xFFEF4444);
+  static const Color badge = Color(0xFFE0344F);
+
+  /// Translucent primary for focus rings and soft shadows.
+  static const Color primaryA20 = Color(0x333438B8);
+  static const Color primaryA33 = Color(0x553438B8);
+  /// Soft indigo-tinted shadow under cards.
+  static const Color shadow = Color(0x0D161A4A);
+}
+
+/// Bundled fonts (pubspec.yaml): Inter for body text, Outfit for headings.
+class AppFonts {
+  AppFonts._();
+  static const String body = 'Inter';
+  static const String heading = 'Outfit';
 }
 
 /// Spacing scale - use multiples of this instead of literal EdgeInsets
@@ -130,20 +146,23 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.background,
-      fontFamily: 'Roboto',
+      fontFamily: AppFonts.body,
       textTheme: const TextTheme(
         headlineMedium: TextStyle(
+          fontFamily: AppFonts.heading,
           fontSize: 26,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
           height: 1.2,
         ),
         titleLarge: TextStyle(
+          fontFamily: AppFonts.heading,
           fontSize: 19,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
         ),
         titleMedium: TextStyle(
+          fontFamily: AppFonts.heading,
           fontSize: 16,
           fontWeight: FontWeight.w700,
           color: AppColors.textPrimary,
@@ -167,6 +186,7 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleTextStyle: TextStyle(
+          fontFamily: AppFonts.heading,
           color: AppColors.textPrimary,
           fontSize: 19,
           fontWeight: FontWeight.w800,
@@ -252,7 +272,9 @@ class AppTheme {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surfaceMuted,
-        selectedColor: AppColors.primary,
+        // Light indigo, not solid: the label stays dark and readable.
+        selectedColor: AppColors.primaryLight,
+        checkmarkColor: AppColors.primary,
         side: BorderSide.none,
         shape: const StadiumBorder(),
         labelStyle: const TextStyle(
