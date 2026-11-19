@@ -160,7 +160,10 @@ class WellScreenAccessibilityService : AccessibilityService() {
     }
 
     private fun checkRestrictedApp(currentPackage: String, notInFront: Boolean = false) {
-        val permanentlyRestricted = getRestrictedPackages().contains(currentPackage)
+        // A blocked app's Lite version is blocked too (RelatedTargets).
+        val blockingPackage =
+            RelatedTargets.blockingPackageFor(currentPackage, getRestrictedPackages())
+        val permanentlyRestricted = blockingPackage != null
         // Keep temporary daily limits completely separate from the existing
         // permanent restrictions; a limited app must remain usable below its
         // threshold. Fail open if Usage Access is missing/unavailable.
@@ -179,6 +182,12 @@ class WellScreenAccessibilityService : AccessibilityService() {
             // New per-app grants are independent of the global emergency bypass.
             // Keep permanent restrictions intact; expiration is checked natively.
             if (TemporaryAppGrantCache.isActive(this, currentPackage, now)) {
+                return
+            }
+            // A grant for the blocked app also covers its Lite version.
+            if (blockingPackage != null && blockingPackage != currentPackage &&
+                TemporaryAppGrantCache.isActive(this, blockingPackage, now)
+            ) {
                 return
             }
 

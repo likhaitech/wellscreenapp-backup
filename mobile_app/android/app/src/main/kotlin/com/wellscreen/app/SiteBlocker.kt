@@ -126,6 +126,7 @@ object SiteBlocker {
         rules: WebsiteRules,
         dataset: Map<String, String>,
         isAiGambling: (String) -> Boolean,
+        appDomains: Set<String> = emptySet(),
     ): BlockReason? {
         val normalized = normalize(domain)
         if (normalized.isEmpty()) return null
@@ -134,6 +135,10 @@ object SiteBlocker {
         if (matchesDomain(customDomain, rules.allowed)) return null
         if (matchesDomain(customDomain, rules.blocked)) {
             return BlockReason("parent_rule", null)
+        }
+        // Website of an app the guardian blocked (tiktok.com for TikTok).
+        if (matchesDomain(customDomain, appDomains)) {
+            return BlockReason("parent_rule", "blocked_app")
         }
 
         // Adult keywords catch porn sites missing from the bundled list.
@@ -148,9 +153,42 @@ object SiteBlocker {
     }
 
     fun blockReason(context: Context, domain: String): BlockReason? =
-        decide(domain, parentRules(context), loadDataset(context)) {
-            GamblingNameClassifier.isGambling(context, it)
+        decide(
+            domain = domain,
+            rules = parentRules(context),
+            dataset = loadDataset(context),
+            isAiGambling = { GamblingNameClassifier.isGambling(context, it) },
+            appDomains = blockedAppDomains(context),
+        )
+
+    /**
+     * Websites of apps the guardian blocked. An app with an active temporary
+     * grant or an active Emergency Access keeps its website open too.
+     */
+    private fun blockedAppDomains(context: Context): Set<String> {
+        return try {
+            val prefs = context.getSharedPreferences(
+                "FlutterSharedPreferences", Context.MODE_PRIVATE
+            )
+            val now = System.currentTimeMillis()
+            if (prefs.getLong("flutter.emergency_access_granted_until_ms", 0L) > now) {
+                return emptySet()
+            }
+            val raw = prefs.getString("flutter.restricted_packages_json", null)
+                ?: return emptySet()
+            val array = JSONArray(raw)
+            val restricted = HashSet<String>()
+            for (index in 0 until array.length()) {
+                val pkg = array.optString(index).trim()
+                if (pkg.isNotEmpty() && !TemporaryAppGrantCache.isActive(context, pkg, now)) {
+                    restricted.add(pkg)
+                }
+            }
+            RelatedTargets.domainsFor(restricted)
+        } catch (_: Exception) {
+            emptySet()
         }
+    }
 
     fun isBlocked(context: Context, domain: String): Boolean =
         blockReason(context, domain) != null
