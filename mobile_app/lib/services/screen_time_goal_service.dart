@@ -38,7 +38,7 @@ class ScreenTimeGoalService {
         usedDuration: usedDuration,
         remainingDuration: Duration.zero,
         progressPercent: 1,
-        message: 'No valid daily screen-time limit is set.',
+        message: 'No valid daily screen-time goal is set.',
       );
     }
 
@@ -57,7 +57,7 @@ class ScreenTimeGoalService {
         remainingDuration: remainingDuration,
         progressPercent: progressPercent,
         message:
-            'Daily screen-time limit has been reached. Consider enabling focus mode or app blocking.',
+            'Recommended daily screen-time goal reached. Consider a break, focus mode or app limits.',
       );
     }
 
@@ -69,7 +69,7 @@ class ScreenTimeGoalService {
         remainingDuration: remainingDuration,
         progressPercent: progressPercent,
         message:
-            'Screen time is close to the daily limit. A break or cooldown timer is recommended.',
+            'Screen time is close to the daily goal. A break or cooldown timer is recommended.',
       );
     }
 

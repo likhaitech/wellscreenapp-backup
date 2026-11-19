@@ -3628,8 +3628,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0).toDouble();
     final hasLimit = state.dailyScreenTimeLimit > Duration.zero;
     final limitLabel = hasLimit
-        ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} limit'
-        : 'No daily limit set';
+        ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} daily goal'
+        : 'No daily goal set';
 
     return Column(
       children: [

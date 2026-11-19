@@ -46,7 +46,7 @@ void main() {
 
       expect(result.status, ScreenTimeGoalStatus.nearLimit);
       expect(result.isExceeded, false);
-      expect(result.message.contains('close to the daily limit'), true);
+      expect(result.message.contains('close to the daily goal'), true);
     });
 
     test('returns exceeded when usage reaches daily limit', () {
@@ -90,7 +90,7 @@ void main() {
 
       expect(result.status, ScreenTimeGoalStatus.exceeded);
       expect(result.remainingDuration, Duration.zero);
-      expect(result.message, 'No valid daily screen-time limit is set.');
+      expect(result.message, 'No valid daily screen-time goal is set.');
     });
   });
 }

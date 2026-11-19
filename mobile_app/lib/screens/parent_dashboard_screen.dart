@@ -1394,7 +1394,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             children: [
               Expanded(child: _cardTitle('Weekly Screen Time')),
               Text(
-                '${warningLimit.inHours}h Limit',
+                '${warningLimit.inHours}h warning level',
                 style: const TextStyle(color: grayText, fontSize: 12),
               ),
             ],
