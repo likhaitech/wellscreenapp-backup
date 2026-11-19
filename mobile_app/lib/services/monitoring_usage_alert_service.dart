@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
 import '../models/app_usage_summary.dart';
+import '../models/daily_goal.dart';
 import '../models/usage_report.dart';
 import 'pattern_detection_service.dart';
 
@@ -18,6 +19,15 @@ class MonitoringUsageAlertService {
   static String _dayStamp(DateTime date) =>
       '${date.year}${date.month.toString().padLeft(2, '0')}'
       '${date.day.toString().padLeft(2, '0')}';
+
+  /// One alert per threshold per day. Whole hours keep the original IDs
+  /// (usage3h_/usage5h_), so a 3-hour goal behaves exactly as before.
+  static String usageEventId(Duration threshold, String day) {
+    final minutes = threshold.inMinutes;
+    return minutes % 60 == 0
+        ? 'usage${minutes ~/ 60}h_$day'
+        : 'usage${minutes}m_$day';
+  }
 
   /// Apps and websites the child tried to open at least [minAttempts] times
   /// today while they were blocked (from the native restriction log), with
@@ -116,11 +126,22 @@ class MonitoringUsageAlertService {
       });
     }
 
-    if (usage >= PatternDetectionService.warningTotalUsageLimit) {
-      add('usage_warning_threshold', 'usage3h_$day', '3 hours today');
+    // Daily goal reached, then two hours past it (3h goal -> 3h and 5h).
+    final warningAt = PatternDetectionService.warningTotalUsageLimit;
+    final highAt = PatternDetectionService.unhealthyTotalUsageLimit;
+    if (usage >= warningAt) {
+      add(
+        'usage_warning_threshold',
+        usageEventId(warningAt, day),
+        '${DailyGoal.longLabel(warningAt.inMinutes)} today',
+      );
     }
-    if (usage >= PatternDetectionService.unhealthyTotalUsageLimit) {
-      add('usage_high_threshold', 'usage5h_$day', '5 hours today');
+    if (usage >= highAt) {
+      add(
+        'usage_high_threshold',
+        usageEventId(highAt, day),
+        '${DailyGoal.longLabel(highAt.inMinutes)} today',
+      );
     }
     if (lateNightActivity) {
       add('late_night_usage', 'lateusage_$day', '10 PM–5 AM');

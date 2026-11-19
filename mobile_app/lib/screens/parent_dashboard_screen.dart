@@ -4,15 +4,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../models/daily_goal.dart';
 import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
 import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
-import '../services/pattern_detection_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/daily_goal_sheet.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'all_apps_screen.dart';
 import 'device_pairing_screen.dart';
@@ -227,6 +228,23 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return latestUsageReport(data) != null;
   }
 
+  /// When the child's phone last sent its usage report (server time).
+  DateTime? usageReportTime(Map<String, dynamic>? data) {
+    final value = data?['usageReportUpdatedAt'];
+    return value is Timestamp ? value.toDate().toLocal() : null;
+  }
+
+  /// The report is a running total for one day, so after midnight the last
+  /// report belongs to yesterday and must not be shown as today's time.
+  bool usageReportIsFromToday(Map<String, dynamic>? data, {DateTime? now}) {
+    final time = usageReportTime(data);
+    if (time == null) return hasSyncedUsageReport(data); // older profiles
+    final today = now ?? DateTime.now();
+    return time.year == today.year &&
+        time.month == today.month &&
+        time.day == today.day;
+  }
+
   List<Map<String, dynamic>> usageTopApps(Map<String, dynamic>? data) {
     final report = latestUsageReport(data);
     final rawApps = report?['topApps'];
@@ -272,10 +290,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final stored = (report?['patternStatus'] ?? '').toString();
     final total = usageTotalDuration(data);
 
+    // This child's own goal (age group or the guardian's value).
+    final goal = DailyGoal.durationFor(data);
     String fromTotal = 'healthy';
-    if (total >= PatternDetectionService.unhealthyTotalUsageLimit) {
+    if (total >= goal + DailyGoal.highAlertExtra) {
       fromTotal = 'unhealthy';
-    } else if (total >= PatternDetectionService.warningTotalUsageLimit) {
+    } else if (total >= goal) {
       fromTotal = 'warning';
     }
 
@@ -1103,9 +1123,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   /// two cards it replaces (PatternDetectionService status, no made-up
   /// score).
   Widget _screenTimeAndRiskSection(Map<String, dynamic>? child) {
-    final hasReport = hasSyncedUsageReport(child);
-    final total = usageTotalDuration(child);
-    const goal = PatternDetectionService.warningTotalUsageLimit;
+    final hasAnyReport = hasSyncedUsageReport(child);
+    final hasReport = hasAnyReport && usageReportIsFromToday(child);
+    // Yesterday's total is not today's screen time.
+    final total = hasReport ? usageTotalDuration(child) : Duration.zero;
+    final lastReportAt = usageReportTime(child);
+    final goal = DailyGoal.durationFor(child);
     final progress = hasReport
         ? (total.inMilliseconds / goal.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
@@ -1114,7 +1137,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final flagged = usageUnhealthyAppCount(child);
     final String statusLabel;
     final IconData statusIcon;
-    if (!hasReport) {
+    if (hasAnyReport && !hasReport) {
+      statusLabel = 'No report today';
+      statusIcon = Icons.hourglass_empty_rounded;
+    } else if (!hasReport) {
       statusLabel = 'Awaiting sync';
       statusIcon = Icons.hourglass_empty_rounded;
     } else if (statusRaw == 'unhealthy') {
@@ -1229,7 +1255,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                           ),
                         ),
                         Text(
-                          'of ${goal.inHours}h goal',
+                          'of ${DailyGoal.label(goal.inMinutes)} goal',
                           style: const TextStyle(
                             color: Colors.white70,
                             fontSize: 12,
@@ -1258,9 +1284,108 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               ),
             ],
           ),
+          if (hasAnyReport && !hasReport && lastReportAt != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'No report from the child\'s phone yet today. Last report: '
+              '${_shortDateTime(lastReportAt)}.',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ],
+          if (_primaryChildId != null) ...[
+            const SizedBox(height: 14),
+            Material(
+              color: Colors.white.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                onTap: () => _editDailyGoal(child),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.timer_outlined,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Daily goal: ${DailyGoal.summary(child)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Edit',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String _shortDateTime(DateTime t) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final hour = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final minute = t.minute.toString().padLeft(2, '0');
+    return '${months[t.month - 1]} ${t.day}, $hour:$minute '
+        '${t.hour < 12 ? 'AM' : 'PM'}';
+  }
+
+  /// Same goal editor as Devices: age group + the guardian's own value.
+  Future<void> _editDailyGoal(Map<String, dynamic>? child) async {
+    final profileId = _primaryChildId;
+    if (profileId == null) return;
+    final update = await showDailyGoalSheet(
+      context,
+      childName: childNameOf(child, fallback: 'your child'),
+      profile: child,
+    );
+    if (update == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .doc(profileId)
+          .update({
+            ...update,
+            DailyGoal.updatedAtField: FieldValue.serverTimestamp(),
+          })
+          .timeout(const Duration(seconds: 10));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Daily goal saved.')),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not save the daily goal. Check your connection.'),
+        ),
+      );
+    }
   }
 
   Widget _cardTitle(String text) {
@@ -1503,7 +1628,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   /// Days with no reading stay empty rather than being guessed, and the
   /// card falls back to an empty state until the child's phone has synced.
   Widget _weeklyTrendSection(Map<String, dynamic>? child) {
-    const warningLimit = PatternDetectionService.warningTotalUsageLimit;
+    final warningLimit = DailyGoal.durationFor(child);
     const dayLabels = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const maxBarHeight = 110.0;
 
@@ -1530,7 +1655,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       children: [
         Expanded(child: _cardTitle('Weekly Screen Time')),
         Text(
-          '${warningLimit.inHours}h warning level',
+          '${DailyGoal.label(warningLimit.inMinutes)} daily goal',
           style: const TextStyle(color: grayText, fontSize: 12),
         ),
       ],

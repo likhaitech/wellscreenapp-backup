@@ -5,9 +5,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../models/daily_goal.dart';
 import '../services/pairing_api_service.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/daily_goal_sheet.dart';
 import '../widgets/verify_email_dialog.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'login_screen.dart';
@@ -222,6 +224,8 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   }
 
   bool isGenerating = false;
+  ChildAgeGroup? _pairingAgeGroup;
+  final Set<String> _savingGoalProfileIds = {};
   String generatedCode = '';
   String generatedChildProfileId = '';
   DateTime? generatedExpiry;
@@ -242,6 +246,12 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
 
   Future<void> generatePairingCode() async {
     if (isGenerating) return;
+
+    final ageGroup = _pairingAgeGroup;
+    if (ageGroup == null) {
+      showMessage('Choose the child\'s age group first.');
+      return;
+    }
 
     final parentUser = FirebaseAuth.instance.currentUser;
 
@@ -270,13 +280,61 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
         generatedExpiry = result.expiresAt;
       });
 
-      showMessage('Pairing code generated.');
+      // The age group sets this child's recommended daily goal. The
+      // profile already exists (created with the code) and is ours to edit.
+      try {
+        await FirebaseFirestore.instance
+            .collection('child_profiles')
+            .doc(result.childProfileId)
+            .update({
+              ...DailyGoal.ageGroupUpdate(ageGroup),
+              DailyGoal.updatedAtField: FieldValue.serverTimestamp(),
+            })
+            .timeout(const Duration(seconds: 10));
+        showMessage('Pairing code generated.');
+      } catch (_) {
+        showMessage(
+          'Pairing code generated. The age group could not be saved - set '
+          'it later under Daily goal.',
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       showMessage(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) {
         setState(() => isGenerating = false);
+      }
+    }
+  }
+
+  Future<void> _editDailyGoal(
+    String childProfileId,
+    String childName,
+    Map<String, dynamic> data,
+  ) async {
+    final update = await showDailyGoalSheet(
+      context,
+      childName: childName,
+      profile: data,
+    );
+    if (update == null || !mounted) return;
+    setState(() => _savingGoalProfileIds.add(childProfileId));
+    try {
+      await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .doc(childProfileId)
+          .update({
+            ...update,
+            DailyGoal.updatedAtField: FieldValue.serverTimestamp(),
+          })
+          .timeout(const Duration(seconds: 10));
+      showMessage('Daily goal saved.');
+    } catch (_) {
+      showMessage('Could not save the daily goal. Check your connection.');
+    } finally {
+      if (mounted) {
+        setState(() => _savingGoalProfileIds.remove(childProfileId));
       }
     }
   }
@@ -490,13 +548,33 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             style: TextStyle(color: grayText, fontSize: 13, height: 1.35),
           ),
           const SizedBox(height: 14),
+          const Text(
+            'Child\'s age group',
+            style: TextStyle(
+              color: darkText,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          AgeGroupPicker(
+            selected: _pairingAgeGroup,
+            onChanged: (group) => setState(() => _pairingAgeGroup = group),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Sets the recommended daily screen-time goal. You can change it '
+            'later.',
+            style: TextStyle(color: grayText, fontSize: 12),
+          ),
+          const SizedBox(height: 14),
           AppPillButton(
             label: 'Generate Code',
             icon: Icons.qr_code_2_rounded,
             style: AppPillStyle.brand,
             expand: true,
             loading: isGenerating,
-            onPressed: generatePairingCode,
+            onPressed: _pairingAgeGroup == null ? null : generatePairingCode,
           ),
         ],
       ),
@@ -748,6 +826,8 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          _dailyGoalRow(childProfileId, name, data),
           if (connected) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
@@ -774,6 +854,79 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _dailyGoalRow(
+    String childProfileId,
+    String childName,
+    Map<String, dynamic> data,
+  ) {
+    final saving = _savingGoalProfileIds.contains(childProfileId);
+    return Material(
+      color: AppColors.surfaceMuted,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: saving
+            ? null
+            : () => _editDailyGoal(childProfileId, childName, data),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.violetBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.timer_outlined,
+                  color: AppColors.violet,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Daily goal',
+                      style: TextStyle(
+                        color: darkText,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      DailyGoal.summary(data),
+                      style: const TextStyle(color: grayText, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              if (saving)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                const Text(
+                  'Change',
+                  style: TextStyle(
+                    color: purple,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
