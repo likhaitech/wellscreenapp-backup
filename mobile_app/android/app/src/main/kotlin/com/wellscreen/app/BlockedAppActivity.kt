@@ -194,9 +194,9 @@ class BlockedAppActivity : Activity() {
                     "This phone is protected by WellScreen. Sign in to keep " +
                         "using your apps."
                 isProtectedSettings ->
-                    "WellScreen's settings are protected while this phone is " +
-                        "paired. To change them, ask your guardian for " +
-                        "Emergency Access."
+                    "WellScreen's settings and the phone's date and time are " +
+                        "protected while this phone is paired. To change them, " +
+                        "ask your guardian for Emergency Access."
                 blockedDomain != null ->
                     "$blockedDomain is blocked by WellScreen."
                 isDailyTimeLimitBlock ->
