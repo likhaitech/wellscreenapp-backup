@@ -115,112 +115,167 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final changeKeys = _validChanges?.keys.toList() ?? const <String>[];
     return Scaffold(
-      appBar: const WellScreenAppBar.subPage(title: 'System Patch'),
+      backgroundColor: AppColors.background,
+      appBar: const WellScreenAppBar.subPage(title: 'System patch'),
       body: ListView(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const AppSectionHeader(
-                  icon: Icons.system_update_alt_rounded,
-                  iconColor: AppColors.primary,
-                  title: 'Configuration Patch',
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Paste a patch as JSON. It is validated first; an invalid '
-                  'patch is rejected and changes nothing.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                TextField(
-                  controller: _controller,
-                  maxLines: 12,
-                  minLines: 8,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.button),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed:
-                            _busy ? null : () => _run(validateOnly: true),
-                        child: const Text('Validate'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: _busy ? null : _confirmApply,
-                        child: _busy
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('Apply patch'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+          const Text(
+            'Paste a JSON configuration patch. It is checked first; a '
+            'rejected patch changes nothing.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Configuration patch',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _controller,
+            maxLines: 12,
+            minLines: 10,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 13,
+              height: 1.5,
+              color: AppColors.textPrimary,
+            ),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: AppColors.surface,
+              contentPadding: const EdgeInsets.all(14),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                    const BorderSide(color: AppColors.primary, width: 1.5),
+              ),
             ),
           ),
           if (_errors.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const AppBadge(
-                    label: 'PATCH REJECTED - NO CHANGES MADE',
-                    color: AppColors.danger,
-                    background: AppColors.dangerBg,
-                    icon: Icons.error_rounded,
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  for (final err in _errors)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text('- $err'),
-                    ),
-                ],
-              ),
+            const SizedBox(height: 12),
+            _resultCard(
+              icon: Icons.error_outline_rounded,
+              color: AppColors.danger,
+              tint: AppColors.dangerBg,
+              title: 'Patch rejected - no changes made',
+              lines: _errors,
             ),
           ],
           if (_success != null) ...[
-            const SizedBox(height: AppSpacing.md),
-            AppCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppBadge(
-                    label: _success!.toUpperCase(),
-                    color: AppColors.success,
-                    background: AppColors.successBg,
-                    icon: Icons.check_circle_rounded,
-                  ),
-                  if (_validChanges != null) ...[
-                    const SizedBox(height: AppSpacing.sm),
-                    for (final e in _validChanges!.entries)
-                      Text('${e.key}: ${e.value}'),
-                  ],
-                ],
-              ),
+            const SizedBox(height: 12),
+            _resultCard(
+              icon: Icons.check_rounded,
+              color: AppColors.success,
+              tint: AppColors.successBg,
+              title: _success!,
+              lines: [
+                if (changeKeys.isNotEmpty)
+                  '${changeKeys.length} key${changeKeys.length == 1 ? '' : 's'}'
+                      ' will change: ${changeKeys.join(', ')}',
+                for (final e in _validChanges!.entries)
+                  '${e.key}: ${e.value}',
+              ],
             ),
           ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.tonal(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primaryLight,
+                    foregroundColor: AppColors.primary,
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                  onPressed: _busy ? null : () => _run(validateOnly: true),
+                  child: const Text('Validate'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(50),
+                  ),
+                  onPressed: _busy ? null : _confirmApply,
+                  child: _busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Apply patch'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resultCard({
+    required IconData icon,
+    required Color color,
+    required Color tint,
+    required String title,
+    required List<String> lines,
+  }) {
+    return BentoCard(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: tint,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                for (final line in lines)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      line,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );

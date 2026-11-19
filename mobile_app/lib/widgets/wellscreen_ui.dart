@@ -691,3 +691,89 @@ Future<void> showPasswordRequirementsDialog(
     ),
   );
 }
+
+/// Segmented pill tabs from the design D mockups (Manage users, System
+/// logs). The selected tab is a white pill on the primaryLight track.
+/// With more than four labels the row scrolls instead of squeezing.
+class WellScreenPillTabs extends StatelessWidget {
+  const WellScreenPillTabs({
+    super.key,
+    required this.labels,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final scrolls = labels.length > 4;
+    Widget tab(int i) {
+      final on = selected == i;
+      return Semantics(
+        selected: on,
+        button: true,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          onTap: () => onChanged(i),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            height: 38,
+            alignment: Alignment.center,
+            padding: EdgeInsets.symmetric(horizontal: scrolls ? 14 : 4),
+            decoration: BoxDecoration(
+              color: on ? AppColors.surface : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppRadius.pill),
+              boxShadow: on
+                  ? const [
+                      BoxShadow(
+                        color: AppColors.shadow,
+                        blurRadius: 6,
+                        offset: Offset(0, 1),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Text(
+              labels[i],
+              maxLines: 1,
+              style: TextStyle(
+                color: on ? AppColors.textPrimary : AppColors.textSecondary,
+                fontWeight: on ? FontWeight.w700 : FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final track = BoxDecoration(
+      color: AppColors.primaryLight,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+    );
+    if (scrolls) {
+      return Container(
+        padding: const EdgeInsets.all(4),
+        decoration: track,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [for (var i = 0; i < labels.length; i++) tab(i)],
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: track,
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++) Expanded(child: tab(i)),
+        ],
+      ),
+    );
+  }
+}
