@@ -406,9 +406,10 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
+                            fontFamily: AppFonts.heading,
                             color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
                           ),
                         ),
                         const SizedBox(height: 9),
@@ -449,6 +450,23 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                               color: AppColors.primary,
                             ),
                           ),
+                          if (limit.limitMilliseconds > 0) ...[
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                value: (app.usageMs / limit.limitMilliseconds)
+                                    .clamp(0.0, 1.0)
+                                    .toDouble(),
+                                minHeight: 6,
+                                color: limit.limitReached(app.usageMs)
+                                    ? AppColors.violet
+                                    : AppColors.primary,
+                                backgroundColor: AppColors.primaryLight,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                          ],
                           if (limit.limitReached(app.usageMs))
                             const Text(
                               'Limit reached · paused on the child\'s phone until midnight',

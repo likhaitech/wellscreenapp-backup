@@ -478,7 +478,8 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
           margin: const EdgeInsets.symmetric(vertical: 2),
           padding: const EdgeInsets.fromLTRB(14, 9, 14, 7),
           decoration: BoxDecoration(
-            color: own ? _chatBlue : AppColors.surfaceMuted,
+            color: own ? _chatBlue : AppColors.surface,
+            border: own ? null : Border.all(color: AppColors.border),
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(20),
               topRight: const Radius.circular(20),
@@ -894,7 +895,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
               Padding(
                 padding: const EdgeInsets.only(right: 8, bottom: 2),
                 child: Material(
-                  color: _chatBlue,
+                  color: AppColors.teal,
                   shape: const CircleBorder(),
                   child: IconButton(
                     tooltip: 'Request app access',
@@ -908,7 +909,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                     ),
                     icon: const Icon(
                       Icons.add_rounded,
-                      color: Colors.white,
+                      color: AppColors.onTeal,
                       size: 24,
                     ),
                   ),
@@ -1203,7 +1204,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
       );
     }
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         toolbarHeight: 64,
         backgroundColor: Colors.white,
@@ -1238,11 +1239,23 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
             if (name.isEmpty) name = widget.isParent ? 'Child' : 'Parent';
             return Row(
               children: [
-                const CircleAvatar(
+                CircleAvatar(
                   radius: 19,
                   backgroundColor: AppColors.primaryLight,
-                  child: Icon(Icons.person_rounded,
-                    color: AppColors.primary, size: 24),
+                  child: Text(
+                    name
+                        .split(RegExp(r'\s+'))
+                        .where((part) => part.isNotEmpty)
+                        .take(2)
+                        .map((part) => part.characters.first.toUpperCase())
+                        .join(),
+                    style: const TextStyle(
+                      fontFamily: AppFonts.heading,
+                      color: AppColors.primary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(

@@ -32,6 +32,8 @@ class _RulesScreenState extends State<RulesScreen> {
   String? _websiteError;
 
   bool _loading = true;
+  /// Design D tabs: 0 Apps, 1 Websites, 2 Schedules.
+  int _tab = 0;
   bool _saving = false;
   String? _loadError;
 
@@ -347,8 +349,6 @@ class _RulesScreenState extends State<RulesScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            _quickBlockSection(canEdit),
             const SizedBox(height: 8),
             if (_savingWebsite) const LinearProgressIndicator(),
             const SizedBox(height: 8),
@@ -587,7 +587,7 @@ class _RulesScreenState extends State<RulesScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: WellScreenAppBar.subPage(
-        title: 'App Rules',
+        title: 'Rules',
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -622,7 +622,7 @@ class _RulesScreenState extends State<RulesScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _loading || _loadError != null
+      bottomNavigationBar: _loading || _loadError != null || _tab != 0
           ? null
           : SafeArea(
               top: false,
@@ -656,8 +656,38 @@ class _RulesScreenState extends State<RulesScreen> {
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                    child: _rulesTabs(),
+                  ),
+                ),
+                if (_tab == 1)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      child: _websiteRulesCard(),
+                    ),
+                  ),
+                if (_tab == 2)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      child: SchedulesCard(),
+                    ),
+                  ),
+                if (_tab == 0) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                     child: Column(
                       children: [
+                        BentoCard(
+                          padding: const EdgeInsets.all(16),
+                          child: _quickBlockSection(
+                            !_loadingWebsites &&
+                                !_savingWebsite &&
+                                _websiteError == null,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
                         TextField(
                           decoration: InputDecoration(
                             isDense: true,
@@ -723,10 +753,6 @@ class _RulesScreenState extends State<RulesScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 14),
-                        const SchedulesCard(),
-                        const SizedBox(height: 14),
-                        _websiteRulesCard(),
                         if (_usingLocalAppList) ...[
                           const SizedBox(height: 12),
                           const Text(
@@ -794,8 +820,64 @@ class _RulesScreenState extends State<RulesScreen> {
                       ),
                     ),
                   ),
+                ],
               ],
             ),
+    );
+  }
+
+  /// Apps / Websites / Schedules pill tabs (design D).
+  Widget _rulesTabs() {
+    const labels = ['Apps', 'Websites', 'Schedules'];
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.primaryLight,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: Semantics(
+                selected: _tab == i,
+                button: true,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  onTap: () => setState(() => _tab = i),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _tab == i ? AppColors.surface : Colors.transparent,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      boxShadow: _tab == i
+                          ? const [
+                              BoxShadow(
+                                color: AppColors.shadow,
+                                blurRadius: 6,
+                                offset: Offset(0, 1),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Text(
+                      labels[i],
+                      style: TextStyle(
+                        color: _tab == i
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                        fontWeight: _tab == i ? FontWeight.w700 : FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

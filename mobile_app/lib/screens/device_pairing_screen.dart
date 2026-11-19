@@ -553,17 +553,40 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
                       style: TextStyle(color: grayText, fontSize: 12),
                     ),
                     const SizedBox(height: 2),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        generatedCode,
-                        style: const TextStyle(
-                          color: darkText,
-                          fontSize: 30,
-                          letterSpacing: 2,
-                          fontWeight: FontWeight.w800,
-                          fontFeatures: kTabularFigures,
+                    // One box per digit (design D); scales down on narrow
+                    // phones. Semantics reads the whole code once.
+                    Semantics(
+                      label: 'Pairing code $generatedCode',
+                      child: ExcludeSemantics(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final digit in generatedCode.split(''))
+                                Container(
+                                  width: 32,
+                                  height: 42,
+                                  margin: const EdgeInsets.only(right: 4),
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primaryLight,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    digit,
+                                    style: const TextStyle(
+                                      fontFamily: AppFonts.heading,
+                                      color: AppColors.primary,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                      fontFeatures: kTabularFigures,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
