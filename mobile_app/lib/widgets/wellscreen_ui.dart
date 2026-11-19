@@ -484,9 +484,11 @@ class FloatingPillDock extends StatelessWidget {
 class WellScreenBrandHeader extends StatelessWidget {
   const WellScreenBrandHeader({
     super.key,
+    this.title = 'WellScreen',
     this.tagline = 'Build healthy digital habits together',
   });
 
+  final String title;
   final String tagline;
 
   @override
@@ -500,9 +502,10 @@ class WellScreenBrandHeader extends StatelessWidget {
           semanticLabel: 'WellScreen',
         ),
         const SizedBox(height: 8),
-        const Text(
-          'WellScreen',
-          style: TextStyle(
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
             fontFamily: AppFonts.heading,
             color: AppColors.textPrimary,
             fontSize: 28,
@@ -552,9 +555,10 @@ class WellScreenField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Design D: rounded rectangle with a hairline border on white.
     OutlineInputBorder border(Color color, [double width = 1]) =>
         OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.pill),
+          borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(color: color, width: width),
         );
 
@@ -584,16 +588,17 @@ class WellScreenField extends StatelessWidget {
             counterText: '',
             isDense: true,
             filled: true,
-            fillColor: AppColors.surfaceMuted,
+            fillColor: AppColors.surface,
             prefixIcon: prefixIcon,
+            prefixIconColor: AppColors.textSecondary,
             suffixIcon: suffixIcon,
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 13,
+              horizontal: 16,
+              vertical: 15,
             ),
-            border: border(Colors.transparent),
-            enabledBorder: border(Colors.transparent),
-            disabledBorder: border(Colors.transparent),
+            border: border(AppColors.border),
+            enabledBorder: border(AppColors.border),
+            disabledBorder: border(AppColors.border),
             focusedBorder: border(AppColors.primary, 1.5),
           ),
         ),

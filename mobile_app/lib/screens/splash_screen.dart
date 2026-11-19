@@ -17,9 +17,6 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  static const Color purple = AppColors.primary;
-  static const Color teal = AppColors.teal;
-  static const Color darkText = AppColors.textPrimary;
 
   @override
   void initState() {
@@ -102,89 +99,79 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Design D splash: logo, "Well" + teal "Screen", tagline, and a slim
+    // brand-colored progress bar near the bottom.
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: SizedBox.expand(
-          child: Stack(
-            children: [
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 150,
-                        height: 150,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(42),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x14000000),
-                              blurRadius: 24,
-                              offset: Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(36),
-                          child: Image.asset(
-                            'assets/icons/wellscreen_icon.png',
-                            fit: BoxFit.contain,
+        child: Stack(
+          children: [
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/icons/wellscreen_icon.png',
+                      width: 132,
+                      height: 132,
+                      semanticLabel: 'WellScreen',
+                    ),
+                    const SizedBox(height: 20),
+                    Text.rich(
+                      const TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'Well',
+                            style: TextStyle(color: AppColors.textPrimary),
                           ),
-                        ),
+                          TextSpan(
+                            text: 'Screen',
+                            style: TextStyle(color: AppColors.success),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 26),
-                      const Text(
-                        'WellScreen',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: AppFonts.heading,
-                          color: purple,
-                          fontSize: 38,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.2,
-                        ),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.heading,
+                        fontSize: 38,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.6,
                       ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Smart Parental Control\nfor Digital Wellness',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: darkText,
-                          fontSize: 17,
-                          height: 1.35,
-                          fontWeight: FontWeight.w800,
-                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Healthy screen time, together.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 15,
                       ),
-                      const SizedBox(height: 42),
-                      const SizedBox(
-                        width: 34,
-                        height: 34,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 3,
-                          valueColor: AlwaysStoppedAnimation<Color>(teal),
-                        ),
-                      ),
-                    ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 48,
+              child: Center(
+                child: SizedBox(
+                  width: 120,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: const LinearProgressIndicator(
+                      minHeight: 6,
+                      color: AppColors.primary,
+                      backgroundColor: AppColors.primaryLight,
+                    ),
                   ),
                 ),
               ),
-              const Positioned(
-                left: 0,
-                right: 0,
-                bottom: 24,
-                child: Text(
-                  'Digital wellness support for families',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: purple, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
