@@ -45,8 +45,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   static const Color pageBg = AppColors.background;
   static const Color _amberFill = Color(0xFFFDF6EC);
   static const Color _amberBorder = Color(0xFFFDE9C8);
-  static const Color softGreen = AppColors.successBg;
-  static const Color softBlue = AppColors.infoBg;
 
 
   int currentIndex = 0;
@@ -944,14 +942,14 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               spacing: 8,
               runSpacing: 6,
               children: [
-                child?['accessibilityEnabled'] == false
+                child['accessibilityEnabled'] == false
                     ? const StatusPill(label: 'Blocking off', tone: StatusTone.danger)
                     : const StatusPill(label: 'Protection on', tone: StatusTone.success),
-                if (child?['usageAccessEnabled'] == false)
+                if (child['usageAccessEnabled'] == false)
                   const StatusPill(label: 'Usage Access off', tone: StatusTone.danger),
-                if (child?['smsPermissionGranted'] == false)
+                if (child['smsPermissionGranted'] == false)
                   const StatusPill(label: 'SMS backup off', tone: StatusTone.warning),
-                if (child?['locationEnabled'] == false)
+                if (child['locationEnabled'] == false)
                   const StatusPill(label: 'Location off', tone: StatusTone.warning),
               ],
             ),
