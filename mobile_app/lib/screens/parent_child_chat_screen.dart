@@ -1091,7 +1091,12 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
 
             timeline.sort((a, b) => when(a).compareTo(when(b)));
 
-            return Column(
+            // The request form takes only the height it needs (at most half
+            // the space) and the message list takes the rest, so the message
+            // bar always sits at the bottom. A Flexible here used to reserve
+            // half the screen even when the form was hidden.
+            return LayoutBuilder(
+              builder: (context, constraints) => Column(
               children: [
                 Expanded(
                   child: timeline.isEmpty
@@ -1137,8 +1142,10 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                         ),
                 ),
                 if (!widget.isParent)
-                  Flexible(
-                    fit: FlexFit.loose,
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: constraints.maxHeight * 0.5,
+                    ),
                     child: SingleChildScrollView(
                       child:
                           StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
@@ -1177,6 +1184,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                   ),
                 _messageBar(uid),
               ],
+              ),
             );
           },
         );
