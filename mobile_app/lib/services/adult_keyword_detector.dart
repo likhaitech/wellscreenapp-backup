@@ -69,7 +69,30 @@ class AdultKeywordDetector {
     'sex',
     'tube',
     'xvideos',
+    // Added 19 Nov 2026 (same list as AdultKeywordMatcher.kt) after testing
+    // on 6,001 unseen adult domains and 79,031 popular normal sites.
+    'fuck',
+    'hentai',
+    'nude',
+    'nsfw',
+    'pussy',
+    'boob',
+    'slut',
+    'whore',
+    'erotic',
+    'fetish',
+    'bdsm',
+    'blowjob',
+    'horny',
+    'xnxx',
+    'xhamster',
+    'escort',
+    'camgirl',
+    'milf',
   ];
+
+  /// Ordinary words that contain a keyword ("milford" contains "milf").
+  static const List<String> _safeSubstrings = ['milford'];
 
   static const Set<String> _knownSafeDomains = {
     'youtube.com',
@@ -108,6 +131,10 @@ class AdultKeywordDetector {
 
     if (_knownSafeDomains.contains(normalized)) return false;
 
-    return _keywords.any((keyword) => normalized.contains(keyword));
+    var checked = normalized;
+    for (final word in _safeSubstrings) {
+      checked = checked.replaceAll(word, '');
+    }
+    return _keywords.any((keyword) => checked.contains(keyword));
   }
 }

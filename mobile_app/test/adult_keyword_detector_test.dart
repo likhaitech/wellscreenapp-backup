@@ -74,4 +74,14 @@ void main() {
       },
     );
   });
+
+  test('flags the added explicit keywords and keeps ordinary words open', () {
+    final detector = AdultKeywordDetector();
+    expect(detector.matches('free-hentai-site.net'), isTrue);
+    expect(detector.matches('xnxx.com'), isTrue);
+    expect(detector.matches('nsfwclips.example'), isTrue);
+    expect(detector.matches('milfordschools.org'), isFalse);
+    expect(detector.matches('googleanalytics.com'), isFalse);
+    expect(detector.matches('nakedwines.com'), isFalse);
+  });
 }
