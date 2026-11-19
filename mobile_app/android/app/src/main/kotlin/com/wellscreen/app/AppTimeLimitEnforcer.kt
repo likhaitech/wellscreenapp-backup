@@ -20,7 +20,7 @@ import java.util.Calendar
  * midnight; no mutable counter is stored, so the next day resets naturally.
  *
  * UsageStats access and enabled AccessibilityService are both required.
- * If either is unavailable, this helper does not block on an assumed 0.
+ * Without Usage Access an app that HAS a limit is treated as limit reached.
  */
 internal object AppTimeLimitEnforcer {
     private const val TAG = "WellScreenLimits"
@@ -107,7 +107,10 @@ internal object AppTimeLimitEnforcer {
                 break
             }
             val actualLimit = limitMinutes ?: return null
-            if (!hasUsageAccess(context)) return null
+            // F3: without Usage Access the time used cannot be measured. Keep
+            // the limited app blocked (fail closed) instead of unlocking it;
+            // the guardian sees "Usage Access disabled" on the dashboard.
+            if (!hasUsageAccess(context)) return Status(appName, actualLimit, 0L)
 
             val statsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
                 as? UsageStatsManager ?: return null

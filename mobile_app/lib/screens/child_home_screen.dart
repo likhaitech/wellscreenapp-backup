@@ -115,6 +115,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   // and the value last sent to the guardian.
   bool? _accessibilityEnabled;
   bool? _reportedAccessibilityEnabled;
+  // Same for Android's Usage Access permission (daily limits need it).
+  bool? _usageAccessEnabled;
+  bool? _reportedUsageAccessEnabled;
   static const Duration _presenceHeartbeatInterval = Duration(minutes: 5);
 
   int currentIndex = 0;
@@ -458,14 +461,49 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   /// Native ScreenTimeReportJobService checks in even while Flutter UI is closed.
   Future<void> _refreshAccessibilityStatus() async {
     final enabled = await _androidAppService.isAccessibilityServiceEnabled();
-    if (!mounted) return;
-    if (enabled != _accessibilityEnabled) {
-      setState(() => _accessibilityEnabled = enabled);
+    bool? usageEnabled;
+    try {
+      usageEnabled = await _usageTrackingService.hasUsagePermission();
+    } catch (_) {
+      usageEnabled = null;
     }
-    // Tell the guardian straight away when it changes.
-    if (enabled != null && enabled != _reportedAccessibilityEnabled) {
+    if (!mounted) return;
+    if (enabled != _accessibilityEnabled ||
+        usageEnabled != _usageAccessEnabled) {
+      setState(() {
+        _accessibilityEnabled = enabled;
+        _usageAccessEnabled = usageEnabled;
+      });
+    }
+    // Tell the guardian straight away when either changes.
+    final accessibilityChanged =
+        enabled != null && enabled != _reportedAccessibilityEnabled;
+    final usageChanged =
+        usageEnabled != null && usageEnabled != _reportedUsageAccessEnabled;
+    if (accessibilityChanged || usageChanged) {
       _lastPresenceWriteAttempt = null;
       unawaited(_publishOnlineHeartbeat());
+    }
+  }
+
+  /// Protection status fields sent with the heartbeat. Written separately
+  /// from lastSeenAt, so if the Firestore rules on the server are older and
+  /// refuse a new field, the "online" check-in itself still succeeds.
+  Future<void> _publishProtectionStatus(String profileId) async {
+    final usageEnabled = _usageAccessEnabled;
+    if (usageEnabled == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .doc(profileId)
+          .update({
+            'usageAccessEnabled': usageEnabled,
+            'usageAccessCheckedAt': FieldValue.serverTimestamp(),
+          })
+          .timeout(const Duration(seconds: 10));
+      _reportedUsageAccessEnabled = usageEnabled;
+    } catch (error) {
+      debugPrint('Child protection status update failed: $error');
     }
   }
 
@@ -502,7 +540,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     } catch (error) {
       _lastPresenceWriteAttempt = null;
       debugPrint('Child presence check-in failed: $error');
+      return;
     }
+    await _publishProtectionStatus(profileId);
   }
 
   Future<void> _queuePendingSync(

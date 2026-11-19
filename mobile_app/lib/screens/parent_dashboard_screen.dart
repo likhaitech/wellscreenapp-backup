@@ -891,6 +891,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     if (child?['accessibilityEnabled'] == false) {
       return 'Blocking is off \u2022 Accessibility disabled';
     }
+    if (child?['usageAccessEnabled'] == false) {
+      return 'Limited apps are paused \u2022 Usage Access disabled';
+    }
     final online = _childRecentlyOnline(child);
     if (online == null) return 'Awaiting device check-in';
     final seen = child?['lastSeenAt'];
@@ -911,6 +914,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Color _childPresenceColor(Map<String, dynamic>? child, bool paired) {
     if (!paired) return AppColors.warning;
     if (child?['accessibilityEnabled'] == false) return AppColors.danger;
+    if (child?['usageAccessEnabled'] == false) return AppColors.danger;
     final online = _childRecentlyOnline(child);
     if (online == null) return AppColors.warning;
     return online ? AppColors.success : AppColors.danger;
