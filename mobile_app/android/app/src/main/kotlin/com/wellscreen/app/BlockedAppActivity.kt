@@ -248,8 +248,7 @@ class BlockedAppActivity : Activity() {
         val backButton = TextView(this).apply {
             text = when {
                 blockedDomain != null -> "Go to Google"
-                isDailyTimeLimitBlock -> "Go Home"
-                else -> "Go Back"
+                else -> "Go Home"
             }
             textSize = 15f
             setTypeface(typeface, Typeface.BOLD)
@@ -265,8 +264,9 @@ class BlockedAppActivity : Activity() {
             setOnClickListener {
                 when {
                     blockedDomain != null -> leaveToSafePage()
-                    isDailyTimeLimitBlock -> returnToHome()
-                    else -> finish()
+                    // Every app block goes home. finish() used to reveal the
+                    // still-running restricted app for up to 5 seconds.
+                    else -> returnToHome()
                 }
             }
         }
@@ -392,10 +392,9 @@ class BlockedAppActivity : Activity() {
     override fun onBackPressed() {
         if (isWebsiteBlock) {
             leaveToSafePage()
-        } else if (isDailyTimeLimitBlock) {
-            returnToHome()
         } else {
-            super.onBackPressed()
+            // Back must never return to the blocked app underneath.
+            returnToHome()
         }
     }
 }
