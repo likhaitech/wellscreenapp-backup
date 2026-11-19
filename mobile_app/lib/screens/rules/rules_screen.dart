@@ -6,6 +6,7 @@ import '../../models/app_rule.dart';
 import '../../models/installed_app_info.dart';
 import '../../services/android_app_service.dart';
 import '../../services/app_rules_service.dart';
+import '../../services/quick_block_sites.dart';
 import '../../services/site_category_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/wellscreen_ui.dart';
@@ -118,6 +119,78 @@ class _RulesScreenState extends State<RulesScreen> {
     } finally {
       if (mounted) setState(() => _savingWebsite = false);
     }
+  }
+
+  /// Quick block: blocks (or unblocks) every website of a popular app in
+  /// one tap, even if the child never installed the app.
+  Future<void> _toggleQuickBlock(QuickBlockSite site) async {
+    if (_savingWebsite || _loadingWebsites || _websiteError != null) return;
+    final unblock = site.isBlockedIn(_websiteRules.blockedDomains);
+    setState(() => _savingWebsite = true);
+    try {
+      var rules = _websiteRules;
+      for (final domain in site.domains) {
+        rules = await _siteCategoryService.updateGuardianWebsiteRule(
+          domain,
+          unblock ? null : WebsiteRuleAction.block,
+        );
+      }
+      if (!mounted) return;
+      setState(() => _websiteRules = rules);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            unblock
+                ? '${site.name} websites unblocked.'
+                : '${site.name} websites blocked: ${site.domains.join(', ')}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is FormatException
+          ? error.message
+          : 'Could not save website rule. Check your connection and try again.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      await _loadWebsiteRules();
+    } finally {
+      if (mounted) setState(() => _savingWebsite = false);
+    }
+  }
+
+  Widget _quickBlockSection(bool canEdit) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Quick block',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Blocks the app\'s websites in every browser, even if the app is '
+          'not installed. Tap again to unblock.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final site in quickBlockSites)
+              FilterChip(
+                label: Text(site.name),
+                selected: site.isBlockedIn(_websiteRules.blockedDomains),
+                onSelected: canEdit && !_savingWebsite
+                    ? (_) => _toggleQuickBlock(site)
+                    : null,
+              ),
+          ],
+        ),
+      ],
+    );
   }
 
   Widget _websiteRuleList({
@@ -263,6 +336,9 @@ class _RulesScreenState extends State<RulesScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 14),
+            _quickBlockSection(canEdit),
+            const SizedBox(height: 8),
             if (_savingWebsite) const LinearProgressIndicator(),
             const SizedBox(height: 8),
             const Text(
