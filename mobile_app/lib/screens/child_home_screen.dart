@@ -115,6 +115,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   // and the value last sent to the guardian.
   bool? _accessibilityEnabled;
   bool? _reportedAccessibilityEnabled;
+  // Same for Android's Usage Access permission (daily limits need it).
+  bool? _usageAccessEnabled;
+  bool? _reportedUsageAccessEnabled;
+  // Setup checklist only (not sent to the guardian).
+  bool? _batteryUnrestricted;
+  bool? _deviceAdminActive;
   static const Duration _presenceHeartbeatInterval = Duration(minutes: 5);
 
   int currentIndex = 0;
@@ -458,14 +464,82 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   /// Native ScreenTimeReportJobService checks in even while Flutter UI is closed.
   Future<void> _refreshAccessibilityStatus() async {
     final enabled = await _androidAppService.isAccessibilityServiceEnabled();
-    if (!mounted) return;
-    if (enabled != _accessibilityEnabled) {
-      setState(() => _accessibilityEnabled = enabled);
+    bool? usageEnabled;
+    try {
+      usageEnabled = await _usageTrackingService.hasUsagePermission();
+    } catch (_) {
+      usageEnabled = null;
     }
-    // Tell the guardian straight away when it changes.
-    if (enabled != null && enabled != _reportedAccessibilityEnabled) {
+    final batteryUnrestricted =
+        await _androidAppService.isIgnoringBatteryOptimizations();
+    final deviceAdminActive = await _androidAppService.isDeviceAdminActive();
+    if (!mounted) return;
+    if (enabled != _accessibilityEnabled ||
+        usageEnabled != _usageAccessEnabled ||
+        batteryUnrestricted != _batteryUnrestricted ||
+        deviceAdminActive != _deviceAdminActive) {
+      setState(() {
+        _accessibilityEnabled = enabled;
+        _usageAccessEnabled = usageEnabled;
+        _batteryUnrestricted = batteryUnrestricted;
+        _deviceAdminActive = deviceAdminActive;
+      });
+    }
+    // Tell the guardian straight away when either changes.
+    final accessibilityChanged =
+        enabled != null && enabled != _reportedAccessibilityEnabled;
+    final usageChanged =
+        usageEnabled != null && usageEnabled != _reportedUsageAccessEnabled;
+    if (accessibilityChanged || usageChanged) {
       _lastPresenceWriteAttempt = null;
       unawaited(_publishOnlineHeartbeat());
+    }
+  }
+
+  /// Protection status fields sent with the heartbeat. Written separately
+  /// from lastSeenAt, so if the Firestore rules on the server are older and
+  /// refuse a new field, the "online" check-in itself still succeeds.
+  Future<void> _publishProtectionStatus(String profileId) async {
+    final usageEnabled = _usageAccessEnabled;
+
+    // Location: phone GPS switched on AND WellScreen allowed to use it.
+    bool? locationEnabled;
+    try {
+      final serviceOn = await Geolocator.isLocationServiceEnabled();
+      final permission = await Geolocator.checkPermission();
+      locationEnabled =
+          serviceOn &&
+          (permission == LocationPermission.always ||
+              permission == LocationPermission.whileInUse);
+    } catch (_) {
+      locationEnabled = null;
+    }
+
+    // SMS backup alerts need the SMS permission on this phone.
+    bool? smsGranted;
+    try {
+      smsGranted = (await Permission.sms.status).isGranted;
+    } catch (_) {
+      smsGranted = null;
+    }
+
+    final update = <String, dynamic>{
+      'usageAccessEnabled': ?usageEnabled,
+      'locationEnabled': ?locationEnabled,
+      'smsPermissionGranted': ?smsGranted,
+    };
+    if (update.isEmpty) return;
+    update['usageAccessCheckedAt'] = FieldValue.serverTimestamp();
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('child_profiles')
+          .doc(profileId)
+          .update(update)
+          .timeout(const Duration(seconds: 10));
+      if (usageEnabled != null) _reportedUsageAccessEnabled = usageEnabled;
+    } catch (error) {
+      debugPrint('Child protection status update failed: $error');
     }
   }
 
@@ -502,7 +576,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     } catch (error) {
       _lastPresenceWriteAttempt = null;
       debugPrint('Child presence check-in failed: $error');
+      return;
     }
+    await _publishProtectionStatus(profileId);
   }
 
   Future<void> _queuePendingSync(
@@ -888,6 +964,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       'longitude': position.longitude,
       'accuracyMeters': position.accuracy,
       'capturedAt': position.timestamp.toIso8601String(),
+      // True when a fake-GPS app supplied this location (G2).
+      'isMocked': position.isMocked,
     };
 
     // Location isn't queued/auto-retried like usage data (see
@@ -2829,6 +2907,26 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     }
   }
 
+  Future<void> _openBatterySettings() async {
+    final opened = await _androidAppService.openBatteryOptimizationSettings();
+    if (!opened) {
+      showMessage(
+        'Could not open battery settings. Open Settings > Apps > '
+        'WellScreen > Battery and choose Unrestricted.',
+      );
+    }
+  }
+
+  Future<void> _requestDeviceAdmin() async {
+    final opened = await _androidAppService.requestDeviceAdmin();
+    if (!opened) {
+      showMessage(
+        'Could not open uninstall protection. Open Settings > Security > '
+        'Device admin apps and turn on WellScreen.',
+      );
+    }
+  }
+
   void _goToSafetyTab({bool scrollToPairing = false}) {
     handleBottomNavTap(2);
     if (!scrollToPairing) return;
@@ -3530,8 +3628,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0).toDouble();
     final hasLimit = state.dailyScreenTimeLimit > Duration.zero;
     final limitLabel = hasLimit
-        ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} limit'
-        : 'No daily limit set';
+        ? 'of ${_durationLabel(state.dailyScreenTimeLimit)} daily goal'
+        : 'No daily goal set';
 
     return Column(
       children: [
@@ -4878,6 +4976,35 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             done: _accessibilityEnabled,
             actionLabel: _accessibilityEnabled == true ? null : 'Open',
             onAction: _openAccessibilitySettings,
+          ),
+          const Divider(height: 1, color: _hairline),
+          _checklistRow(
+            icon: Icons.battery_charging_full_rounded,
+            title: 'Run in Background',
+            subtitle: _batteryUnrestricted == true
+                ? 'Allowed. Battery saver will not stop WellScreen.'
+                : 'Set WellScreen to "Not optimized" / "Unrestricted" so '
+                      'battery saver does not stop protection.',
+            done: _batteryUnrestricted,
+            actionLabel: _batteryUnrestricted == false ? 'Open' : null,
+            onAction: _batteryUnrestricted == false
+                ? _openBatterySettings
+                : null,
+          ),
+          const Divider(height: 1, color: _hairline),
+          _checklistRow(
+            icon: Icons.shield_outlined,
+            title: 'Uninstall Protection',
+            subtitle: _deviceAdminActive == true
+                ? 'On. WellScreen cannot be uninstalled without turning '
+                      'this off, and your guardian is told.'
+                : 'Optional. Stops WellScreen from being uninstalled '
+                      'without your guardian knowing.',
+            done: _deviceAdminActive,
+            actionLabel: _deviceAdminActive == false ? 'Turn On' : null,
+            onAction: _deviceAdminActive == false
+                ? _requestDeviceAdmin
+                : null,
           ),
         ],
       ),

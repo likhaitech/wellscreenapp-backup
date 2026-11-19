@@ -28,7 +28,10 @@ internal object TemporaryAppGrantCache {
                 if (grant.optString("packageName") != targetPackage) continue
                 if (grant.optString("state") != "active") return false
                 val until = grant.optLong("expiresAtMs", 0L)
-                return until > nowMs && until - nowMs <= 180 * 60_000L
+                if (until <= nowMs || until - nowMs > 180 * 60_000L) return false
+                // F8: also checked against the boot clock, so moving the
+                // phone's clock back does not extend the grant.
+                return GrantClock.isActive(context, "app_$targetPackage", until, 0L)
             }
             false
         } catch (_: Exception) {

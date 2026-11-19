@@ -60,4 +60,45 @@ class AndroidAppService {
   Future<void> openUsageAccessSettings() async {
     await _channel.invokeMethod('openUsageAccessSettings');
   }
+
+  /// True when Android's battery saver may not stop WellScreen in the
+  /// background. Null when it cannot be read.
+  Future<bool?> isIgnoringBatteryOptimizations() async {
+    try {
+      return await _channel.invokeMethod<bool>(
+        'isIgnoringBatteryOptimizations',
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> openBatteryOptimizationSettings() async {
+    try {
+      return await _channel.invokeMethod<bool>(
+            'openBatteryOptimizationSettings',
+          ) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// True when WellScreen's uninstall protection (Device Admin) is on.
+  /// Null when it cannot be read.
+  Future<bool?> isDeviceAdminActive() async {
+    try {
+      return await _channel.invokeMethod<bool>('isDeviceAdminActive');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> requestDeviceAdmin() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestDeviceAdmin') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

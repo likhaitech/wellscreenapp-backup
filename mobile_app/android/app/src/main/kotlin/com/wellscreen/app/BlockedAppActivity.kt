@@ -8,6 +8,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -39,6 +43,15 @@ class BlockedAppActivity : Activity() {
         private const val PROFILE_KEY = "flutter.active_child_profile_id"
         private const val RESTRICTED_KEY = "flutter.restricted_packages_json"
         private const val RECHECK_INTERVAL_MS = 5_000L
+
+        /** Which kind of screen to show; absent for app and website blocks. */
+        const val EXTRA_MODE = "block_mode"
+
+        /** U1: WellScreen's uninstall / Accessibility / Device Admin screens. */
+        const val MODE_PROTECTED_SETTINGS = "protected_settings"
+
+        /** F2: blocking is on but nobody is signed in (e.g. storage cleared). */
+        const val MODE_SIGN_IN_REQUIRED = "sign_in_required"
     }
 
     private var isDailyTimeLimitBlock = false
@@ -49,6 +62,7 @@ class BlockedAppActivity : Activity() {
     private val statusExecutor = Executors.newSingleThreadExecutor()
     private val statusCheckInProgress = AtomicBoolean(false)
     private var listeningToPrefs = false
+    private var audioFocusRequest: AudioFocusRequest? = null
 
     private val cacheChangeListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -70,11 +84,14 @@ class BlockedAppActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val blockedDomain = intent.getStringExtra("blocked_domain")
+        val mode = intent.getStringExtra(EXTRA_MODE)
+        val isProtectedSettings = mode == MODE_PROTECTED_SETTINGS
+        val isSignInRequired = mode == MODE_SIGN_IN_REQUIRED
+        val blockedDomain = if (mode == null) intent.getStringExtra("blocked_domain") else null
         blockedBrowser = intent.getStringExtra("blocked_browser")
         isWebsiteBlock = blockedDomain != null
         val blockedPackage = intent.getStringExtra("blocked_package") ?: "Restricted app"
-        isDailyTimeLimitBlock = blockedDomain == null &&
+        isDailyTimeLimitBlock = mode == null && blockedDomain == null &&
             intent.getBooleanExtra("time_limit_reached", false)
         if (isDailyTimeLimitBlock) dailyBlockedPackage = blockedPackage
 
@@ -93,7 +110,7 @@ class BlockedAppActivity : Activity() {
         // website has neither, so it falls back to the WellScreen shield.
         var displayName = appLabel
         var appIcon: android.graphics.drawable.Drawable? = null
-        if (blockedDomain == null) {
+        if (blockedDomain == null && mode == null) {
             try {
                 val info = packageManager.getApplicationInfo(blockedPackage, 0)
                 displayName = packageManager.getApplicationLabel(info).toString()
@@ -137,6 +154,8 @@ class BlockedAppActivity : Activity() {
 
         val badge = TextView(this).apply {
             text = when {
+                isProtectedSettings -> "Protected"
+                isSignInRequired -> "Sign in needed"
                 blockedDomain != null -> "Blocked"
                 isDailyTimeLimitBlock -> "Time limit reached"
                 else -> "Restricted"
@@ -154,6 +173,8 @@ class BlockedAppActivity : Activity() {
 
         val title = TextView(this).apply {
             text = when {
+                isProtectedSettings -> "Ask your guardian"
+                isSignInRequired -> "Sign in to WellScreen"
                 blockedDomain != null -> "Website blocked"
                 else -> "$displayName is paused"
             }
@@ -169,6 +190,13 @@ class BlockedAppActivity : Activity() {
 
         val message = TextView(this).apply {
             text = when {
+                isSignInRequired ->
+                    "This phone is protected by WellScreen. Sign in to keep " +
+                        "using your apps."
+                isProtectedSettings ->
+                    "WellScreen's settings are protected while this phone is " +
+                        "paired. To change them, ask your guardian for " +
+                        "Emergency Access."
                 blockedDomain != null ->
                     "$blockedDomain is blocked by WellScreen."
                 isDailyTimeLimitBlock ->
@@ -248,8 +276,7 @@ class BlockedAppActivity : Activity() {
         val backButton = TextView(this).apply {
             text = when {
                 blockedDomain != null -> "Go to Google"
-                isDailyTimeLimitBlock -> "Go Home"
-                else -> "Go Back"
+                else -> "Go Home"
             }
             textSize = 15f
             setTypeface(typeface, Typeface.BOLD)
@@ -265,9 +292,33 @@ class BlockedAppActivity : Activity() {
             setOnClickListener {
                 when {
                     blockedDomain != null -> leaveToSafePage()
-                    isDailyTimeLimitBlock -> returnToHome()
-                    else -> finish()
+                    // Every app block goes home. finish() used to reveal the
+                    // still-running restricted app for up to 5 seconds.
+                    else -> returnToHome()
                 }
+            }
+        }
+
+        val openAppButton = TextView(this).apply {
+            text = "Open WellScreen"
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = pill(ink)
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { topMargin = dp(32) }
+            setOnClickListener {
+                val launch = packageManager.getLaunchIntentForPackage(packageName)
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launch)
+                }
+                finish()
             }
         }
 
@@ -277,7 +328,12 @@ class BlockedAppActivity : Activity() {
         root.addView(message)
         // No "request access" for blocked websites: they are harmful-category
         // or guardian-blocked sites, and time requests are for apps only.
-        if (blockedDomain == null) root.addView(card)
+        // Signing in needs WellScreen itself, not a request to the guardian.
+        if (isSignInRequired) {
+            root.addView(openAppButton)
+        } else if (blockedDomain == null) {
+            root.addView(card)
+        }
         root.addView(backButton)
         setContentView(root)
     }
@@ -285,6 +341,7 @@ class BlockedAppActivity : Activity() {
     override fun onStart() {
         super.onStart()
         isShowing = true
+        pauseOtherAudio()
         if (isDailyTimeLimitBlock) {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .registerOnSharedPreferenceChangeListener(cacheChangeListener)
@@ -308,7 +365,53 @@ class BlockedAppActivity : Activity() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(recheckRunnable)
         statusExecutor.shutdownNow()
+        releaseAudioFocus()
         super.onDestroy()
+    }
+
+    /**
+     * Take audio focus so music or video from the blocked app (or one playing
+     * behind it) stops instead of continuing under the block screen.
+     */
+    private fun pauseOtherAudio() {
+        try {
+            val audio = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val request = audioFocusRequest ?: AudioFocusRequest.Builder(
+                    AudioManager.AUDIOFOCUS_GAIN
+                ).setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                ).setOnAudioFocusChangeListener { }.build()
+                audioFocusRequest = request
+                audio.requestAudioFocus(request)
+            } else {
+                @Suppress("DEPRECATION")
+                audio.requestAudioFocus(
+                    null,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN,
+                )
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "Could not pause other audio", error)
+        }
+    }
+
+    private fun releaseAudioFocus() {
+        try {
+            val audio = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { audio.abandonAudioFocusRequest(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                audio.abandonAudioFocus(null)
+            }
+        } catch (_: Exception) {
+            // Nothing else to release.
+        }
     }
 
     private fun checkForGrantedTime() {
@@ -392,10 +495,9 @@ class BlockedAppActivity : Activity() {
     override fun onBackPressed() {
         if (isWebsiteBlock) {
             leaveToSafePage()
-        } else if (isDailyTimeLimitBlock) {
-            returnToHome()
         } else {
-            super.onBackPressed()
+            // Back must never return to the blocked app underneath.
+            returnToHome()
         }
     }
 }

@@ -149,6 +149,10 @@ service cloud.firestore {
             'installedApps',
             'accessibilityEnabled',
             'accessibilityCheckedAt',
+            'usageAccessEnabled',
+            'usageAccessCheckedAt',
+            'locationEnabled',
+            'smsPermissionGranted',
             'emergencyAccess'
           ]);
       }

@@ -7,6 +7,9 @@ import android.util.Log
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
+import com.google.firebase.auth.FirebaseAuth
 import org.json.JSONArray
 
 // Debug-only tag for the browsing-capture path specifically (not restricted-
@@ -65,7 +68,15 @@ class WellScreenAccessibilityService : AccessibilityService() {
             try {
                 val activePackage = rootInActiveWindow?.packageName?.toString()
                 if (!activePackage.isNullOrEmpty() && activePackage != packageName) {
+                    if (activePackage in ProtectedSettingsGuard.SETTINGS_PACKAGES) {
+                        maybeGuardSettings(activePackage)
+                    }
                     checkRestrictedApp(activePackage)
+                }
+                // Split screen and picture-in-picture: a restricted app can be
+                // visible without being the active window.
+                for (visiblePackage in otherVisibleAppPackages(activePackage)) {
+                    checkRestrictedApp(visiblePackage, notInFront = true)
                 }
             } catch (e: Exception) {
                 Log.w("WellScreenLimits", "Foreground limit check failed", e)
@@ -109,6 +120,9 @@ class WellScreenAccessibilityService : AccessibilityService() {
                     Log.d(CAPTURE_LOG_TAG, msg)
                     CaptureDebugLogger.log(this, msg)
                 }
+                if (currentPackage in ProtectedSettingsGuard.SETTINGS_PACKAGES) {
+                    maybeGuardSettings(currentPackage)
+                }
                 maybeCaptureBrowserUrl(currentPackage)
                 checkRestrictedApp(currentPackage)
             }
@@ -125,6 +139,10 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 // restricted-app blocking doesn't need it (that's fully
                 // covered by the branch above), so it's skipped here to
                 // avoid running that check on every UI update system-wide.
+                // Settings often changes page without a new window.
+                if (currentPackage in ProtectedSettingsGuard.SETTINGS_PACKAGES) {
+                    maybeGuardSettings(currentPackage)
+                }
                 if (BrowserUrlExtractor.isKnownBrowser(currentPackage)) {
                     val msg = "$currentPackage: content-changed event received"
                     Log.d(CAPTURE_LOG_TAG, msg)
@@ -136,8 +154,65 @@ class WellScreenAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun checkRestrictedApp(currentPackage: String) {
-        val permanentlyRestricted = getRestrictedPackages().contains(currentPackage)
+    /**
+     * Packages of other app windows on screen (the second half of split
+     * screen, a picture-in-picture window), excluding the active one and
+     * WellScreen itself.
+     */
+    private fun otherVisibleAppPackages(activePackage: String?): Set<String> {
+        return try {
+            windows
+                .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                .mapNotNull { it.root?.packageName?.toString() }
+                .filter { it.isNotEmpty() && it != activePackage && it != packageName }
+                .toSet()
+        } catch (_: Exception) {
+            emptySet()
+        }
+    }
+
+    private var lastSignInBlockTime: Long = 0L
+
+    /**
+     * F2: blocking is switched on but nobody is signed in to WellScreen (for
+     * example after Settings > Apps > WellScreen > Clear storage wiped the
+     * rules). Treat the phone as "needs sign-in" instead of unrestricted.
+     * Fails open if Firebase cannot be read, so the phone is never locked
+     * by an error.
+     */
+    private fun needsSignIn(): Boolean {
+        return try {
+            FirebaseAuth.getInstance().currentUser == null
+        } catch (e: Exception) {
+            Log.w("WellScreenLimits", "Could not read sign-in state", e)
+            false
+        }
+    }
+
+    private fun showSignInRequired(currentPackage: String): Boolean {
+        if (AppTimeLimitEnforcer.isAlwaysAllowed(this, currentPackage)) return false
+        if (!needsSignIn()) return false
+        val now = System.currentTimeMillis()
+        if (BlockedAppActivity.isShowing && now - lastSignInBlockTime < 2500) return true
+        lastSignInBlockTime = now
+        try {
+            val intent = Intent(this, BlockedAppActivity::class.java)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            intent.putExtra(BlockedAppActivity.EXTRA_MODE, BlockedAppActivity.MODE_SIGN_IN_REQUIRED)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w("WellScreenLimits", "Could not show sign-in screen", e)
+        }
+        return true
+    }
+
+    private fun checkRestrictedApp(currentPackage: String, notInFront: Boolean = false) {
+        if (showSignInRequired(currentPackage)) return
+        // A blocked app's Lite version is blocked too (RelatedTargets).
+        val blockingPackage =
+            RelatedTargets.blockingPackageFor(currentPackage, getRestrictedPackages())
+        val permanentlyRestricted = blockingPackage != null
         // Keep temporary daily limits completely separate from the existing
         // permanent restrictions; a limited app must remain usable below its
         // threshold. Fail open if Usage Access is missing/unavailable.
@@ -156,6 +231,12 @@ class WellScreenAccessibilityService : AccessibilityService() {
             // New per-app grants are independent of the global emergency bypass.
             // Keep permanent restrictions intact; expiration is checked natively.
             if (TemporaryAppGrantCache.isActive(this, currentPackage, now)) {
+                return
+            }
+            // A grant for the blocked app also covers its Lite version.
+            if (blockingPackage != null && blockingPackage != currentPackage &&
+                TemporaryAppGrantCache.isActive(this, blockingPackage, now)
+            ) {
                 return
             }
 
@@ -204,7 +285,21 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 lastBlockTime = now
 
                 try {
-                    openBlockedScreen(currentPackage, timeLimitReached = dailyLimitReached)
+                    if (notInFront) {
+                        // Leave split screen first, otherwise the block screen
+                        // only covers one half. Wait for the home screen before
+                        // showing the block screen so it is not hidden behind it.
+                        performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                        limitPollHandler.postDelayed({
+                            try {
+                                openBlockedScreen(currentPackage, timeLimitReached = dailyLimitReached)
+                            } catch (e: Exception) {
+                                Log.w("WellScreenLimits", "Delayed block screen failed", e)
+                            }
+                        }, 400L)
+                    } else {
+                        openBlockedScreen(currentPackage, timeLimitReached = dailyLimitReached)
+                    }
                     RestrictionLogger.recordOutcome(this, currentPackage, "blocked", now)
                 } catch (_: Exception) {
                     RestrictionLogger.recordOutcome(
@@ -227,6 +322,77 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 }
             }
         }
+    }
+
+    private var lastSettingsCheckTime: Long = 0L
+    private var lastSettingsBlockTime: Long = 0L
+
+    /**
+     * U1: while this phone is paired, cover WellScreen's uninstall, App info,
+     * Accessibility and Device Admin "Deactivate" screens. The guardian can
+     * lift this by approving Emergency Access.
+     */
+    private fun maybeGuardSettings(settingsPackage: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastSettingsCheckTime < 500) return
+        lastSettingsCheckTime = now
+        try {
+            if (!isPairedChildPhone()) return
+            if (isEmergencyAccessActive(now)) return
+            if (BlockedAppActivity.isShowing && now - lastSettingsBlockTime < 2500) return
+
+            val root = rootInActiveWindow ?: return
+            if (root.packageName?.toString() != settingsPackage) return
+            val texts = collectScreenTexts(root)
+            val label = try {
+                packageManager.getApplicationLabel(applicationInfo).toString()
+            } catch (_: Exception) {
+                "WellScreen"
+            }
+            val description = try {
+                getString(R.string.wellscreen_accessibility_description)
+            } catch (_: Exception) {
+                ""
+            }
+            if (!ProtectedSettingsGuard.isProtectedScreen(texts, label, description)) return
+
+            lastSettingsBlockTime = now
+            val intent = Intent(this, BlockedAppActivity::class.java)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            intent.putExtra(BlockedAppActivity.EXTRA_MODE, BlockedAppActivity.MODE_PROTECTED_SETTINGS)
+            startActivity(intent)
+            RestrictionLogger.recordOutcome(this, "WellScreen settings", "blocked", now)
+        } catch (e: Exception) {
+            Log.w("WellScreenLimits", "Settings guard check failed", e)
+        }
+    }
+
+    private fun isPairedChildPhone(): Boolean {
+        return try {
+            val prefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+            !prefs.getString("flutter.active_child_profile_id", null).isNullOrBlank()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Texts and content descriptions on screen, capped to keep this cheap. */
+    private fun collectScreenTexts(root: AccessibilityNodeInfo): List<String> {
+        val texts = ArrayList<String>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < 400) {
+            val node = queue.removeFirst()
+            visited++
+            node.text?.toString()?.takeIf { it.isNotBlank() }?.let { texts.add(it) }
+            node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let { texts.add(it) }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let { queue.add(it) }
+            }
+        }
+        return texts
     }
 
     private var lastBlockedDomain: String? = null
@@ -353,15 +519,10 @@ class WellScreenAccessibilityService : AccessibilityService() {
      * of truth, SharedPreferences is the native side's local mirror of it"
      * pattern getRestrictedPackages() below already uses for rules.
      */
-    private fun isEmergencyAccessActive(now: Long): Boolean {
-        return try {
-            val prefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
-            val grantedUntil = prefs.getLong("flutter.emergency_access_granted_until_ms", 0L)
-            grantedUntil > now
-        } catch (_: Exception) {
-            false
-        }
-    }
+    @Suppress("UNUSED_PARAMETER")
+    private fun isEmergencyAccessActive(now: Long): Boolean =
+        // F8: checked against the phone's boot clock, not the wall clock.
+        GrantClock.isEmergencyActive(this)
 
     private fun getRestrictedPackages(): Set<String> {
         return try {
