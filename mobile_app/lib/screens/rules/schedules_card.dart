@@ -94,22 +94,156 @@ class _SchedulesCardState extends State<SchedulesCard> {
     await _run(() => _service.saveBedtime(next), 'Bedtime saved.');
   }
 
-  Widget _sectionTitle(String text) => Padding(
-    padding: const EdgeInsets.only(top: 12, bottom: 2),
-    child: Text(
-      text,
-      style: const TextStyle(
-        fontFamily: AppFonts.heading,
-        fontSize: 15,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
+  int? _focusChoice;
 
   Widget _hint(String text) => Text(
     text,
     style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
   );
+
+  /// Card header row from the mockup: tinted icon box, title, subtitle and
+  /// an optional trailing control (a switch).
+  Widget _header({
+    required IconData icon,
+    required Color color,
+    required Color tint,
+    required String title,
+    required String subtitle,
+    Widget? trailing,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: tint,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 22),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        ?trailing,
+      ],
+    );
+  }
+
+  Widget _timeBox(String label, int minutes, VoidCallback? onTap) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                ScheduleRules.timeLabel(minutes),
+                style: const TextStyle(
+                  fontFamily: AppFonts.heading,
+                  color: AppColors.textPrimary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, bool on, VoidCallback? onTap) {
+    return Semantics(
+      selected: on,
+      button: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        onTap: onTap,
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? AppColors.primaryLight : AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            border: Border.all(
+              color: on ? AppColors.primary : AppColors.border,
+            ),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// "60 min" pill that opens a menu of the allowed values.
+  Widget _minutesPill({
+    required int value,
+    required List<int> choices,
+    required bool enabled,
+    required ValueChanged<int> onChanged,
+  }) {
+    return PopupMenuButton<int>(
+      enabled: enabled,
+      tooltip: 'Change',
+      initialValue: value,
+      onSelected: onChanged,
+      itemBuilder: (_) => [
+        for (final m in choices)
+          PopupMenuItem(value: m, child: Text('$m min')),
+      ],
+      child: IgnorePointer(child: _chip('$value min', true, () {})),
+    );
+  }
+
+  String _focusLabel(int minutes) => minutes < 60
+      ? '$minutes min'
+      : '${minutes ~/ 60} hour${minutes >= 120 ? 's' : ''}';
 
   @override
   Widget build(BuildContext context) {
@@ -118,186 +252,211 @@ class _SchedulesCardState extends State<SchedulesCard> {
     final focusOn = _rules.isFocusActive(now);
     final focusEnd = _rules.focusEndsAt;
 
-    return BentoCard(
-      padding: EdgeInsets.zero,
-      child: ExpansionTile(
-        initiallyExpanded: true,
-        shape: const Border(),
-        collapsedShape: const Border(),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        expandedCrossAxisAlignment: CrossAxisAlignment.start,
-        leading: const Icon(Icons.schedule_rounded, color: AppColors.primary),
-        title: const Text(
-          'Schedules',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        subtitle: const Text(
-          'Bedtime lock, focus mode and breaks.',
-          style: TextStyle(color: AppColors.textSecondary),
-        ),
-        children: [
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: LinearProgressIndicator(),
-            )
-          else if (_error != null) ...[
+    if (_loading) {
+      return const BentoCard(child: LinearProgressIndicator());
+    }
+    if (_error != null) {
+      return BentoCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(_error!),
             TextButton(onPressed: _load, child: const Text('Retry')),
-          ] else ...[
-            // Bedtime lock
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Bedtime lock'),
-              subtitle: Text(
-                'Pauses apps from '
-                '${ScheduleRules.timeLabel(_rules.bedtimeStartMinutes)} to '
-                '${ScheduleRules.timeLabel(_rules.bedtimeEndMinutes)}. '
-                'Calls and WellScreen still work.',
-              ),
-              value: _rules.bedtimeEnabled,
-              onChanged: canEdit
-                  ? (on) => _run(
-                      () => _service.saveBedtime(
-                        _rules.copyWith(bedtimeEnabled: on),
-                      ),
-                      on ? 'Bedtime lock on.' : 'Bedtime lock off.',
-                    )
-                  : null,
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: canEdit ? () => _pickTime(start: true) : null,
-                    child: Text(
-                      'From ${ScheduleRules.timeLabel(_rules.bedtimeStartMinutes)}',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: canEdit ? () => _pickTime(start: false) : null,
-                    child: Text(
-                      'To ${ScheduleRules.timeLabel(_rules.bedtimeEndMinutes)}',
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
+          ],
+        ),
+      );
+    }
 
-            // Focus mode
-            _sectionTitle('Focus mode'),
-            if (focusOn && focusEnd != null) ...[
-              _hint(
-                'On until ${ScheduleRules.timeLabel(focusEnd.hour * 60 + focusEnd.minute)}. '
-                'Apps are paused; calls and WellScreen still work.',
+    const choices = ScheduleRules.focusChoices;
+    final focusChoice = _focusChoice != null && choices.contains(_focusChoice)
+        ? _focusChoice!
+        : (choices.contains(60) ? 60 : choices.first);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Bedtime lock
+        BentoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(
+                icon: Icons.bedtime_outlined,
+                color: AppColors.violet,
+                tint: AppColors.violetBg,
+                title: 'Bedtime lock',
+                subtitle: 'Every app locks during these hours. Calls and '
+                    'WellScreen still work.',
+                trailing: Switch(
+                  value: _rules.bedtimeEnabled,
+                  onChanged: canEdit
+                      ? (on) => _run(
+                          () => _service.saveBedtime(
+                            _rules.copyWith(bedtimeEnabled: on),
+                          ),
+                          on ? 'Bedtime lock on.' : 'Bedtime lock off.',
+                        )
+                      : null,
+                ),
               ),
-              TextButton.icon(
-                onPressed: canEdit
-                    ? () => _run(_service.endFocus, 'Focus mode ended.')
-                    : null,
-                icon: const Icon(Icons.stop_circle_outlined),
-                label: const Text('End focus now'),
-              ),
-            ] else ...[
-              _hint('Pause apps right now for study or family time.'),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
+              const SizedBox(height: 12),
+              Row(
                 children: [
-                  for (final minutes in ScheduleRules.focusChoices)
-                    ActionChip(
-                      label: Text(
-                        minutes < 60
-                            ? '$minutes min'
-                            : '${minutes ~/ 60} hour${minutes >= 120 ? 's' : ''}',
-                      ),
-                      onPressed: canEdit
-                          ? () => _run(
-                              () => _service.startFocus(minutes),
-                              'Focus mode started.',
-                            )
-                          : null,
-                    ),
+                  _timeBox(
+                    'Starts',
+                    _rules.bedtimeStartMinutes,
+                    canEdit ? () => _pickTime(start: true) : null,
+                  ),
+                  const SizedBox(width: 10),
+                  _timeBox(
+                    'Ends',
+                    _rules.bedtimeEndMinutes,
+                    canEdit ? () => _pickTime(start: false) : null,
+                  ),
                 ],
               ),
             ],
-            const Divider(height: 24),
+          ),
+        ),
+        const SizedBox(height: 12),
 
-            // Break timers (cooldown)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Break timer'),
-              subtitle: Text(
-                'After ${_rules.breakAfterMinutes} min of non-stop use of one '
-                'app, that app pauses for ${_rules.breakLengthMinutes} min.',
+        // Focus mode
+        BentoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(
+                icon: Icons.center_focus_strong_outlined,
+                color: AppColors.primary,
+                tint: AppColors.primaryLight,
+                title: 'Focus mode',
+                subtitle: focusOn && focusEnd != null
+                    ? 'On until ${ScheduleRules.timeLabel(focusEnd.hour * 60 + focusEnd.minute)}. '
+                          'Apps are paused.'
+                    : 'Lock apps now for study time',
               ),
-              value: _rules.breaksEnabled,
-              onChanged: canEdit
-                  ? (on) => _run(
-                      () => _service.saveBreaks(
-                        _rules.copyWith(breaksEnabled: on),
+              const SizedBox(height: 12),
+              if (focusOn && focusEnd != null)
+                FilledButton.icon(
+                  onPressed: canEdit
+                      ? () => _run(_service.endFocus, 'Focus mode ended.')
+                      : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.dangerBg,
+                    foregroundColor: AppColors.danger,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  icon: const Icon(Icons.stop_circle_outlined),
+                  label: const Text('End focus now'),
+                )
+              else ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final minutes in choices)
+                      _chip(
+                        _focusLabel(minutes),
+                        minutes == focusChoice,
+                        canEdit
+                            ? () => setState(() => _focusChoice = minutes)
+                            : null,
                       ),
-                      on ? 'Break timer on.' : 'Break timer off.',
-                    )
-                  : null,
-            ),
-            Row(
-              children: [
-                const Text('After '),
-                DropdownButton<int>(
-                  value: _rules.breakAfterMinutes,
-                  items: [
-                    for (final m in ScheduleRules.breakAfterChoices)
-                      DropdownMenuItem(value: m, child: Text('$m min')),
                   ],
-                  onChanged: canEdit
-                      ? (m) => m == null
-                            ? null
-                            : _run(
-                                () => _service.saveBreaks(
-                                  _rules.copyWith(breakAfterMinutes: m),
-                                ),
-                                'Break timer saved.',
-                              )
-                      : null,
                 ),
-                const Text('  pause '),
-                DropdownButton<int>(
-                  value: _rules.breakLengthMinutes,
-                  items: [
-                    for (final m in ScheduleRules.breakLengthChoices)
-                      DropdownMenuItem(value: m, child: Text('$m min')),
-                  ],
-                  onChanged: canEdit
-                      ? (m) => m == null
-                            ? null
-                            : _run(
-                                () => _service.saveBreaks(
-                                  _rules.copyWith(breakLengthMinutes: m),
-                                ),
-                                'Break timer saved.',
-                              )
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: canEdit
+                      ? () => _run(
+                          () => _service.startFocus(focusChoice),
+                          'Focus mode started.',
+                        )
                       : null,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  child: Text('Start focus · ${_focusLabel(focusChoice)}'),
                 ),
               ],
-            ),
-            if (_saving) const LinearProgressIndicator(),
-            const SizedBox(height: 6),
-            _hint(
-              'Emergency Access and approved app time still work during '
-              'schedules.',
-            ),
-          ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Break timers (cooldown)
+        BentoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(
+                icon: Icons.coffee_outlined,
+                color: AppColors.success,
+                tint: AppColors.successBg,
+                title: 'Break timer',
+                subtitle: 'A short pause after long non-stop use of one app',
+                trailing: Switch(
+                  value: _rules.breaksEnabled,
+                  onChanged: canEdit
+                      ? (on) => _run(
+                          () => _service.saveBreaks(
+                            _rules.copyWith(breaksEnabled: on),
+                          ),
+                          on ? 'Break timer on.' : 'Break timer off.',
+                        )
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    'After',
+                    style: TextStyle(color: AppColors.textPrimary),
+                  ),
+                  _minutesPill(
+                    value: _rules.breakAfterMinutes,
+                    choices: ScheduleRules.breakAfterChoices,
+                    enabled: canEdit,
+                    onChanged: (m) => _run(
+                      () => _service.saveBreaks(
+                        _rules.copyWith(breakAfterMinutes: m),
+                      ),
+                      'Break timer saved.',
+                    ),
+                  ),
+                  const Text(
+                    'pause for',
+                    style: TextStyle(color: AppColors.textPrimary),
+                  ),
+                  _minutesPill(
+                    value: _rules.breakLengthMinutes,
+                    choices: ScheduleRules.breakLengthChoices,
+                    enabled: canEdit,
+                    onChanged: (m) => _run(
+                      () => _service.saveBreaks(
+                        _rules.copyWith(breakLengthMinutes: m),
+                      ),
+                      'Break timer saved.',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        if (_saving) ...[
+          const SizedBox(height: 10),
+          const LinearProgressIndicator(),
         ],
-      ),
+        const SizedBox(height: 10),
+        _hint(
+          'Emergency Access and approved app time still work during '
+          'schedules. Changes save right away.',
+        ),
+      ],
     );
   }
 }
