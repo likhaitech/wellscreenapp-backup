@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import com.google.firebase.auth.FirebaseAuth
 import org.json.JSONArray
 
 // Debug-only tag for the browsing-capture path specifically (not restricted-
@@ -170,7 +171,44 @@ class WellScreenAccessibilityService : AccessibilityService() {
         }
     }
 
+    private var lastSignInBlockTime: Long = 0L
+
+    /**
+     * F2: blocking is switched on but nobody is signed in to WellScreen (for
+     * example after Settings > Apps > WellScreen > Clear storage wiped the
+     * rules). Treat the phone as "needs sign-in" instead of unrestricted.
+     * Fails open if Firebase cannot be read, so the phone is never locked
+     * by an error.
+     */
+    private fun needsSignIn(): Boolean {
+        return try {
+            FirebaseAuth.getInstance().currentUser == null
+        } catch (e: Exception) {
+            Log.w("WellScreenLimits", "Could not read sign-in state", e)
+            false
+        }
+    }
+
+    private fun showSignInRequired(currentPackage: String): Boolean {
+        if (AppTimeLimitEnforcer.isAlwaysAllowed(this, currentPackage)) return false
+        if (!needsSignIn()) return false
+        val now = System.currentTimeMillis()
+        if (BlockedAppActivity.isShowing && now - lastSignInBlockTime < 2500) return true
+        lastSignInBlockTime = now
+        try {
+            val intent = Intent(this, BlockedAppActivity::class.java)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            intent.putExtra(BlockedAppActivity.EXTRA_MODE, BlockedAppActivity.MODE_SIGN_IN_REQUIRED)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w("WellScreenLimits", "Could not show sign-in screen", e)
+        }
+        return true
+    }
+
     private fun checkRestrictedApp(currentPackage: String, notInFront: Boolean = false) {
+        if (showSignInRequired(currentPackage)) return
         // A blocked app's Lite version is blocked too (RelatedTargets).
         val blockingPackage =
             RelatedTargets.blockingPackageFor(currentPackage, getRestrictedPackages())

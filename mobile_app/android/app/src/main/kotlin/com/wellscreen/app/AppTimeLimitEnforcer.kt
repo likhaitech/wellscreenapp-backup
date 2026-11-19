@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Process
 import android.util.Log
+import android.view.inputmethod.InputMethodManager
 import org.json.JSONObject
 import java.util.Calendar
 
@@ -50,6 +51,28 @@ internal object AppTimeLimitEnforcer {
         val limitMinutes: Int,
         val remainingMilliseconds: Long,
     )
+
+    /**
+     * Apps that must always stay usable on a monitored phone: WellScreen,
+     * the home screen, phone/emergency, Settings and system dialogs.
+     */
+    fun isAlwaysAllowed(context: Context, targetPackage: String): Boolean =
+        targetPackage == context.packageName ||
+            targetPackage in essentialPackages ||
+            targetPackage == "com.google.android.gms" ||
+            isDefaultLauncher(context, targetPackage) ||
+            isKeyboard(context, targetPackage)
+
+    /** Keyboards send their own window events while the child types. */
+    private fun isKeyboard(context: Context, targetPackage: String): Boolean {
+        return try {
+            val manager = context.getSystemService(Context.INPUT_METHOD_SERVICE)
+                as? InputMethodManager ?: return false
+            manager.enabledInputMethodList.any { it.packageName == targetPackage }
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     fun isLimitReached(context: Context, targetPackage: String): Boolean =
         getStatus(context, targetPackage)?.remainingMilliseconds?.let { it <= 0L } ?: false

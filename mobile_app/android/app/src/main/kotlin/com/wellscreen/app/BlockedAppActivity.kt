@@ -49,6 +49,9 @@ class BlockedAppActivity : Activity() {
 
         /** U1: WellScreen's uninstall / Accessibility / Device Admin screens. */
         const val MODE_PROTECTED_SETTINGS = "protected_settings"
+
+        /** F2: blocking is on but nobody is signed in (e.g. storage cleared). */
+        const val MODE_SIGN_IN_REQUIRED = "sign_in_required"
     }
 
     private var isDailyTimeLimitBlock = false
@@ -83,6 +86,7 @@ class BlockedAppActivity : Activity() {
 
         val mode = intent.getStringExtra(EXTRA_MODE)
         val isProtectedSettings = mode == MODE_PROTECTED_SETTINGS
+        val isSignInRequired = mode == MODE_SIGN_IN_REQUIRED
         val blockedDomain = if (mode == null) intent.getStringExtra("blocked_domain") else null
         blockedBrowser = intent.getStringExtra("blocked_browser")
         isWebsiteBlock = blockedDomain != null
@@ -151,6 +155,7 @@ class BlockedAppActivity : Activity() {
         val badge = TextView(this).apply {
             text = when {
                 isProtectedSettings -> "Protected"
+                isSignInRequired -> "Sign in needed"
                 blockedDomain != null -> "Blocked"
                 isDailyTimeLimitBlock -> "Time limit reached"
                 else -> "Restricted"
@@ -169,6 +174,7 @@ class BlockedAppActivity : Activity() {
         val title = TextView(this).apply {
             text = when {
                 isProtectedSettings -> "Ask your guardian"
+                isSignInRequired -> "Sign in to WellScreen"
                 blockedDomain != null -> "Website blocked"
                 else -> "$displayName is paused"
             }
@@ -184,6 +190,9 @@ class BlockedAppActivity : Activity() {
 
         val message = TextView(this).apply {
             text = when {
+                isSignInRequired ->
+                    "This phone is protected by WellScreen. Sign in to keep " +
+                        "using your apps."
                 isProtectedSettings ->
                     "WellScreen's settings are protected while this phone is " +
                         "paired. To change them, ask your guardian for " +
@@ -290,13 +299,41 @@ class BlockedAppActivity : Activity() {
             }
         }
 
+        val openAppButton = TextView(this).apply {
+            text = "Open WellScreen"
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = pill(ink)
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { topMargin = dp(32) }
+            setOnClickListener {
+                val launch = packageManager.getLaunchIntentForPackage(packageName)
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launch)
+                }
+                finish()
+            }
+        }
+
         root.addView(icon)
         root.addView(badge)
         root.addView(title)
         root.addView(message)
         // No "request access" for blocked websites: they are harmful-category
         // or guardian-blocked sites, and time requests are for apps only.
-        if (blockedDomain == null) root.addView(card)
+        // Signing in needs WellScreen itself, not a request to the guardian.
+        if (isSignInRequired) {
+            root.addView(openAppButton)
+        } else if (blockedDomain == null) {
+            root.addView(card)
+        }
         root.addView(backButton)
         setContentView(root)
     }
