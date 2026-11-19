@@ -214,6 +214,7 @@ class _ParentNotificationsScreenState
         return (AppColors.dangerBg, AppColors.danger);
       case 'no_recent_connection':
       case 'monitoring_permission_disabled':
+      case 'gps_location_stale':
         return (AppColors.warningBg, AppColors.warning);
       case 'usage_warning_threshold':
       case 'usage_high_threshold':
