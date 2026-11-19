@@ -31,4 +31,11 @@ void main() {
     expect(blockReasonLabel({'packageName': 'com.zhiliaoapp.musically'}), isNull);
     expect(blockReasonLabel({'blockSource': 'something_new'}), isNull);
   });
+
+  test('schedule blocks name the schedule', () {
+    expect(
+      blockReasonLabel({'blockSource': 'schedule', 'category': 'bedtime'}),
+      'bedtime (schedule)',
+    );
+  });
 }

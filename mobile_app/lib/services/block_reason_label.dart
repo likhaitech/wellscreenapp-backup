@@ -8,6 +8,7 @@ String? blockReasonLabel(Map<String, dynamic> entry) {
     'keyword' => 'keyword match',
     'list' => 'exact match',
     'ai' => 'AI-detected',
+    'schedule' => 'schedule',
     _ => null,
   };
   if (how == null) return null;

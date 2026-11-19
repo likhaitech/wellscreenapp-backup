@@ -52,6 +52,11 @@ class BlockedAppActivity : Activity() {
 
         /** F2: blocking is on but nobody is signed in (e.g. storage cleared). */
         const val MODE_SIGN_IN_REQUIRED = "sign_in_required"
+
+        /** Bedtime lock, focus mode or break timer (ScheduleEnforcer). */
+        const val MODE_SCHEDULE = "schedule"
+        const val EXTRA_SCHEDULE_REASON = "schedule_reason"
+        const val EXTRA_SCHEDULE_ENDS_AT = "schedule_ends_at"
     }
 
     private var isDailyTimeLimitBlock = false
@@ -87,6 +92,19 @@ class BlockedAppActivity : Activity() {
         val mode = intent.getStringExtra(EXTRA_MODE)
         val isProtectedSettings = mode == MODE_PROTECTED_SETTINGS
         val isSignInRequired = mode == MODE_SIGN_IN_REQUIRED
+        val scheduleReason = if (mode == MODE_SCHEDULE) {
+            intent.getStringExtra(EXTRA_SCHEDULE_REASON) ?: "focus"
+        } else {
+            null
+        }
+        val scheduleEndsAt = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT)
+            .format(java.util.Date(intent.getLongExtra(EXTRA_SCHEDULE_ENDS_AT, 0L)))
+        val scheduledAppName = try {
+            val pkg = intent.getStringExtra("blocked_package") ?: ""
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+        } catch (_: Exception) {
+            "This app"
+        }
         val blockedDomain = if (mode == null) intent.getStringExtra("blocked_domain") else null
         blockedBrowser = intent.getStringExtra("blocked_browser")
         isWebsiteBlock = blockedDomain != null
@@ -156,6 +174,9 @@ class BlockedAppActivity : Activity() {
             text = when {
                 isProtectedSettings -> "Protected"
                 isSignInRequired -> "Sign in needed"
+                scheduleReason == "bedtime" -> "Bedtime"
+                scheduleReason == "break" -> "Break time"
+                scheduleReason != null -> "Focus time"
                 blockedDomain != null -> "Blocked"
                 isDailyTimeLimitBlock -> "Time limit reached"
                 else -> "Restricted"
@@ -175,6 +196,9 @@ class BlockedAppActivity : Activity() {
             text = when {
                 isProtectedSettings -> "Ask your guardian"
                 isSignInRequired -> "Sign in to WellScreen"
+                scheduleReason == "bedtime" -> "Time to rest"
+                scheduleReason == "break" -> "Take a break"
+                scheduleReason != null -> "Focus time"
                 blockedDomain != null -> "Website blocked"
                 else -> "$displayName is paused"
             }
@@ -193,6 +217,16 @@ class BlockedAppActivity : Activity() {
                 isSignInRequired ->
                     "This phone is protected by WellScreen. Sign in to keep " +
                         "using your apps."
+                scheduleReason == "bedtime" ->
+                    "Apps are paused for bedtime until $scheduleEndsAt. " +
+                        "Calls and WellScreen still work."
+                scheduleReason == "break" ->
+                    "You've been on $scheduledAppName for a while. It's " +
+                        "paused until $scheduleEndsAt - try something else " +
+                        "for a bit."
+                scheduleReason != null ->
+                    "Apps are paused until $scheduleEndsAt so you can " +
+                        "focus. Calls and WellScreen still work."
                 isProtectedSettings ->
                     "WellScreen's settings and the phone's date and time are " +
                         "protected while this phone is paired. To change them, " +

@@ -175,6 +175,34 @@ internal object AppTimeLimitEnforcer {
         return totalMs
     }
 
+    /**
+     * The app's foreground (1) / background (2) events over the last 4 hours,
+     * oldest first, for the break timer. Null without Usage Access.
+     */
+    fun foregroundEvents(context: Context, targetPackage: String, now: Long): List<Pair<Int, Long>>? {
+        if (!hasUsageAccess(context)) return null
+        return try {
+            val manager = context.getSystemService(Context.USAGE_STATS_SERVICE)
+                as? UsageStatsManager ?: return null
+            val events = manager.queryEvents(now - 4 * 60 * 60_000L, now)
+            val event = UsageEvents.Event()
+            val result = ArrayList<Pair<Int, Long>>()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event)
+                if (event.packageName != targetPackage) continue
+                @Suppress("DEPRECATION")
+                when (event.eventType) {
+                    UsageEvents.Event.MOVE_TO_FOREGROUND -> result.add(1 to event.timeStamp)
+                    UsageEvents.Event.MOVE_TO_BACKGROUND -> result.add(2 to event.timeStamp)
+                }
+            }
+            result
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read usage events for $targetPackage", e)
+            null
+        }
+    }
+
     private fun hasUsageAccess(context: Context): Boolean {
         val ops = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
             ?: return false

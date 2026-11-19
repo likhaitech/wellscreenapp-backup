@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_rule.dart';
+import '../models/schedule_rules.dart';
 import 'site_category_service.dart';
 
 class AppRulesService {
@@ -22,6 +23,10 @@ class AppRulesService {
 
   static const String _rulesKey = 'app_rules_json';
   static const String _restrictedPackagesKey = 'restricted_packages_json';
+
+  /// Mirrored schedules for the native blocker
+  /// (flutter.wellscreen_schedules_json on Android).
+  static const String schedulesKey = 'wellscreen_schedules_json';
   static const String _childRuleScopeKey = 'app_rules_child_scope_json';
   static _ChildAppRulesSync? _childRulesSync;
 
@@ -286,6 +291,7 @@ class _ChildAppRulesSync {
   Future<void> _clearChildCache(SharedPreferences prefs) async {
     await AppRulesService._writeRulesLocally(prefs, <AppRule>[]);
     await prefs.remove(AppRulesService._childRuleScopeKey);
+    await prefs.remove(AppRulesService.schedulesKey);
   }
 
   void _onAuthChanged(User? user) {
@@ -388,6 +394,16 @@ class _ChildAppRulesSync {
             final prefs = await SharedPreferences.getInstance();
             if (version != _rulesVersion) return;
             await AppRulesService._writeRulesLocally(prefs, rules);
+            // Bedtime lock, focus mode and break timers for the native
+            // blocker (ScheduleEnforcer.kt).
+            await prefs.setString(
+              AppRulesService.schedulesKey,
+              jsonEncode(
+                ScheduleRules.fromMap(
+                  snapshot.data()?['schedules'],
+                ).toNativeJson(),
+              ),
+            );
             final saved = await prefs.setString(
               AppRulesService._childRuleScopeKey,
               jsonEncode({'childUid': uid, 'parentId': parentId}),

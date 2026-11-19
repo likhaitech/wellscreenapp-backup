@@ -10,6 +10,7 @@ import '../../services/quick_block_sites.dart';
 import '../../services/site_category_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/wellscreen_ui.dart';
+import 'schedules_card.dart';
 
 class RulesScreen extends StatefulWidget {
   const RulesScreen({super.key});
@@ -705,6 +706,8 @@ class _RulesScreenState extends State<RulesScreen> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 14),
+                        const SchedulesCard(),
                         const SizedBox(height: 14),
                         _websiteRulesCard(),
                         if (_usingLocalAppList) ...[
