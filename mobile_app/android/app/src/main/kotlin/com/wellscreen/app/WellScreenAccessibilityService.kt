@@ -676,6 +676,8 @@ class WellScreenAccessibilityService : AccessibilityService() {
         // Send the browser to a safe page first, so reopening it does not land
         // on the blocked site again (that caused an endless block loop).
         SafePageRedirect.leaveBlockedPage(this, browserPackage)
+        // The safe page is our redirect, not a visit - keep it out of the report.
+        lastCapturedDomain[browserPackage] = SafePageRedirect.SAFE_PAGE_DOMAIN
 
         try {
             val intent = Intent(this, BlockedAppActivity::class.java)
@@ -687,6 +689,10 @@ class WellScreenAccessibilityService : AccessibilityService() {
             if (!sameAttempt) {
                 RestrictionLogger.recordOutcome(
                     this, domain, "blocked", now, reason.source, reason.category,
+                )
+                // Show the blocked site in the Browsing report, labelled.
+                BrowsingLogger.recordBlocked(
+                    this, browserPackage, domain, reason.category, reason.source,
                 )
                 RepeatedAttemptAlert.onBlocked(this, domain, reason.source)
             }
