@@ -574,6 +574,12 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 "${texts.sumOf { it.length }} chars -> ${result.level} " +
                 "${result.category ?: "-"} score ${result.score}"
         )
+        if (result.level != PageTextClassifier.Level.NONE && result.category != null) {
+            BrowsingLogger.tagVisit(
+                this, domain, result.category,
+                if (result.level == PageTextClassifier.Level.BLOCK) "page" else "hint",
+            )
+        }
         return when (result.level) {
             PageTextClassifier.Level.BLOCK -> {
                 val reason = SiteBlocker.BlockReason("page", result.category)

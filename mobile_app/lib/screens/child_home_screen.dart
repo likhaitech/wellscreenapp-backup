@@ -1423,11 +1423,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         // reliable at (see SiteCategoryMlClassifier's doc comment for
         // the measured reasoning behind that restriction, including why
         // 'drugs' was tested and deliberately held back).
-        final blocked = match == null ? blockedSites[domain] : null;
+        // Order: the address check, then what the page check found on the
+        // phone (saved on the entry natively), then the block log.
+        final pageTagged = entry['category'] != null;
+        final blocked = match == null && !pageTagged ? blockedSites[domain] : null;
         categorizedBrowsingLog.add({
           ...entry,
-          'category': ?(match?.category ?? blocked?['category']),
-          'detectionSource': ?(match?.source ?? blocked?['blockSource']),
+          'category': ?(match?.category ?? entry['category'] ?? blocked?['category']),
+          'detectionSource':
+              ?(match?.source ?? entry['detectionSource'] ?? blocked?['blockSource']),
           'mlConfidence': ?match?.confidence,
         });
         if (match != null &&

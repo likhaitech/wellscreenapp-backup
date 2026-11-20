@@ -48,4 +48,27 @@ object BrowsingLogger {
             // Best-effort logging only - never let this crash the caller.
         }
     }
+
+    /**
+     * Marks the latest visit to [domain] with what the page check found
+     * (e.g. "adult" from "page" words), so Reports can flag a site whose
+     * address looks harmless. Never overwrites an existing category.
+     */
+    fun tagVisit(context: Context, domain: String, category: String, source: String) {
+        try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val log = JSONArray(prefs.getString(LOG_KEY, "[]") ?: "[]")
+            for (i in log.length() - 1 downTo 0) {
+                val entry = log.optJSONObject(i) ?: continue
+                if (entry.optString("domain") != domain) continue
+                if (entry.has("category")) return
+                entry.put("category", category)
+                entry.put("detectionSource", source)
+                prefs.edit().putString(LOG_KEY, log.toString()).apply()
+                return
+            }
+        } catch (_: Exception) {
+            // Best-effort only.
+        }
+    }
 }
