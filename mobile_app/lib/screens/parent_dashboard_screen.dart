@@ -26,6 +26,7 @@ import 'profile_settings_screen.dart';
 import 'reports_screen.dart';
 import 'rules/rules_screen.dart';
 import '../utils/child_name.dart';
+import '../utils/primary_child.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -440,13 +441,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   QueryDocumentSnapshot<Map<String, dynamic>>? getPrimaryChildDoc(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> childDocs,
   ) {
-    if (childDocs.isEmpty) return null;
-
-    for (final doc in childDocs) {
-      if (isChildConnected(doc.data())) return doc;
-    }
-
-    return childDocs.first;
+    // Most recently active connected child, not simply the first one -
+    // see primary_child.dart.
+    final index = pickPrimaryChildIndex(
+      childDocs.map((doc) => doc.data()).toList(),
+      isChildConnected,
+    );
+    return index < 0 ? null : childDocs[index];
   }
 
   @override
