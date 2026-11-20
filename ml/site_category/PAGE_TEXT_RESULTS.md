@@ -86,3 +86,29 @@ no words until the visitor clicks "Enter".
   the child clicks through (every 2 seconds, up to 12 times in 2 minutes).
 - The education group did not include PH news ARTICLES about gambling
   (the news sites failed to load); unit tests cover a typical headline.
+
+## Update 21 Nov 2026 (after emulator testing)
+
+Words added after real sites got through on the emulator:
+- Filipino explicit words and phrases (kantot, iyot, jakol, tsupa, libog,
+  tamod, "pinay scandal", "pinoy bold"...) - Tagalog adult sites.
+- Tube-site category words (boobs, tits, anal, cum, deepthroat, hardcore,
+  pornstar, busty, bbw...) and phrases ("big boobs", "big tits", "gay porn"
+  ...) - rbreezy.xyz showed only a category menu and scored too low.
+  Left out on purpose: words a health or sex-education page uses
+  (masturbation, orgasm, lesbian, gay, teen, vagina, penis) and everyday
+  words (sexy, amateur, facial, dick).
+
+Re-run on the same 439 pages with the same thresholds:
+
+| Group | Blocked | Review | Nothing |
+|---|---|---|---|
+| Gambling, real pages (76) | 46 | 11 | 19 |
+| Adult, real pages (93) | 83 (was 77) | 1 | 9 |
+| Normal (197) | **0** | 2 | 195 |
+| Education / health / news (39) | **0** | 1 | 38 |
+
+Also: search engines and big platforms (Google, Bing, YouTube, Facebook,
+X, Reddit...) skip the page check, because it blocks a whole site and a
+Google results page can show explicit words (google.com got blocked in
+testing). See PageCheckExempt.kt.

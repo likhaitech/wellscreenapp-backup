@@ -25,6 +25,11 @@ object AdultKeywordMatcher {
         // Left out on purpose: "anal" (analytics), "naked" (Naked Wines),
         // "webcam" (traffic cams).
         "fuck", "hentai", "nude", "nsfw", "pussy", "boob", "slut", "whore", "erotic", "fetish", "bdsm", "blowjob", "horny", "xnxx", "xhamster", "escort", "camgirl", "milf",
+        // Filipino (added 21 Nov 2026): Tagalog explicit words and PH adult
+        // site names reported in testing. 0 hits on DNSFilter's top 20,000
+        // sites. Left out on purpose: "iyot" (inside "kiyota..."), "chupa"
+        // (Chupa Chups), "bold", "pinay" (just means Filipina).
+        "kantot", "jakol", "tsupa", "libog", "tamod", "iyutan", "pinayflix", "sulasok",
     )
 
     /** Ordinary words that contain a keyword ("milford" contains "milf"). */

@@ -137,4 +137,50 @@ class PageTextClassifierTest {
         ))
         assertEquals(true, r.level != PageTextClassifier.Level.BLOCK)
     }
+
+    @Test
+    fun filipinoAdultPageIsBlocked() {
+        // Like Tagalog adult sites (titles in Filipino, few English words).
+        val r = PageTextClassifier.classify(listOf(
+            "Pinay Scandal", "Bagong kantutan", "Iyot sa probinsya", "Jakol",
+            "Malibog na misis", "Tamod", "Home", "Latest",
+        ))
+        assertEquals(PageTextClassifier.Level.BLOCK, r.level)
+        assertEquals("adult", r.category)
+    }
+
+    @Test
+    fun filipinoSexEducationPageIsNotBlocked() {
+        val r = PageTextClassifier.classify(listOf(
+            "Edukasyong pangkalusugan: pagdadalaga at pagbibinata",
+            "Ang ari ng babae at lalaki, regla, at ligtas na pakikipagtalik",
+            "Pag-iwas sa HIV at teenage pregnancy. Magtanong sa magulang o guro.",
+        ))
+        assertEquals(PageTextClassifier.Level.NONE, r.level)
+    }
+
+    @Test
+    fun oneFilipinoWordAloneDoesNotBlock() {
+        assertEquals(PageTextClassifier.Level.NONE, level("Chupa Chups lollipop", "Candy shop"))
+    }
+
+    @Test
+    fun tubeSiteCategoryMenuIsBlocked() {
+        // Like rbreezy.xyz in emulator testing: only a category list shows.
+        val r = PageTextClassifier.classify(listOf(
+            "Categories", "Amateur", "Anal", "Asian", "Big Boobs", "Blowjob",
+            "Busty", "Hardcore", "Lesbian", "Teen",
+        ))
+        assertEquals(PageTextClassifier.Level.BLOCK, r.level)
+        assertEquals("adult", r.category)
+    }
+
+    @Test
+    fun healthPageWithOneClinicalWordIsNotBlocked() {
+        val r = PageTextClassifier.classify(listOf(
+            "Anal fissure: symptoms and treatment",
+            "Breast and testicle self-checks for teens. Talk to a doctor.",
+        ))
+        assertEquals(PageTextClassifier.Level.NONE, r.level)
+    }
 }

@@ -1,0 +1,10 @@
+# Philippine adult sites REPORTED BY REY (project member) on 21 Nov 2026
+# while testing WellScreen on the emulator: they opened without being
+# blocked. Not from a published blocklist and not independently verified
+# by Claude (the workspace can't open websites) - the weakest source in
+# raw/, kept separate and small on purpose. Goes ONLY into the app's
+# bundled blocklist, never into the AI's training data
+# (BLOCKLIST_ONLY_SOURCES in clean_dataset.py).
+# pinayflix.* and sulasok.* are also caught by the address keywords.
+sulasok.tv
+kayatan.org
