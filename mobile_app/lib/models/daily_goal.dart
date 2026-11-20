@@ -35,6 +35,12 @@ class DailyGoal {
   static const String minutesField = 'dailyGoalMinutes';
   static const String updatedAtField = 'dailyGoalUpdatedAt';
 
+  /// Phone-only copy of the child's age group for the native website check
+  /// (SiteReview.kt reads it as "flutter.child_age_group"): for 6 and below a
+  /// "possible risk" site is blocked, for older children the guardian is
+  /// asked to review it instead.
+  static const String ageGroupPrefKey = 'child_age_group';
+
   /// Used when no age group has been chosen yet (older pairings).
   static const int fallbackMinutes = 180;
 

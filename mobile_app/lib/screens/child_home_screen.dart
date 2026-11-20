@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +19,7 @@ import '../models/app_usage_summary.dart';
 import '../models/daily_goal.dart';
 import '../models/usage_report.dart';
 import '../services/alert_notification_client.dart';
+import '../services/privacy_text.dart';
 import '../services/android_app_service.dart';
 import '../services/monitoring_usage_alert_service.dart';
 import '../services/installed_app_metadata_service.dart';
@@ -327,6 +329,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         .listen(
           (snapshot) async {
             if (!snapshot.exists) return;
+            await _cacheAgeGroup(snapshot.data());
             final goal = DailyGoal.durationFor(snapshot.data());
             final current = await _dailyScreenTimeLimitService.getDailyLimit();
             if (goal == current) return;
@@ -337,6 +340,22 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             debugPrint('Could not read the daily goal: $error');
           },
         );
+  }
+
+  /// Keeps the age group on the phone for the native website check, which
+  /// is stricter for 6 and below. Removed when the guardian hasn't set one.
+  Future<void> _cacheAgeGroup(Map<String, dynamic>? profile) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final group = ChildAgeGroup.parse(profile?[DailyGoal.ageGroupField]);
+      if (group == null) {
+        await prefs.remove(DailyGoal.ageGroupPrefKey);
+      } else if (prefs.getString(DailyGoal.ageGroupPrefKey) != group.id) {
+        await prefs.setString(DailyGoal.ageGroupPrefKey, group.id);
+      }
+    } catch (error) {
+      debugPrint('Could not cache the age group: $error');
+    }
   }
 
   Future<void> _syncChildDisplayName(String profileId) async {
@@ -3643,12 +3662,22 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     _brandIndigo,
                     'This phone\'s location, when location sharing is on.',
                   ),
+                  point(
+                    Icons.language_rounded,
+                    _brandIndigo,
+                    PrivacyText.childWebsites,
+                  ),
                   heading('Privacy boundary'),
                   point(
                     Icons.lock_outline_rounded,
                     _emerald,
                     'WellScreen does not read messages, passwords, calls, '
                     'photos, or sensitive files.',
+                  ),
+                  point(
+                    Icons.travel_explore_rounded,
+                    _emerald,
+                    PrivacyText.childPageCheck,
                   ),
                   heading('Good to know'),
                   point(
@@ -4898,7 +4927,81 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       _gpsCard(data, connected),
       const SizedBox(height: 14),
       _protectionChecklistCard(connected),
+      if (connected) ...[
+        const SizedBox(height: 14),
+        _familyDnsCard(),
+      ],
     ];
+  }
+
+  /// Optional note: Android's Private DNS can use Cloudflare's family filter
+  /// for the whole phone. WellScreen does not change this setting itself.
+  Widget _familyDnsCard() {
+    return _whiteCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.dns_outlined,
+                  color: _brandIndigo,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Extra website filter',
+                  style: TextStyle(
+                    fontFamily: AppFonts.heading,
+                    color: _ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _pill(
+                label: 'Optional',
+                background: AppColors.surfaceMuted,
+                foreground: _slate,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                fontSize: 12,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            PrivacyText.familyDnsSteps,
+            style: TextStyle(color: _slate, fontSize: 13, height: 1.4),
+          ),
+          const SizedBox(height: 10),
+          AppPillButton(
+            label: 'Copy ${PrivacyText.familyDnsHost}',
+            icon: Icons.copy_rounded,
+            style: AppPillStyle.soft,
+            softTint: true,
+            compact: true,
+            onPressed: () async {
+              await Clipboard.setData(
+                const ClipboardData(text: PrivacyText.familyDnsHost),
+              );
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Copied. Paste it in Private DNS.')),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _gpsCard(Map<String, dynamic> data, bool connected) {

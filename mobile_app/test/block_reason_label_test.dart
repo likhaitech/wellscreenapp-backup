@@ -38,4 +38,18 @@ void main() {
       'bedtime (schedule)',
     );
   });
+
+  test('page-word blocks say the page content was checked', () {
+    expect(
+      blockReasonLabel({'blockSource': 'page', 'category': 'gambling'}),
+      'gambling (page words)',
+    );
+  });
+
+  test('hint blocks (age 6 and below) say it was only a possible risk', () {
+    expect(
+      blockReasonLabel({'blockSource': 'hint', 'category': 'unsafe'}),
+      'unsafe (possible risk, age 6 and below)',
+    );
+  });
 }

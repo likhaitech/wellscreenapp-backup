@@ -5,6 +5,7 @@ import '../widgets/wellscreen_ui.dart';
 import '../services/block_reason_label.dart';
 import '../services/location_geocoding_service.dart';
 import '../services/report_export_service.dart';
+import '../services/site_category_service.dart';
 import '../services/sms_alert_label.dart';
 import '../theme/app_theme.dart';
 import 'gps_map_screen.dart';
@@ -813,10 +814,20 @@ class ReportsScreen extends StatelessWidget {
         'items, and adult content), a keyword check for explicit '
         'content, and an AI model that catches gambling sites not yet '
         'on the list.\n\n'
-        'This is detection and after-the-fact alerting, not blocking '
-        '- a flagged page will still have loaded on the child\'s '
-        'device before you see the alert here, since real-time '
-        'blocking isn\'t built yet.',
+        'Known harmful sites are blocked as soon as the child opens '
+        'them in a supported browser. For new sites that aren\'t on any '
+        'list yet, the child\'s phone also reads the words shown on the '
+        'page, on the phone only - nothing from the page is saved or '
+        'sent. A clear mix like "deposit", "bet now" and "free spins" '
+        'blocks the site; a page that only mentions such topics, like a '
+        'news story, never does.\n\n'
+        'When WellScreen isn\'t sure about a site, it sends you a '
+        '"Review this website" notification so you can allow or block '
+        'it (for ages 6 and below it blocks first). School, government '
+        'and health sites - including sex education and LGBT support '
+        'pages - are never blocked automatically.\n\n'
+        'You always have the last word: use the \u22ee menu next to '
+        'any site above to block or allow it.',
         style: Theme.of(context).textTheme.bodyMedium,
       ),
     );
@@ -1409,6 +1420,112 @@ class _BrowsingActivityCard extends StatefulWidget {
 
 class _BrowsingActivityCardState extends State<_BrowsingActivityCard> {
   bool _flaggedOnly = false;
+  final SiteCategoryService _siteCategoryService = SiteCategoryService();
+
+  /// The guardian's own Block / Allow rules, to show which sites already
+  /// have one. Null until loaded (or if offline); the menu still works.
+  WebsiteRules? _rules;
+  String? _savingDomain;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRules();
+  }
+
+  Future<void> _loadRules() async {
+    try {
+      final rules = await _siteCategoryService.fetchGuardianWebsiteRules();
+      if (mounted) setState(() => _rules = rules);
+    } catch (error) {
+      debugPrint('Could not load website rules for Reports: $error');
+    }
+  }
+
+  /// One-tap Block / Allow from the browsing list. The guardian's rule wins
+  /// over every automatic check, including the education allow list.
+  Future<void> _setRule(String domain, WebsiteRuleAction? action) async {
+    if (_savingDomain != null) return;
+    setState(() => _savingDomain = domain);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final rules =
+          await _siteCategoryService.updateGuardianWebsiteRule(domain, action);
+      if (!mounted) return;
+      setState(() => _rules = rules);
+      messenger.showSnackBar(SnackBar(content: Text(switch (action) {
+        WebsiteRuleAction.block => '$domain blocked on your child\'s phone.',
+        WebsiteRuleAction.allow => '$domain allowed on your child\'s phone.',
+        null => 'Your rule for $domain was removed.',
+      })));
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(error is FormatException
+            ? error.message
+            : 'Could not save website rule. Check your connection and try again.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _savingDomain = null);
+    }
+  }
+
+  Widget _ruleMenu(String domain) {
+    final current = _rules?.ruleFor(domain);
+    if (_savingDomain == domain) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return PopupMenuButton<String>(
+      tooltip: 'Block or allow $domain',
+      icon: const Icon(Icons.more_vert_rounded,
+          size: 20, color: AppColors.textSecondary),
+      onSelected: (value) => _setRule(domain, switch (value) {
+        'block' => WebsiteRuleAction.block,
+        'allow' => WebsiteRuleAction.allow,
+        _ => null,
+      }),
+      itemBuilder: (context) => [
+        if (current != WebsiteRuleAction.block)
+          const PopupMenuItem(
+            value: 'block',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.block_rounded, color: AppColors.danger),
+              title: Text('Block this site'),
+            ),
+          ),
+        if (current != WebsiteRuleAction.allow)
+          const PopupMenuItem(
+            value: 'allow',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading:
+                  Icon(Icons.check_circle_rounded, color: AppColors.success),
+              title: Text('Allow this site'),
+            ),
+          ),
+        if (current != null)
+          const PopupMenuItem(
+            value: 'remove',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.undo_rounded),
+              title: Text('Remove my rule'),
+            ),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1527,6 +1644,8 @@ class _BrowsingActivityCardState extends State<_BrowsingActivityCard> {
 
   Widget _entry(BuildContext context, Map<String, dynamic> entry) {
     final category = entry['category'];
+    final domain = WebsiteRules.normalizeDomain((entry['domain'] ?? '').toString());
+    final rule = domain == null ? null : _rules?.ruleFor(domain);
     final source = entry['detectionSource'];
     final (sourceLabel, sourceColor) = switch (source) {
       'ml' => ('AI-detected', AppColors.sourceMl),
@@ -1570,6 +1689,20 @@ class _BrowsingActivityCardState extends State<_BrowsingActivityCard> {
                   _formatTimestamp(entry['timestampMs']),
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
+                if (rule != null) ...[
+                  const SizedBox(height: 4),
+                  AppBadge(
+                    label: rule == WebsiteRuleAction.block
+                        ? 'Blocked by you'
+                        : 'Allowed by you',
+                    color: rule == WebsiteRuleAction.block
+                        ? AppColors.danger
+                        : AppColors.success,
+                    background: rule == WebsiteRuleAction.block
+                        ? AppColors.dangerBg
+                        : AppColors.successBg,
+                  ),
+                ],
               ],
             ),
           ),
@@ -1579,6 +1712,7 @@ class _BrowsingActivityCardState extends State<_BrowsingActivityCard> {
               color: sourceColor,
               background: sourceColor.withValues(alpha: 0.12),
             ),
+          if (domain != null) _ruleMenu(domain),
         ],
       ),
     );

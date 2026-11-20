@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_notifications_screen.dart';
 import '../utils/child_name.dart';
 import '../services/parent_alert_badge_service.dart';
+import '../services/site_category_service.dart';
+import '../services/site_review_alert.dart';
 import '../theme/app_theme.dart';
 
 /// Parent notification center.
@@ -206,6 +208,12 @@ class _ParentNotificationsScreenState
       case 'restricted_content_attempt':
         return Icons.public_off_rounded;
 
+      case SiteReviewAlert.reviewKind:
+        return Icons.travel_explore_rounded;
+
+      case SiteReviewAlert.requestKind:
+        return Icons.front_hand_outlined;
+
       default:
         return Icons.notifications_outlined;
     }
@@ -220,6 +228,7 @@ class _ParentNotificationsScreenState
       case 'accessibility_disabled':
         return (AppColors.dangerBg, AppColors.danger);
       case 'device_admin_disable_attempt':
+      case SiteReviewAlert.reviewKind:
         return (AppColors.warningBg, AppColors.warning);
       case 'no_recent_connection':
       case 'monitoring_permission_disabled':
@@ -243,6 +252,7 @@ class _ParentNotificationsScreenState
     switch (kind) {
       case 'usage_warning_threshold':
       case 'device_admin_disable_attempt':
+      case SiteReviewAlert.reviewKind:
         return 'Warning';
       case 'usage_high_threshold':
       case 'unhealthy_usage_pattern':
@@ -410,6 +420,89 @@ class _ParentNotificationsScreenState
     return '$channel: $status';
   }
 
+  final SiteCategoryService _siteCategoryService = SiteCategoryService();
+  String? _savingSite;
+
+  /// One-tap Allow / Block for "Review this website" and "Your child asked
+  /// to open a website". Saves the guardian's own rule, which wins over
+  /// every automatic check on the child's phone.
+  Future<void> _decideSite(String domain, WebsiteRuleAction action) async {
+    if (_savingSite != null) return;
+    setState(() => _savingSite = domain);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _siteCategoryService.updateGuardianWebsiteRule(domain, action);
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(action == WebsiteRuleAction.allow
+            ? '$domain allowed. Your child can open it now.'
+            : '$domain blocked on your child\'s phone.'),
+      ));
+    } catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(
+        content: Text(error is FormatException
+            ? error.message
+            : 'Could not save website rule. Check your connection and try again.'),
+      ));
+    } finally {
+      if (mounted) setState(() => _savingSite = null);
+    }
+  }
+
+  Widget _siteDecisionButtons(String domain, String kind) {
+    final saving = _savingSite == domain;
+    // The child asked for it: Allow is the main action. WellScreen flagged
+    // it: Block is.
+    final allowFirst = kind == SiteReviewAlert.requestKind;
+    final allow = Expanded(
+      child: AppPillButton(
+        label: 'Allow',
+        icon: Icons.check_rounded,
+        compact: true,
+        expand: true,
+        loading: saving,
+        style: allowFirst ? AppPillStyle.primary : AppPillStyle.soft,
+        onPressed: () => _decideSite(domain, WebsiteRuleAction.allow),
+      ),
+    );
+    final block = Expanded(
+      child: AppPillButton(
+        label: 'Block',
+        icon: Icons.block_rounded,
+        compact: true,
+        expand: true,
+        loading: saving,
+        style: allowFirst ? AppPillStyle.soft : AppPillStyle.primary,
+        onPressed: () => _decideSite(domain, WebsiteRuleAction.block),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          domain,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: allowFirst
+              ? [allow, const SizedBox(width: 10), block]
+              : [block, const SizedBox(width: 10), allow],
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Applies to your child\'s phone right away. You can change it '
+          'later in Rules > Websites.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
   /// Display one security, usage, or SMS alert.
   Widget _alertTile({
     required String parentUid,
@@ -421,6 +514,7 @@ class _ParentNotificationsScreenState
     required String pushStatus,
     required String smsStatus,
     bool legacySms = false,
+    String? siteDomain,
   }) {
     final read = _readAlerts.contains(key);
 
@@ -505,6 +599,10 @@ class _ParentNotificationsScreenState
             body,
             style: const TextStyle(height: 1.45),
           ),
+          if (siteDomain != null) ...[
+            const SizedBox(height: 12),
+            _siteDecisionButtons(siteDomain, kind),
+          ],
           const SizedBox(height: 10),
           Text(
             legacySms
@@ -693,6 +791,10 @@ class _ParentNotificationsScreenState
                           (doc.data()['smsStatus'] ??
                                   '')
                               .toString(),
+                      siteDomain: SiteReviewAlert.domainOf(
+                        (doc.data()['kind'] ?? '').toString(),
+                        doc.data()['details'],
+                      ),
                     ),
                 ],
               );

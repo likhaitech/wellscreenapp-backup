@@ -473,6 +473,158 @@ class WellScreenAccessibilityService : AccessibilityService() {
     private var lastBlockedDomain: String? = null
     private var lastWebBlockTime: Long = 0L
 
+    // ---- Page-word check and Cloudflare hint (new-site detection) ----
+    // A page is read at most every 2 s, and at most 12 times per site per
+    // 2 minutes (pages load bit by bit, so a few reads are needed).
+    private val pageScanIntervalMs = 2_000L
+    private val pageScanWindowMs = 120_000L
+    private val pageScanMax = 12
+    private var pageScanKey: String? = null
+    private var pageScanFirstAt = 0L
+    private var pageScanLastAt = 0L
+    private var pageScanCount = 0
+    // Site currently shown in each browser, for Cloudflare answers that
+    // arrive later on a background thread.
+    private val currentBrowserDomain = mutableMapOf<String, String>()
+    // Sites already blocked by the page or hint check, so coming back to
+    // them blocks straight away (kept 1 hour, in memory only).
+    private val contentBlocked = mutableMapOf<String, Pair<SiteBlocker.BlockReason, Long>>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Page text for the page-word check: more of the page than [collectScreenTexts]. */
+    private fun collectPageTexts(root: AccessibilityNodeInfo): List<String> {
+        val texts = ArrayList<String>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+        var chars = 0
+        while (queue.isNotEmpty() && visited < 1500 && chars < 20_000) {
+            val node = queue.removeFirst()
+            visited++
+            node.text?.toString()?.takeIf { it.isNotBlank() }?.let {
+                texts.add(it)
+                chars += it.length
+            }
+            node.contentDescription?.toString()?.takeIf { it.isNotBlank() }?.let {
+                texts.add(it)
+                chars += it.length
+            }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let { queue.add(it) }
+            }
+        }
+        return texts
+    }
+
+    /**
+     * Returns true when it blocked the page. Reads the visible words only
+     * on the phone; nothing is saved or sent. Skipped for guardian-allowed
+     * and education/health sites.
+     */
+    private fun checkPageContent(
+        browserPackage: String,
+        domain: String,
+        root: AccessibilityNodeInfo,
+    ): Boolean {
+        currentBrowserDomain[browserPackage] = domain
+        val now = System.currentTimeMillis()
+        // The guardian's Allow (for example after "Ask my parent") and the
+        // education list win over any automatic block remembered below.
+        if (SiteBlocker.skipsContentChecks(this, domain)) {
+            contentBlocked.remove(domain)
+            return false
+        }
+        contentBlocked[domain]?.let { (reason, at) ->
+            if (now - at < 60 * 60 * 1000L) {
+                blockWebsite(browserPackage, domain, reason)
+                return true
+            }
+            contentBlocked.remove(domain)
+        }
+        if (!isPairedChildPhone()) return false
+
+        if (maybeAskFamilyDns(browserPackage, domain)) return true
+
+        val key = "$browserPackage|$domain"
+        if (key != pageScanKey) {
+            pageScanKey = key
+            pageScanFirstAt = now
+            pageScanLastAt = 0L
+            pageScanCount = 0
+        }
+        if (now - pageScanFirstAt >= pageScanWindowMs) {
+            pageScanFirstAt = now
+            pageScanCount = 0
+        }
+        if (now - pageScanLastAt < pageScanIntervalMs || pageScanCount >= pageScanMax) return false
+        pageScanLastAt = now
+        pageScanCount++
+
+        val result = PageTextClassifier.classify(collectPageTexts(root))
+        return when (result.level) {
+            PageTextClassifier.Level.BLOCK -> {
+                val reason = SiteBlocker.BlockReason("page", result.category)
+                contentBlocked[domain] = reason to now
+                blockWebsite(browserPackage, domain, reason)
+                true
+            }
+            PageTextClassifier.Level.HINT ->
+                onSiteHint(browserPackage, domain, "page", result.category)
+            PageTextClassifier.Level.NONE -> false
+        }
+    }
+
+    /**
+     * Asks Cloudflare's family filter once per site (cached). A remembered
+     * "refused" answer is acted on again on every visit, so a young child
+     * stays blocked for as long as the answer is cached. Returns true when
+     * it blocked.
+     */
+    private fun maybeAskFamilyDns(browserPackage: String, domain: String): Boolean {
+        when (FamilyDnsCheck.cached(domain)) {
+            FamilyDnsCheck.Verdict.REFUSED ->
+                return onSiteHint(browserPackage, domain, "cloudflare", "unsafe")
+            null -> Unit
+            else -> return false
+        }
+        val app = applicationContext
+        FamilyDnsCheck.checkAsync(domain) { verdict ->
+            if (verdict != FamilyDnsCheck.Verdict.REFUSED) return@checkAsync
+            mainHandler.post {
+                try {
+                    if (SiteBlocker.skipsContentChecks(app, domain)) return@post
+                    onSiteHint(browserPackage, domain, "cloudflare", "unsafe")
+                } catch (e: Exception) {
+                    Log.w(CAPTURE_LOG_TAG, "Family filter hint failed", e)
+                }
+            }
+        }
+        return false
+    }
+
+    /**
+     * An uncertain site: blocked for the youngest age group, otherwise the
+     * guardian is asked to review it (once per site per day). Returns true
+     * when it blocked.
+     */
+    private fun onSiteHint(
+        browserPackage: String,
+        domain: String,
+        reason: String,
+        category: String?,
+    ): Boolean {
+        if (SiteReview.blocksHints(SiteReview.ageGroup(this))) {
+            // Only block if the browser is still on that site.
+            if (currentBrowserDomain[browserPackage] != domain) return false
+            val blockReason = SiteBlocker.BlockReason("hint", category ?: "unsafe")
+            contentBlocked[domain] = blockReason to System.currentTimeMillis()
+            blockWebsite(browserPackage, domain, blockReason)
+            return true
+        }
+        SiteReview.sendReview(this, domain, reason, category)
+        return false
+    }
+
     private fun blockWebsite(
         browserPackage: String,
         domain: String,
@@ -565,6 +717,10 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 blockWebsite(currentPackage, domain, blockReason)
                 return
             }
+
+            // New-site checks: page words (and Cloudflare's family filter)
+            // for sites the address checks didn't decide.
+            if (checkPageContent(currentPackage, domain, root)) return
 
             if (lastCapturedDomain[currentPackage] == domain) {
                 val msg = "$currentPackage: '$domain' same as last capture, skipping"

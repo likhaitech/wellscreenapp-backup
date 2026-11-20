@@ -391,17 +391,50 @@ class BlockedAppActivity : Activity() {
             }
         }
 
+        // Websites: the child can ask the guardian to allow this site (for
+        // example for school research). The guardian decides with one tap;
+        // nothing opens until they allow it.
+        val askButton = TextView(this).apply {
+            text = "Ask my parent to allow this site"
+            textSize = 15f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = pill(primary)
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ).apply { topMargin = dp(32) }
+            setOnClickListener {
+                val domain = blockedDomain ?: return@setOnClickListener
+                isEnabled = false
+                text = "Sending..."
+                SiteReview.sendAccessRequest(this@BlockedAppActivity, domain) { ok ->
+                    runOnUiThread {
+                        if (ok) {
+                            text = "Request sent to your parent"
+                        } else {
+                            isEnabled = true
+                            text = "Couldn't send - tap to try again"
+                        }
+                    }
+                }
+            }
+        }
+
         root.addView(icon)
         root.addView(badge)
         root.addView(title)
         root.addView(message)
-        // No "request access" for blocked websites: they are harmful-category
-        // or guardian-blocked sites, and time requests are for apps only.
         // Signing in needs WellScreen itself, not a request to the guardian.
         if (isSignInRequired) {
             root.addView(openAppButton)
         } else if (blockedDomain == null) {
             root.addView(card)
+        } else {
+            root.addView(askButton)
         }
         root.addView(backButton)
         setContentView(root)

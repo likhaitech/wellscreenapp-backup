@@ -28,7 +28,11 @@ EVENT_TYPES = frozenset({
     "monitoring_permission_disabled",
     "usage_warning_threshold", "usage_high_threshold", "unhealthy_usage_pattern",
     "app_usage_warning_threshold", "app_usage_high_threshold",
+    "site_review_needed", "site_access_request",
 })
+# Website review / ask-to-allow: the guardian decides in the app (Allow /
+# Block buttons in Notifications), so these never fall back to paid SMS.
+NO_SMS_EVENT_TYPES = frozenset({"site_review_needed", "site_access_request"})
 EVENT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{8,96}$")
 E164_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
 
@@ -322,6 +326,8 @@ def accept_child_events(*, child_uid: str, profile_id: str,
             "unhealthy_usage_pattern": ("Unhealthy usage pattern detected", f"Usage pattern flagged: {label}."),
             "app_usage_warning_threshold": ("App usage warning", f"Long use of one app today: {label}."),
             "app_usage_high_threshold": ("High single-app usage", f"Very long use of one app today: {label}."),
+            "site_review_needed": ("Review this website", f"WellScreen isn't sure this site is suitable: {label}. It was not blocked. Open Notifications to allow or block it."),
+            "site_access_request": ("Your child asked to open a website", f"Your child asked you to allow {label} (for example for school research). Open Notifications to allow or block it."),
         }
         title, body = descriptions[kind]
         # Stable client IDs are deduplicated by Firestore document creation.
@@ -329,7 +335,8 @@ def accept_child_events(*, child_uid: str, profile_id: str,
         _create_and_dispatch(profile_id=profile_id, parent_uid=parent_uid,
                              alert_id="child_" + event_id, kind=kind,
                              title=title, body=body, occurred_at=when,
-                             details={"subject": subject, "label": label})
+                             details={"subject": subject, "label": label},
+                             allow_sms=kind not in NO_SMS_EVENT_TYPES)
         recognized.append(event_id)
     return {"acceptedEventIds": recognized}
 

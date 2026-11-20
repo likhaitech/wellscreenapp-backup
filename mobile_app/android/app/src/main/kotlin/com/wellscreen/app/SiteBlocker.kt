@@ -118,7 +118,7 @@ object SiteBlocker {
 
     /**
      * The blocking decision, in order: guardian allow, guardian block,
-     * adult keywords, bundled list, gambling AI. Pure (no Android types)
+     * education/health allow list, adult keywords, bundled list, gambling AI. Pure (no Android types)
      * so it can be unit tested.
      */
     internal fun decide(
@@ -146,6 +146,10 @@ object SiteBlocker {
         if (matchesDomain(customDomain, limitDomains)) {
             return BlockReason("parent_rule", "daily_limit_reached")
         }
+
+        // Education and health sites are never blocked by the automatic
+        // checks below (a guardian's own block above still applies).
+        if (EducationSites.isProtected(customDomain)) return null
 
         // Adult keywords catch porn sites missing from the bundled list.
         if (AdultKeywordMatcher.matches(normalized)) return BlockReason("keyword", "adult")
@@ -237,6 +241,17 @@ object SiteBlocker {
         } catch (_: Exception) {
             emptySet()
         }
+    }
+
+    /**
+     * True when no automatic check (page words, Cloudflare) should look at
+     * [domain]: the guardian allowed it, or it's an education/health site.
+     */
+    fun skipsContentChecks(context: Context, domain: String): Boolean {
+        val custom = normalize(domain).removePrefix("www.")
+        if (custom.isEmpty()) return true
+        return matchesDomain(custom, parentRules(context).allowed) ||
+            EducationSites.isProtected(custom)
     }
 
     fun isBlocked(context: Context, domain: String): Boolean =
