@@ -7,14 +7,16 @@ from firebase_admin import firestore
 from .firebase_service import get_firestore_client
 
 
+# Manuscript Ch. III: 6 and below 1h, 7-12 2h, 13-15 3h. Possible-risk
+# sites are blocked for the youngest group and reviewed by the guardian
+# for older children. Read by the guardian and child apps.
 DEFAULT_SYSTEM_SETTINGS = {
-    "default_daily_limit_minutes": 180,
-    "app_blocking_enabled": True,
-    "focus_mode_enabled": True,
-    "cooldown_timer_enabled": True,
-    "scheduled_lock_enabled": False,
-    "category_restriction_enabled": True,
-    "emergency_access_enabled": True,
+    "goal_minutes_6_and_below": 60,
+    "goal_minutes_7_12": 120,
+    "goal_minutes_13_15": 180,
+    "risky_sites_6_and_below": "block",
+    "risky_sites_7_12": "review",
+    "risky_sites_13_15": "review",
 }
 
 

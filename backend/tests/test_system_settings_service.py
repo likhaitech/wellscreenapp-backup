@@ -41,7 +41,7 @@ class TestGetSystemSettings:
         fake_db, _ = _fake_db_with_doc(
             exists=True,
             data={
-                "default_daily_limit_minutes": 90,
+                "goal_minutes_7_12": 90,
                 "updated_at": "2024-01-01",
                 "updated_by": "admin-1",
             },
@@ -50,9 +50,9 @@ class TestGetSystemSettings:
         with patch.object(svc, "get_firestore_client", return_value=fake_db):
             result = svc.get_system_settings()
 
-        assert result["default_daily_limit_minutes"] == 90
+        assert result["goal_minutes_7_12"] == 90
         # Untouched keys keep their hardcoded default.
-        assert result["app_blocking_enabled"] == svc.DEFAULT_SYSTEM_SETTINGS["app_blocking_enabled"]
+        assert result["risky_sites_7_12"] == svc.DEFAULT_SYSTEM_SETTINGS["risky_sites_7_12"]
         assert result["updated_at"] == "2024-01-01"
         assert result["updated_by"] == "admin-1"
 
@@ -77,14 +77,14 @@ class TestUpdateSystemSettings:
         with patch.object(svc, "get_firestore_client", return_value=fake_db):
             svc.update_system_settings(
                 {
-                    "default_daily_limit_minutes": 120,
+                    "goal_minutes_7_12": 120,
                     "not_a_real_setting": "sneaky",
                 },
                 updated_by="admin-1",
             )
 
         written = fake_db.collection.return_value.document.return_value.set.call_args[0][0]
-        assert written["default_daily_limit_minutes"] == 120
+        assert written["goal_minutes_7_12"] == 120
         assert "not_a_real_setting" not in written
         assert written["updated_by"] == "admin-1"
         assert written["updated_at"] is firestore.SERVER_TIMESTAMP
@@ -94,7 +94,7 @@ class TestUpdateSystemSettings:
 
         with patch.object(svc, "get_firestore_client", return_value=fake_db):
             svc.update_system_settings(
-                {"app_blocking_enabled": False}, updated_by="admin-1"
+                {"risky_sites_7_12": "block"}, updated_by="admin-1"
             )
 
         call = fake_db.collection.return_value.document.return_value.set.call_args
@@ -119,14 +119,14 @@ class TestUpdateSystemSettings:
         # returned dict has the change applied given the doc mock reflects
         # it.
         doc_snapshot.to_dict.return_value = {
-            "default_daily_limit_minutes": 60,
+            "goal_minutes_7_12": 60,
             "updated_by": "admin-2",
         }
 
         with patch.object(svc, "get_firestore_client", return_value=fake_db):
             result = svc.update_system_settings(
-                {"default_daily_limit_minutes": 60}, updated_by="admin-2"
+                {"goal_minutes_7_12": 60}, updated_by="admin-2"
             )
 
-        assert result["default_daily_limit_minutes"] == 60
+        assert result["goal_minutes_7_12"] == 60
         assert result["updated_by"] == "admin-2"

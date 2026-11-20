@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
 class SystemSettingsUpdate(BaseModel):
-    default_daily_limit_minutes: int | None = Field(
-        default=None,
-        ge=1,
-        le=1440,
-    )
+    """Age-group rules the guardian and child apps read from
+    system_settings/global (manuscript Ch. III age table).
 
-    app_blocking_enabled: bool | None = None
-    focus_mode_enabled: bool | None = None
-    cooldown_timer_enabled: bool | None = None
-    scheduled_lock_enabled: bool | None = None
-    category_restriction_enabled: bool | None = None
-    emergency_access_enabled: bool | None = None
+    goal_minutes_*: the default daily screen-time goal for that age group.
+    risky_sites_*: what happens on a "possible risk" website - "block" it,
+    or "review" (ask the guardian). Known harmful sites are always blocked.
+    """
+
+    goal_minutes_6_and_below: int | None = Field(default=None, ge=15, le=720)
+    goal_minutes_7_12: int | None = Field(default=None, ge=15, le=720)
+    goal_minutes_13_15: int | None = Field(default=None, ge=15, le=720)
+
+    risky_sites_6_and_below: Literal["block", "review"] | None = None
+    risky_sites_7_12: Literal["block", "review"] | None = None
+    risky_sites_13_15: Literal["block", "review"] | None = None
 
 from pydantic import ConfigDict
 
