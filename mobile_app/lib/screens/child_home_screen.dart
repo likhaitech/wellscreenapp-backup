@@ -1370,6 +1370,20 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           prefs.getInt('last_browsing_alert_timestamp_ms') ?? 0;
       var newestAlertedMs = lastAlertedMs;
 
+      // Sites the phone BLOCKED (page words, Cloudflare hint, lists...) are
+      // in the restriction log with their category and reason. The address
+      // check below can't see page-word results, so without this a site
+      // blocked by its page words showed up unflagged in Reports.
+      final blockedSites = <String, Map<String, dynamic>>{};
+      for (final entry in restrictionLog) {
+        final target = (entry['packageName'] ?? '').toString();
+        if (entry['outcome'] == 'blocked' &&
+            entry['category'] != null &&
+            target.contains('.')) {
+          blockedSites[target] = entry;
+        }
+      }
+
       final categorizedBrowsingLog = <Map<String, dynamic>>[];
       String? mostRecentHarmfulCategory;
       String? mostRecentHarmfulDomain;
@@ -1398,10 +1412,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         // reliable at (see SiteCategoryMlClassifier's doc comment for
         // the measured reasoning behind that restriction, including why
         // 'drugs' was tested and deliberately held back).
+        final blocked = match == null ? blockedSites[domain] : null;
         categorizedBrowsingLog.add({
           ...entry,
-          'category': ?match?.category,
-          'detectionSource': ?match?.source,
+          'category': ?(match?.category ?? blocked?['category']),
+          'detectionSource': ?(match?.source ?? blocked?['blockSource']),
           'mlConfidence': ?match?.confidence,
         });
         if (match != null &&
