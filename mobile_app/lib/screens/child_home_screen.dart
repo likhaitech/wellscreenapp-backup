@@ -327,6 +327,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         .listen(
           (snapshot) async {
             if (!snapshot.exists) return;
+            await _cacheAgeGroup(snapshot.data());
             final goal = DailyGoal.durationFor(snapshot.data());
             final current = await _dailyScreenTimeLimitService.getDailyLimit();
             if (goal == current) return;
@@ -337,6 +338,22 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             debugPrint('Could not read the daily goal: $error');
           },
         );
+  }
+
+  /// Keeps the age group on the phone for the native website check, which
+  /// is stricter for 6 and below. Removed when the guardian hasn't set one.
+  Future<void> _cacheAgeGroup(Map<String, dynamic>? profile) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final group = ChildAgeGroup.parse(profile?[DailyGoal.ageGroupField]);
+      if (group == null) {
+        await prefs.remove(DailyGoal.ageGroupPrefKey);
+      } else if (prefs.getString(DailyGoal.ageGroupPrefKey) != group.id) {
+        await prefs.setString(DailyGoal.ageGroupPrefKey, group.id);
+      }
+    } catch (error) {
+      debugPrint('Could not cache the age group: $error');
+    }
   }
 
   Future<void> _syncChildDisplayName(String profileId) async {
