@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../widgets/wellscreen_ui.dart';
 
 import '../theme/app_theme.dart';
+import '../services/privacy_text.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/app_rules_service.dart';
 import '../services/password_policy.dart';
@@ -381,7 +382,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }
 
   /// What WellScreen does and does not collect, matching the code: usage
-  /// time, website domains (never full addresses or page content), shared
+  /// time, website domains (never full addresses; page words are checked on
+  /// the child's phone and never saved or sent, see PrivacyText), shared
   /// GPS location, and family chat - and nothing from messages, calls,
   /// photos, passwords or files.
   void showPrivacyBoundarySheet() {
@@ -459,10 +461,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               ),
               row(
                 Icons.language_rounded,
-                'Website domains only',
-                'The site name (for example, example.com) in supported '
-                    'browsers. Never the full address, page content or '
-                    'what was typed.',
+                PrivacyText.guardianWebsiteTitle,
+                PrivacyText.guardianWebsiteBody,
               ),
               row(
                 Icons.location_on_outlined,
