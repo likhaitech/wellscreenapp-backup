@@ -113,16 +113,20 @@ void main() {
     });
   });
 
-  group('AdminSettingsApiService.updateSettings', () {
-    test('PATCHes /admin/settings/ with every field, snake_cased', () async {
+  group('AdminSettingsApiService.applyPatch', () {
+    test('POSTs the patch to /admin/settings/patch with validate_only', () async {
       Map<String, dynamic>? capturedBody;
-      String? capturedMethod;
+      String? capturedPath;
 
       final dio = dioWithInterceptor((options, handler) {
-        capturedMethod = options.method;
+        capturedPath = options.path;
         capturedBody = Map<String, dynamic>.from(options.data as Map);
         handler.resolve(
-          Response(requestOptions: options, statusCode: 200, data: capturedBody),
+          Response(
+            requestOptions: options,
+            statusCode: 200,
+            data: {'valid': true, 'applied': false, 'changes': {'goal_minutes_7_12': 90}},
+          ),
         );
       });
 
@@ -131,66 +135,51 @@ void main() {
         getAdminToken: () async => 'tok',
       );
 
-      final result = await service.updateSettings(
-        defaultDailyLimitMinutes: 90,
-        appBlockingEnabled: true,
-        focusModeEnabled: false,
-        cooldownTimerEnabled: true,
-        scheduledLockEnabled: false,
-        categoryRestrictionEnabled: true,
-        emergencyAccessEnabled: false,
+      final result = await service.applyPatch(
+        {'settings': {'goal_minutes_7_12': 90}},
+        validateOnly: true,
       );
 
-      expect(capturedMethod, 'PATCH');
+      expect(capturedPath, '/admin/settings/patch');
       expect(capturedBody, {
-        'default_daily_limit_minutes': 90,
-        'app_blocking_enabled': true,
-        'focus_mode_enabled': false,
-        'cooldown_timer_enabled': true,
-        'scheduled_lock_enabled': false,
-        'category_restriction_enabled': true,
-        'emergency_access_enabled': false,
+        'settings': {'goal_minutes_7_12': 90},
+        'validate_only': true,
       });
-      // The response is round-tripped through Map<String, dynamic>.from -
-      // confirm that conversion actually happens and returns usable data.
-      expect(result['default_daily_limit_minutes'], 90);
+      expect(result['applied'], false);
     });
 
-    test(
-      'a backend error response surfaces as a DioException to the caller',
-      () async {
-        final dio = dioWithInterceptor((options, handler) {
-          handler.reject(
-            DioException(
+    test('a 422 from the server becomes SystemPatchRejected', () async {
+      final dio = dioWithInterceptor((options, handler) {
+        handler.reject(
+          DioException(
+            requestOptions: options,
+            response: Response(
               requestOptions: options,
-              response: Response(
-                requestOptions: options,
-                statusCode: 403,
-                data: {'detail': 'Not an admin'},
-              ),
-              type: DioExceptionType.badResponse,
+              statusCode: 422,
+              data: {
+                'detail': {
+                  'message': 'Patch rejected',
+                  'errors': ['settings.goal_minutes_7_12: too small'],
+                },
+              },
             ),
-          );
-        });
-
-        final service = AdminSettingsApiService(
-          dio: dio,
-          getAdminToken: () async => 'tok',
-        );
-
-        await expectLater(
-          service.updateSettings(
-            defaultDailyLimitMinutes: 90,
-            appBlockingEnabled: true,
-            focusModeEnabled: false,
-            cooldownTimerEnabled: true,
-            scheduledLockEnabled: false,
-            categoryRestrictionEnabled: true,
-            emergencyAccessEnabled: false,
+            type: DioExceptionType.badResponse,
           ),
-          throwsA(isA<DioException>()),
         );
-      },
-    );
+      });
+
+      final service = AdminSettingsApiService(
+        dio: dio,
+        getAdminToken: () async => 'tok',
+      );
+
+      await expectLater(
+        service.applyPatch(
+          {'settings': {'goal_minutes_7_12': 10}},
+          validateOnly: false,
+        ),
+        throwsA(isA<SystemPatchRejected>()),
+      );
+    });
   });
 }

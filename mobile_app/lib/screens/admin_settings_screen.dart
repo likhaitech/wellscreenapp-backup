@@ -143,7 +143,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                           tint: AppColors.violetBg,
                           color: AppColors.violet,
                           title: 'System patch',
-                          subtitle: 'Validate and apply a configuration patch',
+                          subtitle: 'Age-group rules: daily goals and risky sites',
                           onTap: () => open(const AdminPatchScreen()),
                         ),
                         _menuCard(
