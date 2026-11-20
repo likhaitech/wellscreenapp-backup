@@ -110,6 +110,15 @@ class WebsiteRules {
     'allowedDomains': allowedDomains,
   };
 
+  /// The guardian's own rule for exactly this site (www. ignored), or null.
+  WebsiteRuleAction? ruleFor(String domain) {
+    final normalized = normalizeDomain(domain);
+    if (normalized == null) return null;
+    if (allowedDomains.contains(normalized)) return WebsiteRuleAction.allow;
+    if (blockedDomains.contains(normalized)) return WebsiteRuleAction.block;
+    return null;
+  }
+
   bool isAllowed(String domain) {
     final normalized = normalizeDomain(domain);
     return normalized != null &&

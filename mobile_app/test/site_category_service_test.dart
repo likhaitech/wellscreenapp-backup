@@ -149,4 +149,18 @@ void main() {
       expect(upper.source, lower.source);
     });
   });
+
+  group('WebsiteRules.ruleFor (Reports Block / Allow menu)', () {
+    const rules = WebsiteRules(
+      blockedDomains: ['casino-example.com'],
+      allowedDomains: ['school-example.org'],
+    );
+
+    test('finds the guardian rule for the exact site, ignoring www.', () {
+      expect(rules.ruleFor('www.casino-example.com'), WebsiteRuleAction.block);
+      expect(rules.ruleFor('SCHOOL-EXAMPLE.ORG'), WebsiteRuleAction.allow);
+      expect(rules.ruleFor('other-example.com'), isNull);
+      expect(rules.ruleFor('not a domain'), isNull);
+    });
+  });
 }
