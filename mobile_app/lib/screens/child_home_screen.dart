@@ -36,7 +36,6 @@ import '../services/site_category_service.dart';
 import '../services/sync_status_service.dart';
 import '../services/usage_dashboard_controller_service.dart';
 import '../services/usage_tracking_service.dart';
-import '../services/system_settings_service.dart';
 import '../services/temporary_app_grant_service.dart';
 import '../services/chat_notifications_service.dart';
 import '../services/chat_unread_service.dart';
@@ -139,9 +138,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   bool isSharingLocation = false;
   bool isSyncingUsage = false;
   bool isRequestingEmergencyAccess = false;
-
-  /// Latest child profile, for re-applying the goal when admin rules change.
-  Map<String, dynamic>? _goalProfile;
 
   /// The block screen's "Request Temporary Access" opens the app with this
   /// pending, so the request form shows as soon as pairing data is loaded.
@@ -259,8 +255,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _refreshSyncStatus();
     unawaited(_refreshAccessibilityStatus());
     unawaited(_checkLaunchAction());
-    SystemSettingsService.start();
-    AgeGroupRules.changes.addListener(_onAgeGroupRulesChanged);
     _connectivitySubscription = _syncStatusService.onlineStatusChanges.listen(
       _handleConnectivityChange,
     );
@@ -343,8 +337,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         .listen(
           (snapshot) async {
             if (!snapshot.exists) return;
-            _goalProfile = snapshot.data();
-            await _applyGoalProfile();
+            await _cacheAgeGroup(snapshot.data());
+            final goal = DailyGoal.durationFor(snapshot.data());
+            final current = await _dailyScreenTimeLimitService.getDailyLimit();
+            if (goal == current) return;
+            await _dailyScreenTimeLimitService.saveDailyLimit(goal);
+            if (mounted) unawaited(_loadUsageDashboard());
           },
           onError: (Object error) {
             debugPrint('Could not read the daily goal: $error');
@@ -352,39 +350,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         );
   }
 
-  /// Re-applies the goal and site strictness when the profile changes or
-  /// the admin's age-group rules change (system patch).
-  Future<void> _applyGoalProfile() async {
-    final profile = _goalProfile;
-    if (profile == null) return;
-    await _cacheAgeGroup(profile);
-    final goal = DailyGoal.durationFor(profile);
-    final current = await _dailyScreenTimeLimitService.getDailyLimit();
-    if (goal == current) return;
-    await _dailyScreenTimeLimitService.saveDailyLimit(goal);
-    if (mounted) unawaited(_loadUsageDashboard());
-  }
-
-  void _onAgeGroupRulesChanged() => unawaited(_applyGoalProfile());
-
-  /// Keeps the age group on the phone for the native website check, plus
-  /// whether "possible risk" sites are blocked for it (the admin's rule;
-  /// built-in: blocked for 6 and below). Removed when no age group is set.
+  /// Keeps the age group on the phone for the native website check, which
+  /// is stricter for 6 and below. Removed when the guardian hasn't set one.
   Future<void> _cacheAgeGroup(Map<String, dynamic>? profile) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final group = ChildAgeGroup.parse(profile?[DailyGoal.ageGroupField]);
       if (group == null) {
         await prefs.remove(DailyGoal.ageGroupPrefKey);
-        await prefs.remove(DailyGoal.blocksRiskySitesPrefKey);
-      } else {
-        if (prefs.getString(DailyGoal.ageGroupPrefKey) != group.id) {
-          await prefs.setString(DailyGoal.ageGroupPrefKey, group.id);
-        }
-        await prefs.setBool(
-          DailyGoal.blocksRiskySitesPrefKey,
-          group.blocksRiskySites,
-        );
+      } else if (prefs.getString(DailyGoal.ageGroupPrefKey) != group.id) {
+        await prefs.setString(DailyGoal.ageGroupPrefKey, group.id);
       }
     } catch (error) {
       debugPrint('Could not cache the age group: $error');
@@ -425,7 +400,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _usageAutoSyncTimer?.cancel();
     _presenceHeartbeatTimer?.cancel();
     _scrollController.dispose();
-    AgeGroupRules.changes.removeListener(_onAgeGroupRulesChanged);
     super.dispose();
   }
 

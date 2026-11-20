@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart' show ValueNotifier;
-
 /// Age-based daily screen-time goal (manuscript Ch. III defaults):
 /// 6 and below -> 1 hour, 7-12 -> 2 hours, 13-15 -> 3 hours.
 ///
@@ -9,71 +7,24 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 /// override. The goal only drives alerts and the progress bar; it never
 /// locks the phone (per-app time limits do that).
 enum ChildAgeGroup {
-  upTo6('6_and_below', '6 and below', 60, true),
-  age7to12('7_12', '7–12', 120, false),
-  age13to15('13_15', '13–15', 180, false);
+  upTo6('6_and_below', '6 and below', 60),
+  age7to12('7_12', '7–12', 120),
+  age13to15('13_15', '13–15', 180);
 
-  const ChildAgeGroup(
-    this.id,
-    this.label,
-    this.builtInMinutes,
-    this.builtInBlocksRiskySites,
-  );
+  const ChildAgeGroup(this.id, this.label, this.defaultMinutes);
 
   /// Value stored in Firestore.
   final String id;
 
   /// "Ages $label" in the UI.
   final String label;
-
-  /// Manuscript Ch. III values, used until the admin's rules are loaded.
-  final int builtInMinutes;
-  final bool builtInBlocksRiskySites;
-
-  /// The admin's default goal for this group (system_settings/global),
-  /// or the manuscript value.
-  int get defaultMinutes => AgeGroupRules.goalFor(this);
-
-  /// True: "possible risk" sites are blocked. False: the guardian is asked.
-  bool get blocksRiskySites => AgeGroupRules.blocksRiskySitesFor(this);
+  final int defaultMinutes;
 
   static ChildAgeGroup? parse(Object? value) {
     for (final group in values) {
       if (group.id == value) return group;
     }
     return null;
-  }
-}
-
-/// The admin's age-group rules, loaded from system_settings/global by
-/// SystemSettingsService. Empty until loaded: the built-in values apply.
-class AgeGroupRules {
-  AgeGroupRules._();
-
-  static final Map<String, int> _goals = <String, int>{};
-  static final Map<String, bool> _blocks = <String, bool>{};
-
-  /// Ticks whenever new rules arrive, so screens can redraw.
-  static final ValueNotifier<int> changes = ValueNotifier<int>(0);
-
-  static int goalFor(ChildAgeGroup group) =>
-      _goals[group.id] ?? group.builtInMinutes;
-
-  static bool blocksRiskySitesFor(ChildAgeGroup group) =>
-      _blocks[group.id] ?? group.builtInBlocksRiskySites;
-
-  /// Takes the stored settings document; ignores anything malformed.
-  static void apply(Map<String, dynamic>? data) {
-    _goals.clear();
-    _blocks.clear();
-    for (final group in ChildAgeGroup.values) {
-      final goal = data?['goal_minutes_${group.id}'];
-      if (goal is int && goal >= 15 && goal <= 720) _goals[group.id] = goal;
-      final risky = data?['risky_sites_${group.id}'];
-      if (risky == 'block') _blocks[group.id] = true;
-      if (risky == 'review') _blocks[group.id] = false;
-    }
-    changes.value++;
   }
 }
 
@@ -89,10 +40,6 @@ class DailyGoal {
   /// "possible risk" site is blocked, for older children the guardian is
   /// asked to review it instead.
   static const String ageGroupPrefKey = 'child_age_group';
-
-  /// Phone-only: true when "possible risk" sites are blocked for this
-  /// child's age group (SiteReview.kt reads "flutter.child_blocks_risky_sites").
-  static const String blocksRiskySitesPrefKey = 'child_blocks_risky_sites';
 
   /// Used when no age group has been chosen yet (older pairings).
   static const int fallbackMinutes = 180;
