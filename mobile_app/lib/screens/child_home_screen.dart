@@ -4498,6 +4498,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     const minuteOptions = <int>[5, 10, 15, 30, 60];
     String? selectedPreset;
     var requestedMinutes = 15;
+    final customMinutes = TextEditingController();
     var sending = false;
 
     showModalBottomSheet<void>(
@@ -4634,16 +4635,45 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              onSelected: (_) => setSheetState(
-                                () => requestedMinutes = option,
-                              ),
+                              onSelected: (_) => setSheetState(() {
+                                requestedMinutes = option;
+                                customMinutes.clear();
+                              }),
                             ),
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: 180,
+                        child: TextField(
+                          controller: customMinutes,
+                          keyboardType: TextInputType.number,
+                          maxLength: 3,
+                          decoration: InputDecoration(
+                            hintText: 'Or type minutes',
+                            suffixText: 'min',
+                            isDense: true,
+                            filled: true,
+                            fillColor: pageBg,
+                            counterText: '',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onChanged: (text) {
+                            final typed = int.tryParse(text.trim());
+                            if (typed != null && typed >= 1 && typed <= 120) {
+                              setSheetState(() => requestedMinutes = typed);
+                            }
+                          },
+                        ),
+                      ),
                       const SizedBox(height: 6),
-                      const Text(
+                      Text(
+                        'Asking for $requestedMinutes min (1-120). '
                         'Your parent decides the final time.',
-                        style: TextStyle(color: _slate, fontSize: 12),
+                        style: const TextStyle(color: _slate, fontSize: 12),
                       ),
                       const SizedBox(height: 14),
                       SizedBox(

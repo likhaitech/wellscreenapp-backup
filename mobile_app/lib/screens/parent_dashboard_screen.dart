@@ -808,17 +808,24 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     // Starts on what the child asked for; the guardian can change it.
     var minutes =
         askedMinutes != null && options.contains(askedMinutes) ? askedMinutes : 15;
+    final customMinutes = TextEditingController();
     final chosen = await showModalBottomSheet<int>(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
+      isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setSheet) => SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              18,
+              20,
+              20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -853,9 +860,39 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                                     : '${option ~/ 60} hr ${option % 60} min'),
                         ),
                         selected: minutes == option,
-                        onSelected: (_) => setSheet(() => minutes = option),
+                        onSelected: (_) => setSheet(() {
+                          minutes = option;
+                          customMinutes.clear();
+                        }),
                       ),
                   ],
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: customMinutes,
+                    keyboardType: TextInputType.number,
+                    maxLength: 3,
+                    decoration: const InputDecoration(
+                      hintText: 'Or type minutes',
+                      suffixText: 'min',
+                      isDense: true,
+                      counterText: '',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (text) {
+                      final typed = int.tryParse(text.trim());
+                      if (typed != null && typed >= 1 && typed <= 120) {
+                        setSheet(() => minutes = typed);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Any time from 1 to 120 minutes.',
+                  style: TextStyle(color: grayText, fontSize: 12),
                 ),
                 const SizedBox(height: 18),
                 SizedBox(
