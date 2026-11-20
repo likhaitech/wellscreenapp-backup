@@ -125,7 +125,7 @@ void main() {
           Response(
             requestOptions: options,
             statusCode: 200,
-            data: {'valid': true, 'applied': false, 'changes': {'goal_minutes_7_12': 90}},
+            data: {'valid': true, 'applied': false, 'changes': {'minimum_app_version': '1.4.0'}},
           ),
         );
       });
@@ -136,13 +136,13 @@ void main() {
       );
 
       final result = await service.applyPatch(
-        {'settings': {'goal_minutes_7_12': 90}},
+        {'settings': {'minimum_app_version': '1.4.0'}},
         validateOnly: true,
       );
 
       expect(capturedPath, '/admin/settings/patch');
       expect(capturedBody, {
-        'settings': {'goal_minutes_7_12': 90},
+        'settings': {'minimum_app_version': '1.4.0'},
         'validate_only': true,
       });
       expect(result['applied'], false);
@@ -159,7 +159,7 @@ void main() {
               data: {
                 'detail': {
                   'message': 'Patch rejected',
-                  'errors': ['settings.goal_minutes_7_12: too small'],
+                  'errors': ['settings.minimum_app_version: String should match pattern'],
                 },
               },
             ),
@@ -175,7 +175,7 @@ void main() {
 
       await expectLater(
         service.applyPatch(
-          {'settings': {'goal_minutes_7_12': 10}},
+          {'settings': {'minimum_app_version': '1.4'}},
           validateOnly: false,
         ),
         throwsA(isA<SystemPatchRejected>()),

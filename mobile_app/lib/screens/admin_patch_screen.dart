@@ -1,18 +1,23 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 
-import '../models/daily_goal.dart';
 import '../services/admin_settings_api_service.dart';
+import '../services/app_release_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart';
 import '../widgets/wellscreen_ui.dart';
 
 /// Manuscript "Manage System Settings -> Upload System Patch".
 ///
-/// The admin edits the age-group rules in a plain form - no JSON to type.
-/// The form only builds the patch; the server validates it (unknown keys,
-/// wrong types and out-of-range values are rejected with no change), then
-/// applies it to system_settings/global and writes a system log. Guardian
-/// and child apps read the rules live from there.
+/// A patch itself is a code change: pushed, then the backend redeploys and
+/// records the new server version in System logs. This page is how the
+/// admin rolls the fix out and checks it landed:
+/// - the server version that is running now;
+/// - the minimum app version - phones below it must update first;
+/// - a maintenance notice shown to every user;
+/// - the patch history (deploys and applied/rejected patches).
+/// The server validates every change (version must be like 1.4.0, notice
+/// at most 200 characters); a rejected change does nothing and is logged.
 class AdminPatchScreen extends StatefulWidget {
   const AdminPatchScreen({super.key});
 
@@ -20,41 +25,41 @@ class AdminPatchScreen extends StatefulWidget {
   State<AdminPatchScreen> createState() => _AdminPatchScreenState();
 }
 
-class _AgeRow {
-  _AgeRow(this.group);
-
-  final ChildAgeGroup group;
-  final TextEditingController minutes = TextEditingController();
-  int? currentMinutes;
-  String? currentRisky;
-  String risky = 'review';
-}
-
 class _AdminPatchScreenState extends State<AdminPatchScreen> {
+  static const Set<String> _historyActions = {
+    'server_patch_deployed',
+    'system_patch_applied',
+    'system_patch_rejected',
+  };
+
   final AdminSettingsApiService _api = AdminSettingsApiService();
-  final TextEditingController _note = TextEditingController();
-  final List<_AgeRow> _rows = [
-    for (final g in ChildAgeGroup.values) _AgeRow(g),
-  ];
+  final TextEditingController _minimum = TextEditingController();
+  final TextEditingController _notice = TextEditingController();
 
   bool _loading = true;
   bool _busy = false;
   String? _loadError;
+  String _serverVersion = '-';
+  String? _runningSince;
+  String _currentMinimum = '1.0.0';
+  String _currentNotice = '';
+  String? _thisAppVersion;
   List<String> _errors = [];
   String? _success;
 
   @override
   void initState() {
     super.initState();
+    AppReleaseService.installedVersion().then((v) {
+      if (mounted) setState(() => _thisAppVersion = v);
+    }).catchError((Object _) {});
     _load();
   }
 
   @override
   void dispose() {
-    _note.dispose();
-    for (final row in _rows) {
-      row.minutes.dispose();
-    }
+    _minimum.dispose();
+    _notice.dispose();
     super.dispose();
   }
 
@@ -65,16 +70,17 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
     });
     try {
       final settings = await _api.getSettings();
-      for (final row in _rows) {
-        final goal = settings['goal_minutes_${row.group.id}'];
-        final risky = settings['risky_sites_${row.group.id}'];
-        row.currentMinutes = goal is int ? goal : row.group.builtInMinutes;
-        row.currentRisky = risky is String
-            ? risky
-            : (row.group.builtInBlocksRiskySites ? 'block' : 'review');
-        row.minutes.text = '${row.currentMinutes}';
-        row.risky = row.currentRisky!;
-      }
+      final server = settings['server'];
+      final minimum = settings['minimum_app_version'];
+      final notice = settings['maintenance_message'];
+      _serverVersion =
+          server is Map ? (server['version'] ?? '-').toString() : '-';
+      _runningSince =
+          server is Map ? server['running_since']?.toString() : null;
+      _currentMinimum = minimum is String ? minimum : '1.0.0';
+      _currentNotice = notice is String ? notice : '';
+      _minimum.text = _currentMinimum;
+      _notice.text = _currentNotice;
     } catch (e) {
       _loadError = 'Could not load the current settings. The server may be '
           'waking up - try again in a minute.';
@@ -82,44 +88,31 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
     if (mounted) setState(() => _loading = false);
   }
 
-  /// Only what the admin changed. Range checks are left to the server, so
-  /// a wrong value (for example 5 minutes) shows up as a rejection.
+  /// Only what changed. Format checks are left to the server, so a wrong
+  /// version (for example "1.4") is shown as a rejection.
   Map<String, Object> _changes() {
-    final changes = <String, Object>{};
-    for (final row in _rows) {
-      final typed = int.tryParse(row.minutes.text.trim());
-      if (typed != null && typed != row.currentMinutes) {
-        changes['goal_minutes_${row.group.id}'] = typed;
-      }
-      if (row.risky != row.currentRisky) {
-        changes['risky_sites_${row.group.id}'] = row.risky;
-      }
-    }
-    return changes;
+    final minimum = _minimum.text.trim();
+    final notice = _notice.text.trim();
+    return {
+      if (minimum.isNotEmpty && minimum != _currentMinimum)
+        'minimum_app_version': minimum,
+      if (notice != _currentNotice) 'maintenance_message': notice,
+    };
   }
 
   List<String> _preview() {
-    final lines = <String>[];
-    for (final row in _rows) {
-      final typed = int.tryParse(row.minutes.text.trim());
-      if (typed != null && typed != row.currentMinutes) {
-        lines.add(
-          'Ages ${row.group.label} daily goal: '
-          '${row.currentMinutes ?? '-'} min -> $typed min',
-        );
-      }
-      if (row.risky != row.currentRisky) {
-        lines.add(
-          'Ages ${row.group.label} possible-risk sites: '
-          '${_riskyLabel(row.currentRisky)} -> ${_riskyLabel(row.risky)}',
-        );
-      }
-    }
-    return lines;
+    final changes = _changes();
+    final notice = changes['maintenance_message'];
+    return [
+      if (changes.containsKey('minimum_app_version'))
+        'Minimum app version: $_currentMinimum -> '
+            '${changes['minimum_app_version']}',
+      if (notice is String)
+        notice.isEmpty
+            ? 'Maintenance notice: removed'
+            : 'Maintenance notice: "$notice"',
+    ];
   }
-
-  static String _riskyLabel(String? value) =>
-      value == 'block' ? 'Block' : 'Ask guardian';
 
   Future<void> _run({required bool validateOnly}) async {
     setState(() {
@@ -131,13 +124,9 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
       setState(() => _errors = ['Nothing changed yet.']);
       return;
     }
-    final note = _note.text.trim();
     setState(() => _busy = true);
     try {
-      await _api.applyPatch({
-        if (note.isNotEmpty) 'description': note,
-        'settings': changes,
-      }, validateOnly: validateOnly);
+      await _api.applyPatch({'settings': changes}, validateOnly: validateOnly);
       if (!mounted) return;
       if (validateOnly) {
         setState(
@@ -147,8 +136,8 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
       } else {
         setState(
           () => _success =
-              'Applied and recorded in System logs. Guardian and child '
-              'phones pick it up within seconds.',
+              'Applied and recorded in System logs. Phones pick it up '
+              'within seconds.',
         );
         await _load();
       }
@@ -165,13 +154,24 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
 
   Future<void> _confirmApply() async {
     final preview = _preview();
+    final minimum = _changes()['minimum_app_version'];
+    final thisApp = _thisAppVersion;
+    final warnsOldPhones = minimum is String &&
+        AppReleaseService.isVersion(minimum) &&
+        thisApp != null &&
+        AppReleaseService.needsUpdate(thisApp, minimum);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Apply this change?'),
+        title: const Text('Apply this patch?'),
         content: Text(
-          '${preview.isEmpty ? 'The server will check the values.' : preview.join('\n')}'
-          '\n\nIt is recorded in System logs.',
+          [
+            if (preview.isNotEmpty) preview.join('\n'),
+            if (warnsOldPhones)
+              'Phones on version $thisApp (this build) will have to '
+                  'update before they can continue.',
+            'It is recorded in System logs.',
+          ].join('\n\n'),
         ),
         actions: [
           TextButton(
@@ -188,32 +188,35 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
     if (ok == true) await _run(validateOnly: false);
   }
 
+  String _sinceLabel() {
+    final since = DateTime.tryParse(_runningSince ?? '')?.toLocal();
+    if (since == null) return '';
+    final hm = '${since.hour.toString().padLeft(2, '0')}:'
+        '${since.minute.toString().padLeft(2, '0')}';
+    return 'Running since ${since.month}/${since.day} $hm';
+  }
+
   @override
   Widget build(BuildContext context) {
     final preview = _preview();
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: const WellScreenAppBar.subPage(title: 'System patch'),
+      appBar: WellScreenAppBar.subPage(
+        title: 'System patch',
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    'Age-group rules for every family. Change a value, '
-                    'check it, then apply. The server rejects invalid '
-                    'values and nothing changes.',
-                    style: TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 13,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
                 if (_loadError != null) ...[
-                  const SizedBox(height: 12),
                   _resultCard(
                     icon: Icons.cloud_off_rounded,
                     color: AppColors.warning,
@@ -227,24 +230,11 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
                     child: const Text('Try again'),
                   ),
                 ] else ...[
-                  for (final row in _rows) ...[
-                    const SizedBox(height: 12),
-                    _ageCard(row),
-                  ],
+                  _versionCard(),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: _note,
-                    maxLength: 200,
-                    decoration: InputDecoration(
-                      labelText: 'Reason for the change (optional)',
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      counterText: '',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.input),
-                      ),
-                    ),
-                  ),
+                  _minimumCard(),
+                  const SizedBox(height: 12),
+                  _noticeCard(),
                   if (preview.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     _resultCard(
@@ -314,93 +304,296 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 18),
+                  const AdminSectionTitle('Patch history'),
+                  const SizedBox(height: 8),
+                  _history(),
                 ],
               ],
             ),
     );
   }
 
-  Widget _ageCard(_AgeRow row) {
+  Widget _versionCard() {
+    final since = _sinceLabel();
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: AppColors.heroGradient,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Server version',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _serverVersion,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (since.isNotEmpty)
+                  Text(
+                    since,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              const Text(
+                'This app',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _thisAppVersion ?? '-',
+                style: const TextStyle(
+                  fontFamily: AppFonts.heading,
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _cardTitle(String title, String help) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontFamily: AppFonts.heading,
+            color: AppColors.textPrimary,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          help,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 10),
+      ],
+    );
+  }
+
+  InputDecoration _fieldDecoration(String hint) {
+    return InputDecoration(
+      counterText: '',
+      hintText: hint,
+      filled: true,
+      fillColor: AppColors.surfaceMuted,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+    );
+  }
+
+  Widget _minimumCard() {
     return BentoCard(
-      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Ages ${row.group.label}',
-            style: const TextStyle(
-              fontFamily: AppFonts.heading,
-              color: AppColors.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
+          _cardTitle(
+            'Minimum app version',
+            'After a bug-fix release, raise this so phones on an older '
+                'version must update first. Format: 1.4.0',
+          ),
+          TextField(
+            controller: _minimum,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            maxLength: 11,
+            onChanged: (_) => setState(() {}),
+            decoration: _fieldDecoration('1.0.0'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _noticeCard() {
+    final length = _notice.text.trim().length;
+    return BentoCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _cardTitle(
+            'Maintenance notice',
+            'Shown at the top of every guardian and child screen. Leave '
+                'empty for no notice.',
+          ),
+          TextField(
+            controller: _notice,
+            maxLines: 3,
+            minLines: 2,
+            onChanged: (_) => setState(() {}),
+            decoration: _fieldDecoration(
+              'e.g. Server maintenance tonight at 10 PM',
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
+          const SizedBox(height: 4),
+          Text(
+            '$length/200',
+            style: TextStyle(
+              color: length > 200 ? AppColors.danger : AppColors.textSecondary,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Deploys and patches from the last 100 system logs (filtered on the
+  /// phone, so no extra Firestore index is needed).
+  Widget _history() {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('system_logs')
+          .orderBy('timestamp', descending: true)
+          .limit(100)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Text(
+            'Unable to load the patch history.',
+            style: TextStyle(color: AppColors.textSecondary),
+          );
+        }
+        final entries = (snapshot.data?.docs ?? [])
+            .map((d) => d.data())
+            .where((d) => _historyActions.contains(d['action']))
+            .take(10)
+            .toList();
+        if (entries.isEmpty) {
+          return const Text(
+            'No patches recorded yet.',
+            style: TextStyle(color: AppColors.textSecondary),
+          );
+        }
+        return BentoCard(
+          padding: EdgeInsets.zero,
+          child: Column(
             children: [
-              const Expanded(
-                child: Text(
-                  'Default daily goal',
-                  style: TextStyle(
+              for (var i = 0; i < entries.length; i++)
+                _historyRow(entries[i], first: i == 0),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _historyRow(Map<String, dynamic> data, {bool first = false}) {
+    final action = data['action'];
+    final (IconData icon, Color color, Color tint, String title) =
+        switch (action) {
+          'server_patch_deployed' => (
+            Icons.cloud_done_outlined,
+            AppColors.primary,
+            AppColors.primaryLight,
+            'Server patch deployed',
+          ),
+          'system_patch_applied' => (
+            Icons.check_rounded,
+            AppColors.success,
+            AppColors.successBg,
+            'Settings patch applied',
+          ),
+          _ => (
+            Icons.block_rounded,
+            AppColors.danger,
+            AppColors.dangerBg,
+            'Patch rejected',
+          ),
+        };
+    final details = data['details'];
+    var detailLine = (data['message'] ?? '').toString();
+    if (details is Map && details['changes'] is Map) {
+      detailLine = (details['changes'] as Map).entries.map((e) {
+        if (e.key == 'minimum_app_version') return 'minimum ${e.value}';
+        return (e.value ?? '').toString().isEmpty
+            ? 'notice removed'
+            : 'notice set';
+      }).join(', ');
+    }
+    final when = [
+      adminLogDay(data['timestamp']),
+      adminLogTime(data['timestamp']),
+    ].where((s) => s.isNotEmpty).join(' ');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: first
+            ? null
+            : const Border(top: BorderSide(color: AppColors.surfaceMuted)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: tint,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-              SizedBox(
-                width: 120,
-                child: TextField(
-                  controller: row.minutes,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  maxLength: 3,
-                  textAlign: TextAlign.center,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    counterText: '',
-                    suffixText: 'min',
-                    filled: true,
-                    fillColor: AppColors.surfaceMuted,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
+                const SizedBox(height: 2),
+                Text(
+                  [detailLine, when].where((s) => s.isNotEmpty).join(' · '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            '15 to 720 minutes. Guardians can still adjust each child.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Possible-risk websites',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: 'block', label: Text('Block')),
-              ButtonSegment(value: 'review', label: Text('Ask guardian')),
-            ],
-            selected: {row.risky},
-            onSelectionChanged: (value) =>
-                setState(() => row.risky = value.first),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Known adult, gambling and drug sites are always blocked.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
         ],
       ),
