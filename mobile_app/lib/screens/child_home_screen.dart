@@ -2477,8 +2477,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   Future<void> requestEmergencyAccess(
     String childProfileId,
-    String parentId,
-  ) async {
+    String parentId, {
+    int? requestedMinutes,
+  }) async {
     setState(() => isRequestingEmergencyAccess = true);
 
     try {
@@ -2486,6 +2487,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         childProfileId: childProfileId,
         parentId: parentId,
         reason: emergencyReasonController.text,
+        requestedMinutes: requestedMinutes,
       );
       emergencyReasonController.clear();
       showMessage('Request sent - your parent has been notified.');
@@ -4493,7 +4495,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   void _showEmergencyRequestSheet(String childProfileId, String parentId) {
     const presets = <String>['Schoolwork', 'Call Parent', 'Urgent'];
+    const minuteOptions = <int>[5, 10, 15, 30, 60];
     String? selectedPreset;
+    var requestedMinutes = 15;
     var sending = false;
 
     showModalBottomSheet<void>(
@@ -4529,8 +4533,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'Need a restricted app for something urgent? Ask '
-                        'your parent to temporarily lift restrictions.',
+                        'Need a blocked app for something urgent? Ask your '
+                        'parent to unlock apps for a while. Harmful websites '
+                        'stay blocked.',
                         style: TextStyle(
                           color: _slate,
                           fontSize: 13,
@@ -4591,6 +4596,55 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                           counterText: '',
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'How long do you need?',
+                        style: TextStyle(
+                          color: _ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          for (final option in minuteOptions)
+                            ChoiceChip(
+                              label: Text(
+                                option == 60 ? '1 hr' : '$option min',
+                              ),
+                              selected: requestedMinutes == option,
+                              showCheckmark: false,
+                              backgroundColor: Colors.white,
+                              selectedColor: AppColors.primaryLight,
+                              side: BorderSide(
+                                color: requestedMinutes == option
+                                    ? _brandIndigo
+                                    : _hairline,
+                              ),
+                              labelStyle: TextStyle(
+                                color: requestedMinutes == option
+                                    ? AppColors.primary
+                                    : _ink,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              onSelected: (_) => setSheetState(
+                                () => requestedMinutes = option,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Your parent decides the final time.',
+                        style: TextStyle(color: _slate, fontSize: 12),
+                      ),
                       const SizedBox(height: 14),
                       SizedBox(
                         width: double.infinity,
@@ -4602,6 +4656,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                   await requestEmergencyAccess(
                                     childProfileId,
                                     parentId,
+                                    requestedMinutes: requestedMinutes,
                                   );
                                   if (sheetContext.mounted) {
                                     Navigator.pop(sheetContext);

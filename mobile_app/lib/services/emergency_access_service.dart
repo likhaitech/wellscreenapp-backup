@@ -37,6 +37,7 @@ class EmergencyAccessService {
   required String childProfileId,
   required String parentId,
   String reason = '',
+  int? requestedMinutes,
 }) async {
   const requestCooldown = Duration(minutes: 5);
   const dailyRequestLimit = 5;
@@ -121,6 +122,8 @@ class EmergencyAccessService {
           'emergencyAccess': {
             'status': 'requested',
             'reason': trimmedReason,
+            // How long the child asked for; the guardian still chooses.
+            'requestedMinutes': requestedMinutes,
             'requestedAt': FieldValue.serverTimestamp(),
             'respondedAt': null,
             'grantedUntil': null,

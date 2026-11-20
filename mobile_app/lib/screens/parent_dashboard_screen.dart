@@ -704,6 +704,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final reason = emergencyAccess is Map
         ? (emergencyAccess['reason'] ?? '').toString()
         : '';
+    final asked = emergencyAccess is Map
+        ? emergencyAccess['requestedMinutes']
+        : null;
+    final askedMinutes = asked is num ? asked.toInt() : null;
     final childName = childNameOf(child, fallback: 'Your child');
 
     return BentoCard(
@@ -733,6 +737,17 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         fontSize: 15,
                       ),
                     ),
+                    if (askedMinutes != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Asked for $askedMinutes min',
+                        style: const TextStyle(
+                          color: darkText,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     if (reason.isNotEmpty) ...[
                       const SizedBox(height: 3),
                       Text(
@@ -754,7 +769,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   compact: true,
                   onPressed: _isRespondingToEmergencyAccess
                       ? null
-                      : () => _approveEmergencyAccess(childProfileId),
+                      : () => _approveEmergencyAccess(
+                          childProfileId,
+                          askedMinutes: askedMinutes,
+                        ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -779,9 +797,17 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   /// The guardian picks how long Emergency Access lasts.
-  Future<void> _approveEmergencyAccess(String childProfileId) async {
-    const options = <int>[5, 10, 15, 30, 45, 60, 90, 120];
-    var minutes = 15;
+  Future<void> _approveEmergencyAccess(
+    String childProfileId, {
+    int? askedMinutes,
+  }) async {
+    final options = <int>{5, 10, 15, 30, 45, 60, 90, 120, ?askedMinutes}
+        .where((m) => m > 0 && m <= 120)
+        .toList()
+      ..sort();
+    // Starts on what the child asked for; the guardian can change it.
+    var minutes =
+        askedMinutes != null && options.contains(askedMinutes) ? askedMinutes : 15;
     final chosen = await showModalBottomSheet<int>(
       context: context,
       backgroundColor: Colors.white,
