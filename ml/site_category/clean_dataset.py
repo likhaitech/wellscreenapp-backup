@@ -93,7 +93,11 @@ SOURCES = {
 # they were. See raw/adult_domains_top_blocklists.txt for how that list was
 # derived (three independent sources must agree).
 BLOCKLIST_ONLY_SOURCES = {
-    "adult": [RAW_DIR / "adult_domains_top_blocklists.txt"],
+    "adult": [
+        RAW_DIR / "adult_domains_top_blocklists.txt",
+        # Reported by REY in emulator testing, 21 Nov 2026 (see header).
+        RAW_DIR / "adult_domains_ph_reported.txt",
+    ],
 }
 
 # Deliberately NOT part of SOURCES/cleaned_site_categories.csv above. This
