@@ -57,6 +57,17 @@ class BlockedAppActivity : Activity() {
         const val MODE_SCHEDULE = "schedule"
         const val EXTRA_SCHEDULE_REASON = "schedule_reason"
         const val EXTRA_SCHEDULE_ENDS_AT = "schedule_ends_at"
+
+        /** Category of a blocked website ("adult", "gambling", ...), if known. */
+        const val EXTRA_BLOCKED_CATEGORY = "blocked_category"
+
+        /**
+         * No "Ask my parent" button for adult sites - there is no reason a
+         * child needs one opened, and a request would be an odd thing to
+         * send. The guardian can still allow a wrongly blocked site from
+         * their own app.
+         */
+        fun canAskToAllow(category: String?): Boolean = category != "adult"
     }
 
     private var isDailyTimeLimitBlock = false
@@ -106,6 +117,8 @@ class BlockedAppActivity : Activity() {
             "This app"
         }
         val blockedDomain = if (mode == null) intent.getStringExtra("blocked_domain") else null
+        val blockedCategory = intent.getStringExtra(EXTRA_BLOCKED_CATEGORY)
+        val canAsk = canAskToAllow(blockedCategory)
         blockedBrowser = intent.getStringExtra("blocked_browser")
         isWebsiteBlock = blockedDomain != null
         val blockedPackage = intent.getStringExtra("blocked_package") ?: "Restricted app"
@@ -266,6 +279,8 @@ class BlockedAppActivity : Activity() {
                     "WellScreen's settings and the phone's date and time are " +
                         "protected while this phone is paired. To change them, " +
                         "ask your guardian for Emergency Access."
+                blockedDomain != null && !canAsk ->
+                    "$blockedDomain has adult content and is blocked by WellScreen."
                 blockedDomain != null ->
                     "$blockedDomain is blocked by WellScreen."
                 isDailyTimeLimitBlock ->
@@ -357,7 +372,7 @@ class BlockedAppActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(48),
-            ).apply { topMargin = dp(12) }
+            ).apply { topMargin = if (blockedDomain != null && !canAsk) dp(32) else dp(12) }
             setOnClickListener {
                 when {
                     blockedDomain != null -> leaveToSafePage()
@@ -433,7 +448,7 @@ class BlockedAppActivity : Activity() {
             root.addView(openAppButton)
         } else if (blockedDomain == null) {
             root.addView(card)
-        } else {
+        } else if (canAsk) {
             root.addView(askButton)
         }
         root.addView(backButton)
