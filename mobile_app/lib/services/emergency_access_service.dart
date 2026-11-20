@@ -207,7 +207,7 @@ class EmergencyAccessService {
           if (status['status'] == 'approved' && grantedUntil is Timestamp) {
             await GrantCountdownNotifier.instance.show(
               id: GrantCountdownNotifier.emergencyId,
-              title: 'Emergency Access - restrictions lifted',
+              title: 'Emergency Access - apps unlocked',
               until: grantedUntil.toDate(),
             );
           }

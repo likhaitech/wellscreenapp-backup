@@ -4350,7 +4350,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Restrictions are lifted until $hh:$mm.',
+                        'Apps are unlocked until $hh:$mm. Harmful '
+                        'websites stay blocked.',
                         style: const TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 12,

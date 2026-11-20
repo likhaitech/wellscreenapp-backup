@@ -68,7 +68,7 @@ class GrantCountdownNotifier {
       await _plugin.show(
         id: id,
         title: title,
-        body: 'Ends at $hh:$mm',
+        body: 'Ends at $hh:$mm - harmful websites stay blocked',
         notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,

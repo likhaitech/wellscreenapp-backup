@@ -750,14 +750,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             children: [
               Expanded(
                 child: AppPillButton(
-                  label: 'Approve (30 min)',
+                  label: 'Approve...',
                   compact: true,
                   onPressed: _isRespondingToEmergencyAccess
                       ? null
-                      : () => _respondToEmergencyAccess(
-                          childProfileId,
-                          approve: true,
-                        ),
+                      : () => _approveEmergencyAccess(childProfileId),
                 ),
               ),
               const SizedBox(width: 10),
@@ -781,9 +778,85 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  /// The guardian picks how long Emergency Access lasts.
+  Future<void> _approveEmergencyAccess(String childProfileId) async {
+    const options = <int>[5, 10, 15, 30, 45, 60, 90, 120];
+    var minutes = 15;
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheet) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'How long?',
+                  style: TextStyle(
+                    color: darkText,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Blocked apps, focus mode, bedtime and time limits are '
+                  'lifted for this time. Adult, gambling, drug and other '
+                  'harmful websites stay blocked.',
+                  style: TextStyle(color: grayText, fontSize: 13, height: 1.35),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final option in options)
+                      ChoiceChip(
+                        label: Text(
+                          option < 60
+                              ? '$option min'
+                              : (option % 60 == 0
+                                    ? '${option ~/ 60} hr'
+                                    : '${option ~/ 60} hr ${option % 60} min'),
+                        ),
+                        selected: minutes == option,
+                        onSelected: (_) => setSheet(() => minutes = option),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppPillButton(
+                    label: 'Approve $minutes min',
+                    onPressed: () => Navigator.pop(sheetContext, minutes),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await _respondToEmergencyAccess(
+      childProfileId,
+      approve: true,
+      duration: Duration(minutes: chosen),
+    );
+  }
+
   Future<void> _respondToEmergencyAccess(
     String childProfileId, {
     required bool approve,
+    Duration duration = EmergencyAccessService.defaultGrantDuration,
   }) async {
     setState(() => _isRespondingToEmergencyAccess = true);
 
@@ -791,6 +864,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       await _emergencyAccessService.respondToRequest(
         childProfileId: childProfileId,
         approve: approve,
+        duration: duration,
       );
     } catch (e) {
       if (mounted) {

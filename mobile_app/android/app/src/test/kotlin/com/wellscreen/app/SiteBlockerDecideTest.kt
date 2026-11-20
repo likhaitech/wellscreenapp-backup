@@ -49,4 +49,21 @@ class SiteBlockerDecideTest {
         assertNull(decide("google.com"))
         assertNull(decide(""))
     }
+
+    /**
+     * Emergency Access only empties the blocked-app and used-up-limit
+     * website sets (blockedAppDomains / limitReachedDomains). Harmful-site
+     * checks run regardless, so asking for time never opens them.
+     */
+    @Test
+    fun emergencyAccessKeepsHarmfulSitesBlocked() {
+        fun duringEmergency(domain: String) = SiteBlocker.decide(
+            domain, noRules, dataset, aiSaysGambling,
+            appDomains = emptySet(), limitDomains = emptySet(),
+        )
+        assertEquals(SiteBlocker.BlockReason("keyword", "adult"), duringEmergency("freeporn-example.net"))
+        assertEquals(SiteBlocker.BlockReason("list", "gambling"), duringEmergency("bet365.com"))
+        assertEquals(SiteBlocker.BlockReason("list", "drugs"), duringEmergency("weed-shop.example"))
+        assertEquals(SiteBlocker.BlockReason("ai", "gambling"), duringEmergency("lucky-bet777.ph"))
+    }
 }
