@@ -1257,6 +1257,13 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     }
 
     setState(() => isSyncingUsage = true);
+    // Debug builds log how long each step takes (see syncStep below).
+    final syncWatch = Stopwatch()..start();
+    void syncStep(String step) {
+      if (kDebugMode) {
+        debugPrint('WellScreen sync: $step at ${syncWatch.elapsedMilliseconds} ms');
+      }
+    }
 
     try {
       final hasPermission = await _usageTrackingService.hasUsagePermission();
@@ -1279,9 +1286,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       final report = await _usageTrackingService.getTodayUsageReport();
       // Ask Android for the actual installed label/icon for each PACKAGE.
       // Do not infer names such as Orca or Trill from package suffixes.
+      syncStep('usage read');
       final appMetadata = await const InstalledAppMetadataService().lookup(
         allSummaries.map((app) => app.packageName),
       );
+      syncStep('app names and icons');
       // Keep image data only once in allApps to avoid duplicating icons
       // in topApps and pushing Firestore's document size limit.
       var remainingIconChars = 400000;
@@ -1466,6 +1475,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       // The guardian's App Rules screen lists the apps installed on THIS
       // phone (not the guardian's). Best-effort: an empty list is simply
       // not sent, so a platform-channel hiccup never erases the last one.
+      syncStep('browsing log and risk check');
       List<Map<String, String>> installedApps = const [];
       try {
         installedApps = (await _androidAppService.getInstalledApps())
@@ -1494,6 +1504,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       // (cloud_firestore's set() hangs forever offline instead of throwing
       // - firebase/flutterfire#17643), local queuing for automatic retry on
       // reconnect, and outcome logging - see its doc comment above.
+      syncStep('installed apps and weekly totals');
       final synced = await _attemptFirestoreSync(
         childProfileId: childProfileId,
         payload: {
@@ -1509,6 +1520,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         },
         trigger: 'manual',
       );
+      syncStep(synced ? 'saved to the guardian' : 'save failed or queued');
 
       if (synced) {
         // Backend validates the paired child and de-duplicates usage events.
@@ -1527,8 +1539,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         if (!silent) {
           showMessage('Today\'s usage report synced to the parent dashboard.');
         }
-        await _loadUsageDashboard();
-        await _refreshSmsAlertStatus();
+        // Refresh this screen in the background; the sync itself is done.
+        unawaited(_loadUsageDashboard());
+        unawaited(_refreshSmsAlertStatus());
       }
 
       // Same reasoning as the unhealthy-pattern push above, for a harmful
