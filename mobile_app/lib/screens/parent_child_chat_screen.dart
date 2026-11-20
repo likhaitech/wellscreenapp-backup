@@ -355,11 +355,17 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
     final decided = await showModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setModalState) => SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              0,
+              20,
+              16 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -400,12 +406,30 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                     ],
                   ],
                 ),
+                const SizedBox(height: 12),
+                TextField(
+                  keyboardType: TextInputType.number,
+                  maxLength: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Or type minutes (1-120)',
+                    suffixText: 'min',
+                    isDense: true,
+                    counterText: '',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (text) {
+                    final typed = int.tryParse(text.trim());
+                    if (typed != null && typed >= 1 && typed <= 120) {
+                      setModalState(() => minutes = typed);
+                    }
+                  },
+                ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
                       child: AppPillButton(
-                        label: 'Approve',
+                        label: 'Approve $minutes min',
                         onPressed: () => Navigator.pop(sheetContext, minutes),
                       ),
                     ),
@@ -883,6 +907,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
             ),
             const SizedBox(height: 9),
             DropdownButtonFormField<int>(
+              key: ValueKey('minutes-$_requestedMinutes'),
               initialValue: _requestedMinutes,
               isExpanded: true,
               decoration: const InputDecoration(
@@ -891,7 +916,9 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                 isDense: true,
                 border: OutlineInputBorder(),
               ),
-              items: const [5, 10, 15, 30, 45, 60, 90, 120]
+              items: (<int>{5, 10, 15, 30, 45, 60, 90, 120, _requestedMinutes}
+                      .toList()
+                    ..sort())
                   .map(
                     (minutes) => DropdownMenuItem<int>(
                       value: minutes,
@@ -901,6 +928,25 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                   .toList(),
               onChanged: (value) {
                 if (value != null) setState(() => _requestedMinutes = value);
+              },
+            ),
+            const SizedBox(height: 9),
+            TextField(
+              keyboardType: TextInputType.number,
+              maxLength: 3,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.edit_rounded, color: _chatBlue),
+                labelText: 'Or type minutes (1-120)',
+                suffixText: 'min',
+                isDense: true,
+                counterText: '',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (text) {
+                final typed = int.tryParse(text.trim());
+                if (typed != null && typed >= 1 && typed <= 120) {
+                  setState(() => _requestedMinutes = typed);
+                }
               },
             ),
             if (selectedIsPending) ...[

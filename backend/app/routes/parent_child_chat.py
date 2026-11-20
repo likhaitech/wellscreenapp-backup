@@ -23,7 +23,7 @@ class DecisionBody(BaseModel):
 
 class AccessRequestBody(BaseModel):
     packageName: str = Field(min_length=3, max_length=200)
-    requestedMinutes: int = Field(strict=True, ge=5, le=120)
+    requestedMinutes: int = Field(strict=True, ge=1, le=120)
 
 
 @router.post("/chat/requests/{profile_id}/{request_id}")
