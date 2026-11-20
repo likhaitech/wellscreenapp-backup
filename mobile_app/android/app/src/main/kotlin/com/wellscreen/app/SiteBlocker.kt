@@ -172,6 +172,22 @@ object SiteBlocker {
             limitDomains = limitReachedDomains(context),
         )
 
+    /**
+     * The harmful-site category of [domain] from the address checks only
+     * (education list, adult keywords, bundled list, gambling AI) - for
+     * labelling the browsing report in the background, not for blocking.
+     * Guardian rules and limits aren't categories, so they're left out.
+     */
+    fun harmfulCategory(context: Context, domain: String): BlockReason? {
+        val reason = decide(
+            domain = domain,
+            rules = parentRules(context),
+            dataset = loadDataset(context),
+            isAiGambling = { GamblingNameClassifier.isGambling(context, it) },
+        ) ?: return null
+        return if (reason.source == "parent_rule" || reason.category == null) null else reason
+    }
+
     @Volatile private var limitDomainsCache: Set<String> = emptySet()
     @Volatile private var limitDomainsCachedAt: Long = 0L
 
