@@ -245,13 +245,15 @@ object SiteBlocker {
 
     /**
      * True when no automatic check (page words, Cloudflare) should look at
-     * [domain]: the guardian allowed it, or it's an education/health site.
+     * [domain]: the guardian allowed it, it's an education/health site, or
+     * it's a search engine / big platform (PageCheckExempt).
      */
     fun skipsContentChecks(context: Context, domain: String): Boolean {
         val custom = normalize(domain).removePrefix("www.")
         if (custom.isEmpty()) return true
         return matchesDomain(custom, parentRules(context).allowed) ||
-            EducationSites.isProtected(custom)
+            EducationSites.isProtected(custom) ||
+            PageCheckExempt.isExempt(custom)
     }
 
     fun isBlocked(context: Context, domain: String): Boolean =
