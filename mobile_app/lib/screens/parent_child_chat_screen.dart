@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../config/app_config.dart';
 import '../services/chat_notifications_service.dart';
 import '../services/chat_unread_service.dart';
+import '../services/emergency_access_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_usage_icon.dart';
 
@@ -34,6 +35,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
   final TextEditingController _message = TextEditingController();
   bool _sendingMessage = false;
   bool _sendingRequest = false;
+  bool _sendingEmergency = false;
   bool _showRequestComposer = false;
   String? _selectedPackage;
   int _requestedMinutes = 60;
@@ -740,8 +742,79 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
     );
   }
 
+  /// Focus mode, bedtime, breaks and used-up limits block every app, not
+  /// one restricted app, so they need Emergency Access (all restrictions
+  /// lifted for a while), the same request as the Home card.
+  Future<void> _sendEmergencyRequest(String parentId, String reason) async {
+    if (_sendingEmergency) return;
+    setState(() => _sendingEmergency = true);
+    try {
+      await EmergencyAccessService().requestAccess(
+        childProfileId: widget.childProfileId,
+        parentId: parentId,
+        reason: reason,
+      );
+      if (!mounted) return;
+      setState(() => _showRequestComposer = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Emergency Access request sent to your parent.'),
+        ),
+      );
+    } on StateError catch (error) {
+      _showError(error.message);
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _sendingEmergency = false);
+    }
+  }
+
+  Widget _emergencySection(String parentId) {
+    const reasons = <String>['Schoolwork', 'Call Parent', 'Urgent'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 22),
+        const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.danger),
+            SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                'Focus mode, bedtime or a time limit?',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Ask for Emergency Access to lift all restrictions for a while. '
+          'Pick a reason:',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final reason in reasons)
+              ActionChip(
+                label: Text(reason, style: const TextStyle(fontSize: 12)),
+                onPressed: _sendingEmergency
+                    ? null
+                    : () => _sendEmergencyRequest(parentId, reason),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _requestComposer(
     String uid,
+    String parentId,
     List<Map<String, String>> apps,
     Set<String> pending,
   ) {
@@ -781,7 +854,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
           const SizedBox(height: 10),
           if (apps.isEmpty)
             const Text(
-              'No restricted applications are available to request.',
+              'No single app is restricted right now.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             )
           else ...[
@@ -877,6 +950,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
               ),
             ],
           ),
+          _emergencySection(parentId),
         ],
       ),
     );
@@ -1179,7 +1253,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                               // request form; no separate row above the bar,
                               // which pushed the bar up the screen.
                               return _showRequestComposer
-                                  ? _requestComposer(uid, apps, pending)
+                                  ? _requestComposer(uid, parentId, apps, pending)
                                   : const SizedBox.shrink();
                             },
                           ),

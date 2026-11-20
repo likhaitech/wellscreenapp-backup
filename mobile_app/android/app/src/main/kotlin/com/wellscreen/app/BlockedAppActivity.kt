@@ -342,11 +342,15 @@ class BlockedAppActivity : Activity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(48),
             )
-            // Requests are sent from the WellScreen chat, so open the app.
+            // Open WellScreen straight to the Emergency Access request form.
             setOnClickListener {
                 val launch = packageManager.getLaunchIntentForPackage(packageName)
                 if (launch != null) {
                     launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    launch.putExtra(
+                        MainActivity.EXTRA_ACTION,
+                        MainActivity.ACTION_EMERGENCY_REQUEST,
+                    )
                     startActivity(launch)
                 }
                 finish()

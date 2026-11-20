@@ -7,7 +7,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, MethodChannel;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -137,6 +138,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   bool isSyncingUsage = false;
   bool isRequestingEmergencyAccess = false;
 
+  /// The block screen's "Request Temporary Access" opens the app with this
+  /// pending, so the request form shows as soon as pairing data is loaded.
+  bool _openEmergencyRequest = false;
+  static const MethodChannel _appsChannel = MethodChannel('wellscreen/apps');
+
   // Real local usage data loaded via UsageDashboardControllerService, which
   // wraps UsageTrackingService (Android UsageStats), PatternDetectionService
   // and ScreenTimeGoalService. This layer already existed in the codebase
@@ -247,6 +253,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _refreshSmsAlertStatus();
     _refreshSyncStatus();
     unawaited(_refreshAccessibilityStatus());
+    unawaited(_checkLaunchAction());
     _connectivitySubscription = _syncStatusService.onlineStatusChanges.listen(
       _handleConnectivityChange,
     );
@@ -409,6 +416,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       unawaited(_refreshAccessibilityStatus());
       unawaited(_publishOnlineHeartbeat());
       _syncIfStale();
+      unawaited(_checkLaunchAction());
       final activeProfile = _timeLimitProfileId;
       if (activeProfile != null && activeProfile.isNotEmpty) {
         unawaited(_limitNotifications.startForChild(activeProfile));
@@ -2152,6 +2160,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             // moment the timer fires. This builder stays mounted on every
             // tab (Home / Safety / Settings) for the same reason.
             _cachedUserData = data;
+            if (_openEmergencyRequest) _openPendingEmergencyRequest();
             // The Chat tab's unread dot is built outside this stream, so
             // redraw it once the paired profile is known.
             final pairedProfile = (data['pairedChildProfileId'] ?? '')
@@ -4430,6 +4439,39 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         );
       },
     );
+  }
+
+  /// Asks the native side whether the app was opened from the block
+  /// screen's request button, and if so opens the request form.
+  Future<void> _checkLaunchAction() async {
+    String? action;
+    try {
+      action = await _appsChannel.invokeMethod<String>('takeLaunchAction');
+    } catch (_) {
+      return;
+    }
+    if (action != 'emergency_request' || !mounted) return;
+    _openEmergencyRequest = true;
+    _openPendingEmergencyRequest();
+  }
+
+  void _openPendingEmergencyRequest() {
+    if (!_openEmergencyRequest) return;
+    final data = _cachedUserData;
+    // Opened again once the profile streams in.
+    if (data == null || data.isEmpty) return;
+    final parentId = (data['pairedParentId'] ?? '').toString();
+    final childProfileId = (data['pairedChildProfileId'] ?? '').toString();
+    _openEmergencyRequest = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (parentId.isEmpty || childProfileId.isEmpty) {
+        showMessage('Pair with a parent to request access.');
+        return;
+      }
+      if (currentIndex != 0) setState(() => currentIndex = 0);
+      _showEmergencyRequestSheet(childProfileId, parentId);
+    });
   }
 
   void _showEmergencyRequestSheet(String childProfileId, String parentId) {
