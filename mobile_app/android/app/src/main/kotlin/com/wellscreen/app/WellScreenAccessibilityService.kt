@@ -20,6 +20,9 @@ import org.json.JSONArray
 // of reading actual logcat output. Filter with: adb logcat -s WellScreenCapture
 private const val CAPTURE_LOG_TAG = "WellScreenCapture"
 
+/** Re-blocks of the same site within this time are the same attempt. */
+private const val BLOCK_ATTEMPT_WINDOW_MS = 10_000L
+
 class WellScreenAccessibilityService : AccessibilityService() {
 
     private var lastBlockedPackage: String? = null
@@ -650,6 +653,11 @@ class WellScreenAccessibilityService : AccessibilityService() {
             now - lastWebBlockTime < 2500 &&
             BlockedAppActivity.isShowing
         if (recent) return
+        // One visit fires several browser events in a fraction of a second
+        // (6 blocks in 0.3 s were seen in testing). Count it as ONE attempt
+        // in the report and the "N attempts today" alert, not six.
+        val sameAttempt = lastBlockedDomain == domain &&
+            now - lastWebBlockTime < BLOCK_ATTEMPT_WINDOW_MS
         lastBlockedDomain = domain
         lastWebBlockTime = now
 
@@ -668,10 +676,12 @@ class WellScreenAccessibilityService : AccessibilityService() {
             intent.putExtra("blocked_domain", domain)
             intent.putExtra("blocked_browser", browserPackage)
             startActivity(intent)
-            RestrictionLogger.recordOutcome(
-                this, domain, "blocked", now, reason.source, reason.category,
-            )
-            RepeatedAttemptAlert.onBlocked(this, domain, reason.source)
+            if (!sameAttempt) {
+                RestrictionLogger.recordOutcome(
+                    this, domain, "blocked", now, reason.source, reason.category,
+                )
+                RepeatedAttemptAlert.onBlocked(this, domain, reason.source)
+            }
         } catch (_: Exception) {
             RestrictionLogger.recordOutcome(this, domain, "failed_exception", now)
         }
