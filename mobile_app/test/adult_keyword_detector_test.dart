@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:app/services/adult_keyword_detector.dart';
@@ -83,5 +85,33 @@ void main() {
     expect(detector.matches('milfordschools.org'), isFalse);
     expect(detector.matches('googleanalytics.com'), isFalse);
     expect(detector.matches('nakedwines.com'), isFalse);
+  });
+
+  test('flags Filipino adult names and keeps look-alikes open', () {
+    final detector = AdultKeywordDetector();
+    for (final d in ['pinayflix.me', 'sulasok.tv', 'kantotan.net', 'jakol-pinoy.com']) {
+      expect(detector.matches(d), isTrue, reason: d);
+    }
+    for (final d in ['chupachups.com', 'kiyotaka.jp', 'pinaymama.com']) {
+      expect(detector.matches(d), isFalse, reason: d);
+    }
+  });
+
+  test('keyword list matches AdultKeywordMatcher.kt', () {
+    final kotlin = File(
+      'android/app/src/main/kotlin/com/wellscreen/app/AdultKeywordMatcher.kt',
+    ).readAsStringSync();
+    final start = kotlin.indexOf('KEYWORDS = listOf(');
+    final block = kotlin.substring(start, kotlin.indexOf('\n    )', start));
+    // Comment lines mention left-out words in quotes; skip them.
+    final code = block
+        .split('\n')
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+    final kotlinWords = RegExp(r'"([a-z0-9]+)"')
+        .allMatches(code)
+        .map((m) => m.group(1)!)
+        .toSet();
+    expect(kotlinWords, AdultKeywordDetector.keywords.toSet());
   });
 }

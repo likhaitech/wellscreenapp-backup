@@ -89,7 +89,19 @@ class AdultKeywordDetector {
     'escort',
     'camgirl',
     'milf',
+    // Filipino (added 21 Nov 2026, same as AdultKeywordMatcher.kt).
+    'kantot',
+    'jakol',
+    'tsupa',
+    'libog',
+    'tamod',
+    'iyutan',
+    'pinayflix',
+    'sulasok',
   ];
+
+  /// The keyword list, for the test that keeps it in sync with Kotlin.
+  static List<String> get keywords => List.unmodifiable(_keywords);
 
   /// Ordinary words that contain a keyword ("milford" contains "milf").
   static const List<String> _safeSubstrings = ['milford'];

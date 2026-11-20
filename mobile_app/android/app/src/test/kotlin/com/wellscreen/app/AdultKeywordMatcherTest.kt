@@ -83,4 +83,15 @@ class AdultKeywordMatcherTest {
             assertFalse("$domain must not be blocked", domain in all)
         }
     }
+
+    @Test
+    fun blocksFilipinoAdultNames() {
+        for (d in listOf("pinayflix.me", "sulasok.tv", "kantotan.net", "jakol-pinoy.com", "libogpinay.xyz")) {
+            assertTrue(d, AdultKeywordMatcher.matches(d))
+        }
+        // Ordinary names that only look close stay open.
+        for (d in listOf("chupachups.com", "kiyotaka.jp", "pinaymama.com", "boldpinoy-news.com")) {
+            assertFalse(d, AdultKeywordMatcher.matches(d))
+        }
+    }
 }
