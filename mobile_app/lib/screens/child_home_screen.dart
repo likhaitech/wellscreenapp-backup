@@ -408,6 +408,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       _refreshSyncStatus();
       unawaited(_refreshAccessibilityStatus());
       unawaited(_publishOnlineHeartbeat());
+      _syncIfStale();
       final activeProfile = _timeLimitProfileId;
       if (activeProfile != null && activeProfile.isNotEmpty) {
         unawaited(_limitNotifications.startForChild(activeProfile));
@@ -1239,6 +1240,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     // sync plus a short auto-sync interval could stack overlapping
     // Firestore writes.
     if (isSyncingUsage) return;
+    _lastUsageSyncAttempt = DateTime.now();
 
     final user = FirebaseAuth.instance.currentUser;
 
@@ -1592,6 +1594,21 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   /// for "where is my kid right now."
   static const Duration _usageAutoSyncInterval = Duration(minutes: 5);
   Timer? _usageAutoSyncTimer;
+
+  /// Android pauses apps in the background, so the 5-minute timer above
+  /// often doesn't fire while the child is in another app (e.g. Chrome).
+  /// Coming back to WellScreen syncs straight away if the last try was
+  /// more than 2 minutes ago, so the guardian isn't left with old data.
+  DateTime? _lastUsageSyncAttempt;
+  static const Duration _resumeSyncAfter = Duration(minutes: 2);
+
+  void _syncIfStale() {
+    final last = _lastUsageSyncAttempt;
+    if (last != null && DateTime.now().difference(last) < _resumeSyncAfter) {
+      return;
+    }
+    unawaited(_autoSyncUsage());
+  }
 
   Future<void> _autoSyncUsage() async {
     final data = _cachedUserData;
