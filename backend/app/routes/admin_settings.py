@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from app.models.system_settings import SystemPatchRequest, SystemSettingsUpdate
 from app.services.admin_auth_service import require_admin
+from app.services.server_info import server_info
 from app.services.system_log_service import create_system_log
 from app.services.system_settings_service import (
     get_system_settings,
@@ -20,7 +21,7 @@ def read_system_settings(
     current_admin: dict = Depends(require_admin),
 ):
     try:
-        return get_system_settings()
+        return {**get_system_settings(), "server": server_info()}
 
     except Exception as exc:
         raise HTTPException(

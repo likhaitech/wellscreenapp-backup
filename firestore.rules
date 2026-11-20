@@ -374,8 +374,9 @@ service cloud.firestore {
     }
 
     // Administrative system logs.
-    // Age-group rules set by the admin (written only by the backend).
-    // Guardian and child apps read them for default goals and site strictness.
+    // System settings set by the admin through a validated system patch
+    // (written only by the backend): minimum app version and maintenance
+    // notice. Every signed-in phone reads them.
     match /system_settings/{docId} {
       allow read: if isSignedIn();
       allow write: if false;

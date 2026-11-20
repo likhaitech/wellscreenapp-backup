@@ -25,14 +25,17 @@ def test_get_returns_current_settings():
     try:
         with patch(
             "app.routes.admin_settings.get_system_settings",
-            return_value={"goal_minutes_7_12": 180},
+            return_value={"minimum_app_version": "1.0.0"},
         ):
             response = client.get("/admin/settings/")
     finally:
         app.dependency_overrides.pop(require_admin, None)
 
     assert response.status_code == 200
-    assert response.json() == {"goal_minutes_7_12": 180}
+    body = response.json()
+    assert body["minimum_app_version"] == "1.0.0"
+    # The running server version (patch) is shown to the admin too.
+    assert set(body["server"]) == {"version", "running_since"}
 
 
 def test_get_service_error_becomes_500():
@@ -50,7 +53,7 @@ def test_get_service_error_becomes_500():
 
 
 def test_patch_without_auth_header_is_rejected():
-    response = client.patch("/admin/settings/", json={"risky_sites_7_12": "block"})
+    response = client.patch("/admin/settings/", json={"maintenance_message": "Server maintenance tonight"})
     assert response.status_code == 401
 
 
@@ -59,20 +62,20 @@ def test_patch_applies_changes_and_writes_an_audit_log():
     try:
         with patch(
             "app.routes.admin_settings.update_system_settings",
-            return_value={"risky_sites_7_12": "block"},
+            return_value={"maintenance_message": "Server maintenance tonight"},
         ) as mock_update, patch(
             "app.routes.admin_settings.create_system_log"
         ) as mock_log:
             response = client.patch(
-                "/admin/settings/", json={"risky_sites_7_12": "block"}
+                "/admin/settings/", json={"maintenance_message": "Server maintenance tonight"}
             )
     finally:
         app.dependency_overrides.pop(require_admin, None)
 
     assert response.status_code == 200
-    assert response.json() == {"risky_sites_7_12": "block"}
+    assert response.json() == {"maintenance_message": "Server maintenance tonight"}
     mock_update.assert_called_once_with(
-        {"risky_sites_7_12": "block"}, updated_by="admin-1"
+        {"maintenance_message": "Server maintenance tonight"}, updated_by="admin-1"
     )
     mock_log.assert_called_once()
     assert mock_log.call_args.kwargs["action"] == "system_settings_updated"
@@ -101,7 +104,7 @@ def test_patch_service_error_becomes_500():
             side_effect=RuntimeError("boom"),
         ):
             response = client.patch(
-                "/admin/settings/", json={"risky_sites_7_12": "review"}
+                "/admin/settings/", json={"maintenance_message": ""}
             )
     finally:
         app.dependency_overrides.pop(require_admin, None)
@@ -114,18 +117,18 @@ def _as_admin():
 
 
 def test_patch_endpoint_requires_auth():
-    r = client.post("/admin/settings/patch", json={"settings": {"risky_sites_6_and_below": "review"}})
+    r = client.post("/admin/settings/patch", json={"settings": {"minimum_app_version": "1.1.0"}})
     assert r.status_code == 401
 
 
 def test_system_patch_applies_valid_settings_and_logs():
     _as_admin()
     try:
-        with patch("app.routes.admin_settings.update_system_settings", return_value={"risky_sites_6_and_below": "review"}) as upd, \
+        with patch("app.routes.admin_settings.update_system_settings", return_value={"minimum_app_version": "1.1.0"}) as upd, \
              patch("app.routes.admin_settings.create_system_log") as log:
             r = client.post(
                 "/admin/settings/patch",
-                json={"version": "1.0.1", "settings": {"risky_sites_6_and_below": "review", "goal_minutes_7_12": 120}},
+                json={"version": "1.0.1", "settings": {"minimum_app_version": "1.1.0", "maintenance_message": "Update needed"}},
             )
     finally:
         app.dependency_overrides.pop(require_admin, None)
@@ -153,8 +156,8 @@ def test_system_patch_rejects_wrong_type_and_out_of_range():
     try:
         with patch("app.routes.admin_settings.update_system_settings") as upd, \
              patch("app.routes.admin_settings.create_system_log"):
-            r1 = client.post("/admin/settings/patch", json={"settings": {"risky_sites_7_12": "maybe"}})
-            r2 = client.post("/admin/settings/patch", json={"settings": {"goal_minutes_7_12": 99999}})
+            r1 = client.post("/admin/settings/patch", json={"settings": {"minimum_app_version": "one.four"}})
+            r2 = client.post("/admin/settings/patch", json={"settings": {"minimum_app_version": "1.4"}})
             r3 = client.post("/admin/settings/patch", json={"settings": {}})
     finally:
         app.dependency_overrides.pop(require_admin, None)
@@ -166,22 +169,22 @@ def test_system_patch_validate_only_does_not_apply():
     _as_admin()
     try:
         with patch("app.routes.admin_settings.update_system_settings") as upd:
-            r = client.post("/admin/settings/patch", json={"validate_only": True, "settings": {"risky_sites_6_and_below": "review"}})
+            r = client.post("/admin/settings/patch", json={"validate_only": True, "settings": {"minimum_app_version": "1.1.0"}})
     finally:
         app.dependency_overrides.pop(require_admin, None)
     assert r.status_code == 200 and r.json()["applied"] is False
     upd.assert_not_called()
 
 
-def test_system_patch_rejects_text_minutes_too_short_and_removed_switches():
-    # The demo cases: letters for minutes, under 15 minutes, and a switch
-    # that no app ever read (removed) are all refused with no change.
+def test_system_patch_rejects_bad_version_long_notice_and_removed_settings():
+    # The demo cases: a version that isn't x.y.z (number or text), a notice
+    # over 200 characters, and a removed setting are refused with no change.
     _as_admin()
     try:
         with patch("app.routes.admin_settings.update_system_settings") as upd, \
              patch("app.routes.admin_settings.create_system_log"):
-            r1 = client.post("/admin/settings/patch", json={"settings": {"goal_minutes_7_12": "90"}})
-            r2 = client.post("/admin/settings/patch", json={"settings": {"goal_minutes_7_12": 10}})
+            r1 = client.post("/admin/settings/patch", json={"settings": {"minimum_app_version": 140}})
+            r2 = client.post("/admin/settings/patch", json={"settings": {"maintenance_message": "x" * 201}})
             r3 = client.post("/admin/settings/patch", json={"settings": {"focus_mode_enabled": False}})
     finally:
         app.dependency_overrides.pop(require_admin, None)
@@ -189,16 +192,16 @@ def test_system_patch_rejects_text_minutes_too_short_and_removed_switches():
     upd.assert_not_called()
 
 
-def test_system_patch_applies_age_group_rules():
+def test_system_patch_applies_version_and_notice():
     _as_admin()
     try:
         with patch("app.routes.admin_settings.update_system_settings", return_value={}) as upd, \
              patch("app.routes.admin_settings.create_system_log"):
             r = client.post("/admin/settings/patch", json={
-                "version": "age-rules-2",
-                "settings": {"goal_minutes_7_12": 90, "risky_sites_13_15": "block"},
+                "version": "1.4.0",
+                "settings": {"minimum_app_version": "1.4.0", "maintenance_message": "Maintenance at 10 PM"},
             })
     finally:
         app.dependency_overrides.pop(require_admin, None)
     assert r.status_code == 200 and r.json()["applied"] is True
-    assert upd.call_args.args[0] == {"goal_minutes_7_12": 90, "risky_sites_13_15": "block"}
+    assert upd.call_args.args[0] == {"minimum_app_version": "1.4.0", "maintenance_message": "Maintenance at 10 PM"}

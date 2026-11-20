@@ -1,26 +1,23 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 
 class SystemSettingsUpdate(BaseModel):
-    """Age-group rules the guardian and child apps read from
-    system_settings/global (manuscript Ch. III age table).
+    """System-wide release settings, set by the admin through a validated
+    system patch and read live by every WellScreen phone
+    (system_settings/global).
 
-    goal_minutes_*: the default daily screen-time goal for that age group.
-    risky_sites_*: what happens on a "possible risk" website - "block" it,
-    or "review" (ask the guardian). Known harmful sites are always blocked.
+    minimum_app_version: phones running an older app version are asked to
+    update before continuing (how a bug-fix release reaches every phone).
+    maintenance_message: a short notice shown to every user; "" clears it.
     """
 
-    goal_minutes_6_and_below: int | None = Field(default=None, ge=15, le=720)
-    goal_minutes_7_12: int | None = Field(default=None, ge=15, le=720)
-    goal_minutes_13_15: int | None = Field(default=None, ge=15, le=720)
-
-    risky_sites_6_and_below: Literal["block", "review"] | None = None
-    risky_sites_7_12: Literal["block", "review"] | None = None
-    risky_sites_13_15: Literal["block", "review"] | None = None
+    minimum_app_version: str | None = Field(
+        default=None,
+        pattern=r"^\d{1,3}\.\d{1,3}\.\d{1,3}$",
+    )
+    maintenance_message: str | None = Field(default=None, max_length=200)
 
 from pydantic import ConfigDict
 
