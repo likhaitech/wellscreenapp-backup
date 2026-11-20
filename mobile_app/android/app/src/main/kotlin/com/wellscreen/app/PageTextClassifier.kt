@@ -18,14 +18,14 @@ import java.util.Locale
  *   these lists, so research and health pages are not blocked.
  * - A single everyday word (deposit, spin, odds, bonus) can never block on
  *   its own: words score 1, topic phrases 2, action phrases 3, and a block
- *   needs a minimum score, several different matches AND an action phrase
- *   ("deposit bonus", "place your bet", "free porn") - so a news story that
- *   only talks about gambling is not blocked.
+ *   always needs a combination of several different terms.
  * - Each term counts once per page, however often it appears.
  * - Nothing is saved or sent: the text is scored and dropped.
  *
  * Pure Kotlin (no Android types) so it can be unit tested. The thresholds
- * were set by measuring real pages - see ml/page_text/README.md.
+ * were set by measuring 439 real pages (100 gambling, 100 adult, 200
+ * normal, 39 education/health/news) - see
+ * ml/site_category/PAGE_TEXT_RESULTS.md.
  */
 object PageTextClassifier {
 
@@ -39,12 +39,29 @@ object PageTextClassifier {
     )
 
     /**
-     * BLOCK: score >= [BLOCK_SCORE], at least [BLOCK_MIN_TERMS] different
-     * terms, AND at least one action/explicit phrase (a page that only
-     * TALKS about gambling, like a news story, has no "deposit bonus").
+     * BLOCK, way 1: score >= [BLOCK_SCORE], at least [BLOCK_MIN_TERMS]
+     * different terms, AND an action phrase ("deposit bonus", "bet now",
+     * "free porn").
      */
     const val BLOCK_SCORE = 7
     const val BLOCK_MIN_TERMS = 3
+
+    /**
+     * BLOCK, way 2 - no action phrase needed, because many real sites show
+     * their games or videos before login: at least [STRONG_GAMBLING_WORDS]
+     * different gambling WORDS (casino, slots, jackpot, baccarat, tongits...)
+     * or [STRONG_ADULT_WORDS] different explicit adult words. Topic phrases
+     * ("online casino", "sports betting") never count here, so a news story
+     * ABOUT gambling can't reach it.
+     *
+     * Measured (PAGE_TEXT_RESULTS.md): the lowest values that block ZERO
+     * education/health/news pages and ZERO normal pages. Most on a
+     * non-gambling page: 5 gambling words (encyclopedia articles about
+     * slot machines and gambling). Most on a non-adult page: 4 explicit
+     * words (an encyclopedia article about pornography).
+     */
+    const val STRONG_GAMBLING_WORDS = 6
+    const val STRONG_ADULT_WORDS = 5
 
     /**
      * HINT (guardian review, never a block on its own except for the
@@ -138,7 +155,12 @@ object PageTextClassifier {
     private fun containsTerm(text: String, term: String): Boolean =
         text.contains(" $term ")
 
-    private data class Score(val total: Int, val matches: List<String>, val hasAction: Boolean)
+    private data class Score(
+        val total: Int,
+        val matches: List<String>,
+        val hasAction: Boolean,
+        val words: Int, // different single words (not phrases) matched
+    )
 
     private fun score(
         text: String,
@@ -149,6 +171,7 @@ object PageTextClassifier {
         var total = 0
         val matches = ArrayList<String>()
         var hasAction = false
+        var wordCount = 0
         for (phrase in actions) {
             if (containsTerm(text, phrase)) {
                 total += ACTION
@@ -168,13 +191,15 @@ object PageTextClassifier {
                 matches.none { " $it ".contains(" $word ") }) {
                 total += WORD
                 matches.add(word)
+                wordCount++
             }
         }
-        return Score(total, matches, hasAction)
+        return Score(total, matches, hasAction, wordCount)
     }
 
-    private fun levelFor(s: Score): Level = when {
+    private fun levelFor(s: Score, strongWords: Int): Level = when {
         s.total >= BLOCK_SCORE && s.matches.size >= BLOCK_MIN_TERMS && s.hasAction -> Level.BLOCK
+        s.words >= strongWords -> Level.BLOCK
         (s.hasAction && s.total >= HINT_SCORE) || s.total >= HINT_ANY_SCORE -> Level.HINT
         else -> Level.NONE
     }
@@ -183,8 +208,8 @@ object PageTextClassifier {
         val text = normalize(texts)
         val g = score(text, GAMBLING_ACTIONS, GAMBLING_TOPICS, GAMBLING_WORDS)
         val a = score(text, ADULT_ACTIONS, emptyList(), ADULT_WORDS)
-        val gLevel = levelFor(g)
-        val aLevel = levelFor(a)
+        val gLevel = levelFor(g, STRONG_GAMBLING_WORDS)
+        val aLevel = levelFor(a, STRONG_ADULT_WORDS)
         if (gLevel == Level.NONE && aLevel == Level.NONE) {
             return Result(Level.NONE, null, maxOf(g.total, a.total), emptyList())
         }

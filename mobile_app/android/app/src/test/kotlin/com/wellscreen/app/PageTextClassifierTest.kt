@@ -98,4 +98,43 @@ class PageTextClassifierTest {
         assertEquals("777", PageTextClassifier.normalizeToken("777"))
         assertEquals("casino", PageTextClassifier.normalizeToken("c4sino"))
     }
+
+    @Test
+    fun gamblingLobbyBeforeLoginIsBlockedByManyGameWords() {
+        // Real PH sites show their game menu before login (no "deposit bonus" yet).
+        val r = PageTextClassifier.classify(listOf(
+            "Login/Register", "Recommended", "Tongits Joker", "Pusoy", "Slots",
+            "Poker", "Baccarat", "Roulette", "Live Casino",
+        ))
+        assertEquals(PageTextClassifier.Level.BLOCK, r.level)
+        assertEquals("gambling", r.category)
+    }
+
+    @Test
+    fun fiveGamblingWordsWithoutActionIsNotBlocked() {
+        // Like the encyclopedia article on gambling (the highest real
+        // education page measured): stays below the strong-words bar.
+        val r = PageTextClassifier.classify(listOf(
+            "Gambling is wagering money. Bets on a casino slot or poker hand; the jackpot is rare.",
+        ))
+        assertEquals(true, r.level != PageTextClassifier.Level.BLOCK)
+    }
+
+    @Test
+    fun adultTubeWithoutActionPhraseIsBlocked() {
+        val r = PageTextClassifier.classify(listOf(
+            "Home", "Categories", "Blowjob", "Milf", "Creampie", "Gangbang", "Threesome",
+        ))
+        assertEquals(PageTextClassifier.Level.BLOCK, r.level)
+        assertEquals("adult", r.category)
+    }
+
+    @Test
+    fun encyclopediaArticleAboutPornographyIsNotBlocked() {
+        val r = PageTextClassifier.classify(listOf(
+            "Pornography (often shortened to porn or porno) is the portrayal of sexual subject matter.",
+            "Terms such as xxx and erotic art are discussed.",
+        ))
+        assertEquals(true, r.level != PageTextClassifier.Level.BLOCK)
+    }
 }
