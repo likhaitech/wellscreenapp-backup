@@ -163,4 +163,24 @@ class PageTextClassifierTest {
     fun oneFilipinoWordAloneDoesNotBlock() {
         assertEquals(PageTextClassifier.Level.NONE, level("Chupa Chups lollipop", "Candy shop"))
     }
+
+    @Test
+    fun tubeSiteCategoryMenuIsBlocked() {
+        // Like rbreezy.xyz in emulator testing: only a category list shows.
+        val r = PageTextClassifier.classify(listOf(
+            "Categories", "Amateur", "Anal", "Asian", "Big Boobs", "Blowjob",
+            "Busty", "Hardcore", "Lesbian", "Teen",
+        ))
+        assertEquals(PageTextClassifier.Level.BLOCK, r.level)
+        assertEquals("adult", r.category)
+    }
+
+    @Test
+    fun healthPageWithOneClinicalWordIsNotBlocked() {
+        val r = PageTextClassifier.classify(listOf(
+            "Anal fissure: symptoms and treatment",
+            "Breast and testicle self-checks for teens. Talk to a doctor.",
+        ))
+        assertEquals(PageTextClassifier.Level.NONE, r.level)
+    }
 }

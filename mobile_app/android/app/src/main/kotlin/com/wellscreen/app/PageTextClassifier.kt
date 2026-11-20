@@ -112,6 +112,10 @@ object PageTextClassifier {
         // as sulasok.tv and kayatan.org that use Tagalog, not English).
         "pinay scandal", "pinoy scandal", "pinay bold", "pinoy bold",
         "pinay sex", "pinay porn", "pinay iyot", "pinay kantot",
+        // Category menus of tube sites (added 21 Nov 2026 after rbreezy.xyz
+        // got through in testing).
+        "big boobs", "big tits", "big ass", "anal sex", "teen porn",
+        "amateur porn", "lesbian porn", "gay porn", "porn stars",
     )
 
     // Explicit adult words (never topic words - see the class comment).
@@ -121,6 +125,14 @@ object PageTextClassifier {
         "milf", "pussy", "fuck", "fucking", "horny", "nude", "nudes",
         "erotic", "fetish", "bdsm", "camgirl", "camgirls", "escort", "escorts",
         "stripper", "threesome", "orgy",
+        // Tube-site category words (21 Nov 2026). Left out on purpose:
+        // words a health or sex-education page uses (masturbation, orgasm,
+        // lesbian, gay, teen, vagina, penis) and everyday words (sexy,
+        // amateur, facial, dick).
+        "boobs", "tits", "titties", "anal", "cum", "cumming", "deepthroat",
+        "handjob", "hardcore", "pornstar", "pornstars", "dildo", "bukkake",
+        "stepmom", "stepsis", "stepsister", "busty", "bbw", "upskirt",
+        "cock", "cocks", "onlyfans",
         // Filipino vulgar/explicit words. Left out on purpose: formal or
         // medical words a sex-education page uses (ari, puki, titi,
         // pekpek) and everyday words (bold, scandal, hubad, kayat).
