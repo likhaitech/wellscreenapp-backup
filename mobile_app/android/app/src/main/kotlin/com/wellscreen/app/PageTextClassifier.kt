@@ -108,6 +108,10 @@ object PageTextClassifier {
         "xxx videos", "xxx video", "hot sex", "nude pics", "nude photos",
         "naked girls", "adult videos", "hardcore sex", "live sex", "sex cams",
         "sex cam", "18+ videos", "watch porn", "porn tube", "full porn",
+        // Filipino (added 21 Nov 2026 after REY tested PH adult sites such
+        // as sulasok.tv and kayatan.org that use Tagalog, not English).
+        "pinay scandal", "pinoy scandal", "pinay bold", "pinoy bold",
+        "pinay sex", "pinay porn", "pinay iyot", "pinay kantot",
     )
 
     // Explicit adult words (never topic words - see the class comment).
@@ -117,6 +121,12 @@ object PageTextClassifier {
         "milf", "pussy", "fuck", "fucking", "horny", "nude", "nudes",
         "erotic", "fetish", "bdsm", "camgirl", "camgirls", "escort", "escorts",
         "stripper", "threesome", "orgy",
+        // Filipino vulgar/explicit words. Left out on purpose: formal or
+        // medical words a sex-education page uses (ari, puki, titi,
+        // pekpek) and everyday words (bold, scandal, hubad, kayat).
+        "kantot", "kantutan", "kinantot", "iyot", "iyutan", "jakol",
+        "jakolan", "tsupa", "chupa", "libog", "malibog", "nakakalibog",
+        "tamod", "burat",
     )
 
     /**
