@@ -541,7 +541,10 @@ class WellScreenAccessibilityService : AccessibilityService() {
             }
             contentBlocked.remove(domain)
         }
-        if (!isPairedChildPhone()) return false
+        if (!isPairedChildPhone()) {
+            pageLog("page check '$domain': skipped (not a paired child phone)")
+            return false
+        }
 
         if (maybeAskFamilyDns(browserPackage, domain)) return true
 
@@ -560,7 +563,14 @@ class WellScreenAccessibilityService : AccessibilityService() {
         pageScanLastAt = now
         pageScanCount++
 
-        val result = PageTextClassifier.classify(collectPageTexts(root))
+        val texts = collectPageTexts(root)
+        val result = PageTextClassifier.classify(texts)
+        // Counts only - never the page words themselves (privacy promise).
+        pageLog(
+            "page check '$domain' #$pageScanCount: ${texts.size} texts, " +
+                "${texts.sumOf { it.length }} chars -> ${result.level} " +
+                "${result.category ?: "-"} score ${result.score}"
+        )
         return when (result.level) {
             PageTextClassifier.Level.BLOCK -> {
                 val reason = SiteBlocker.BlockReason("page", result.category)
@@ -572,6 +582,11 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 onSiteHint(browserPackage, domain, "page", result.category)
             PageTextClassifier.Level.NONE -> false
         }
+    }
+
+    private fun pageLog(msg: String) {
+        Log.d(CAPTURE_LOG_TAG, msg)
+        CaptureDebugLogger.log(this, msg)
     }
 
     /**
