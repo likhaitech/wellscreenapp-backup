@@ -8,6 +8,7 @@ import '../models/daily_goal.dart';
 import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
+import '../services/system_settings_service.dart';
 import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
 import '../services/parent_phone_sync_service.dart';
@@ -75,6 +76,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    // The admin's age-group rules (default goals) for the age picker.
+    SystemSettingsService.start();
     // Registers this device for push (saves an fcmToken to
     // users/{uid}), and starts listening for foreground messages so real
     // alerts sent via backend/app/services/notification_service.py

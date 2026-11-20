@@ -639,7 +639,7 @@ class WellScreenAccessibilityService : AccessibilityService() {
         reason: String,
         category: String?,
     ): Boolean {
-        if (SiteReview.blocksHints(SiteReview.ageGroup(this))) {
+        if (SiteReview.blocksHints(this)) {
             // Only block if the browser is still on that site.
             if (currentBrowserDomain[browserPackage] != domain) return false
             val blockReason = SiteBlocker.BlockReason("hint", category ?: "unsafe")

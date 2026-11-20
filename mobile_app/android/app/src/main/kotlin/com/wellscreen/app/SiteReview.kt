@@ -28,8 +28,22 @@ internal object SiteReview {
     private val lastTry = HashMap<String, Long>()
     private const val RETRY_MS = 10 * 60 * 1000L
 
-    /** Hints become blocks only for the youngest age group. */
+    const val BLOCKS_RISKY_KEY = "flutter.child_blocks_risky_sites"
+
+    /** Built-in rule (manuscript): hints become blocks only for the youngest group. */
     fun blocksHints(ageGroup: String?): Boolean = ageGroup == YOUNGEST
+
+    /**
+     * The admin's age-group rule, cached by the child app from
+     * system_settings/global; the built-in rule when it isn't cached yet.
+     */
+    fun blocksHints(context: Context): Boolean = try {
+        val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        if (prefs.contains(BLOCKS_RISKY_KEY)) prefs.getBoolean(BLOCKS_RISKY_KEY, false)
+        else blocksHints(ageGroup(context))
+    } catch (_: Exception) {
+        blocksHints(ageGroup(context))
+    }
 
     fun ageGroup(context: Context): String? = try {
         context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
