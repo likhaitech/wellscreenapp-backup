@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'adult_keyword_detector.dart';
+import 'education_sites.dart';
 import 'site_category_ml_classifier.dart';
 
 /// A category match for a captured domain, tagging which existing mechanism
@@ -270,6 +271,9 @@ class SiteCategoryService {
     // are enforced natively without inventing a harmful-site category.
     final guardianRules = await _cachedChildRules();
     if (guardianRules.isAllowed(normalized)) return null;
+    // Education and health sites are never flagged automatically, so a
+    // child's school research on sex education or LGBT topics is not blocked.
+    if (EducationSites.isProtected(normalized)) return null;
 
     await _ensureLoaded();
     final exactCategory = _lookupExact(normalized);

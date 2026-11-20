@@ -127,6 +127,21 @@ void main() {
       expect(result, isNull);
     });
 
+    test(
+      'education and health sites are never flagged, even when the name '
+      'contains an adult keyword',
+      () async {
+        // Without the education allow list, "porn" in these names would hit
+        // the keyword path (see the freeporn-example.net test above).
+        expect(await service.classify('porn-addiction-help.nhs.uk'), isNull);
+        expect(await service.classify('pornography-study.example.edu'), isNull);
+        expect(await service.classify('www.scarleteen.com'), isNull);
+        // A look-alike that only CONTAINS a protected name is not protected.
+        final fake = await service.classify('freeporn-nhs.uk.example.net');
+        expect(fake, isNotNull);
+      },
+    );
+
     test('classification is case-insensitive', () async {
       final lower = await service.classify('youporn.com');
       final upper = await service.classify('YOUPORN.COM');
