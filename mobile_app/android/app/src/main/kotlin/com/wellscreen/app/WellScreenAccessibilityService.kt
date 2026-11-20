@@ -577,7 +577,7 @@ class WellScreenAccessibilityService : AccessibilityService() {
         if (result.level != PageTextClassifier.Level.NONE && result.category != null) {
             BrowsingLogger.tagVisit(
                 this, domain, result.category,
-                if (result.level == PageTextClassifier.Level.BLOCK) "page" else "hint",
+                if (result.level == PageTextClassifier.Level.HINT) "hint" else "page",
             )
         }
         return when (result.level) {
@@ -589,6 +589,8 @@ class WellScreenAccessibilityService : AccessibilityService() {
             }
             PageTextClassifier.Level.HINT ->
                 onSiteHint(browserPackage, domain, "page", result.category)
+            // Labelled in the report (tagVisit above), nothing else.
+            PageTextClassifier.Level.LABEL,
             PageTextClassifier.Level.NONE -> false
         }
     }

@@ -112,3 +112,24 @@ Also: search engines and big platforms (Google, Bing, YouTube, Facebook,
 X, Reddit...) skip the page check, because it blocks a whole site and a
 Google results page can show explicit words (google.com got blocked in
 testing). See PageCheckExempt.kt.
+
+## Update 21 Nov 2026 (later): label without blocking
+
+REY's rule: a page that shows matching adult words should be CLASSIFIED as
+adult in the guardian's report even when it isn't blocked. New level LABEL
+(report only): at least 2 different explicit adult terms. Re-run on the
+same pages:
+
+| Group | Blocked | Review | Label only | Nothing |
+|---|---|---|---|---|
+| Adult, real pages (93) | 83 | 1 | 3 | 6 |
+| Normal (197) | 0 | 2 | **0** | 195 |
+| Education / health / news (39) | 0 | 1 | 1* | 37 |
+
+*The Wikipedia "Pornography" article (porn, porno, xxx, erotic). Wikipedia
+is on the education allow list, so on the phone it is never checked or
+labelled. With a bar of 1 term, a normal page with a single "cum" and the
+WHO page with a single "anal" would have been labelled - so the bar is 2.
+Gambling is labelled from the review (HINT) level up, because gambling
+words (bonus, deposit, spin) are common on normal sites. There is no
+drugs page check (drugs are matched by site list only).

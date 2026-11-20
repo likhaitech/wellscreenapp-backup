@@ -183,4 +183,16 @@ class PageTextClassifierTest {
         ))
         assertEquals(PageTextClassifier.Level.NONE, r.level)
     }
+
+    @Test
+    fun twoExplicitWordsAreLabelledAdultButNotBlocked() {
+        val r = PageTextClassifier.classify(listOf("Pinay Teen", "Viral", "Milf", "Creampie", "Latest videos"))
+        assertEquals(PageTextClassifier.Level.LABEL, r.level)
+        assertEquals("adult", r.category)
+    }
+
+    @Test
+    fun oneExplicitWordIsNotLabelled() {
+        assertEquals(PageTextClassifier.Level.NONE, level("Best cum laude graduates of 2026"))
+    }
 }
