@@ -35,7 +35,6 @@ class ParentDashboardScreen extends StatefulWidget {
 }
 
 class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   // Aliased onto the shared AppColors palette (theme/app_theme.dart) rather
   // than the ad hoc literals this screen used to declare on its own - same
   // names so the body below didn't need a line-by-line rewrite, but now
@@ -473,8 +472,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     }
 
     return Scaffold(
-      key: _scaffoldKey,
-      drawer: _menuDrawer(),
       backgroundColor: pageBg,
       appBar: _topBar(),
       body: SafeArea(
@@ -582,7 +579,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final photoUrl = FirebaseAuth.instance.currentUser?.photoURL;
 
     return WellScreenAppBar.primary(
-      onMenu: () => _scaffoldKey.currentState?.openDrawer(),
       onAvatar: () => handleBottomNavTap(4),
       avatar: photoUrl == null || photoUrl.isEmpty
           ? null
@@ -617,86 +613,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _menuDrawer() {
-    void closeAnd(VoidCallback action) {
-      Navigator.pop(context);
-      action();
-    }
-
-    return Drawer(
-      backgroundColor: pageBg,
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(4, 8, 4, 16),
-              child: Text(
-                'Menu',
-                style: TextStyle(
-                  color: darkText,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            BentoCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  _menuTile(
-                    Icons.chat_bubble_outline_rounded,
-                    'Chat',
-                    () => closeAnd(openFamilyChat),
-                  ),
-                  const Divider(indent: 56),
-                  _menuTile(
-                    Icons.notifications_none_rounded,
-                    'Notifications',
-                    () => closeAnd(() {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ParentNotificationsScreen(),
-                        ),
-                      );
-                    }),
-                  ),
-                  const Divider(indent: 56),
-                  _menuTile(
-                    Icons.tune_rounded,
-                    'App Rules',
-                    () => closeAnd(openRulesScreen),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _menuTile(IconData icon, String label, VoidCallback? onTap) {
-    return ListTile(
-      enabled: onTap != null,
-      onTap: onTap,
-      leading: Icon(icon, color: darkText, size: 22),
-      title: Text(
-        label,
-        style: const TextStyle(
-          color: darkText,
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      trailing: const Icon(
-        Icons.chevron_right_rounded,
-        color: AppColors.textDisabled,
-      ),
     );
   }
 
