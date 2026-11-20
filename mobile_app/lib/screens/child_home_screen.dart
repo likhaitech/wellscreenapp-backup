@@ -3240,7 +3240,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         .toString();
 
     return WellScreenAppBar.primary(
-      onMenu: () => _showMenuSheet(data),
       // Developer builds only: long-press opens the raw capture debug log.
       // Release APKs have no way in, since that log is the child's own
       // monitored browsing data.
@@ -3280,61 +3279,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           icon: _notificationBell(),
         ),
       ],
-    );
-  }
-
-  /// The two-line menu: only actions that fit here and are not already on
-  /// the dock's own tabs.
-  void _showMenuSheet(Map<String, dynamic> data) {
-    final connected = isConnected(data);
-
-    Widget tile(IconData icon, String label, VoidCallback? onTap) {
-      return ListTile(
-        enabled: onTap != null,
-        leading: Icon(icon, color: _ink, size: 22),
-        title: Text(
-          label,
-          style: const TextStyle(
-            color: _ink,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        trailing: const Icon(
-          Icons.chevron_right_rounded,
-          color: AppColors.textDisabled,
-        ),
-        onTap: onTap == null
-            ? null
-            : () {
-                Navigator.pop(context);
-                onTap();
-              },
-      );
-    }
-
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            tile(Icons.chat_bubble_outline_rounded, 'Chat', openFamilyChat),
-            tile(
-              Icons.my_location_rounded,
-              'Share GPS',
-              connected ? () => shareCurrentLocation(data) : null,
-            ),
-            tile(
-              Icons.sync_rounded,
-              'Sync usage',
-              connected ? () => syncUsageReport(data) : null,
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
     );
   }
 

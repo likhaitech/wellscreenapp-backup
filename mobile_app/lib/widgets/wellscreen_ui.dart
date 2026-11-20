@@ -73,11 +73,16 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget _primary(BuildContext context) {
     return Row(
       children: [
-        IconButton(
-          tooltip: 'Menu',
-          onPressed: onMenu,
-          icon: const _TwoLineMenuIcon(),
-        ),
+        // No menu: every menu item was already on screen (dock, bell,
+        // dashboard buttons). The space keeps the logo where it was.
+        if (onMenu == null)
+          const SizedBox(width: 48)
+        else
+          IconButton(
+            tooltip: 'Menu',
+            onPressed: onMenu,
+            icon: const _TwoLineMenuIcon(),
+          ),
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
