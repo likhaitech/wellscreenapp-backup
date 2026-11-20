@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -13,6 +14,42 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        /** Set by the block screen so the app opens straight to a request. */
+        const val EXTRA_ACTION = "wellscreen_action"
+        const val ACTION_EMERGENCY_REQUEST = "emergency_request"
+
+        @Volatile
+        private var pendingAction: String? = null
+
+        /**
+         * Called by the block screen directly. It lives in WellScreen's own
+         * task, so "opening" the app only brings that task forward and
+         * Android drops the launch intent's extras - the action has to be
+         * handed over in-process instead.
+         */
+        fun requestAction(action: String) {
+            pendingAction = action
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        rememberAction(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        rememberAction(intent)
+    }
+
+    private fun rememberAction(intent: Intent?) {
+        val action = intent?.getStringExtra(EXTRA_ACTION) ?: return
+        pendingAction = action
+        intent.removeExtra(EXTRA_ACTION)
+    }
+
     private val channelName = "wellscreen/apps"
     private val limitNotificationsChannel = "wellscreen/app_limit_notifications"
 
@@ -52,6 +89,12 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getInstalledApps" -> result.success(getInstalledApps())
+                // Read once: the Dart side opens the matching screen.
+                "takeLaunchAction" -> {
+                    val action = pendingAction
+                    pendingAction = null
+                    result.success(action)
+                }
                 "getUsageAppMetadata" -> {
                     val packages = call.argument<List<String>>("packages") ?: emptyList()
                     val metadata = linkedMapOf<String, Map<String, String>>()

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alert_notification_client.dart';
+import 'grant_countdown_notifier.dart';
 
 /// Child-requests-temporary-bypass Emergency Access workflow.
 ///
@@ -36,6 +37,7 @@ class EmergencyAccessService {
   required String childProfileId,
   required String parentId,
   String reason = '',
+  int? requestedMinutes,
 }) async {
   const requestCooldown = Duration(minutes: 5);
   const dailyRequestLimit = 5;
@@ -120,6 +122,8 @@ class EmergencyAccessService {
           'emergencyAccess': {
             'status': 'requested',
             'reason': trimmedReason,
+            // How long the child asked for; the guardian still chooses.
+            'requestedMinutes': requestedMinutes,
             'requestedAt': FieldValue.serverTimestamp(),
             'respondedAt': null,
             'grantedUntil': null,
@@ -203,6 +207,13 @@ class EmergencyAccessService {
 
           final grantedUntil = status['grantedUntil'];
           final durationMinutes = status['durationMinutes'];
+          if (status['status'] == 'approved' && grantedUntil is Timestamp) {
+            await GrantCountdownNotifier.instance.show(
+              id: GrantCountdownNotifier.emergencyId,
+              title: 'Emergency Access - apps unlocked',
+              until: grantedUntil.toDate(),
+            );
+          }
           await syncGrantedUntilLocally(
             grantedUntil is Timestamp ? grantedUntil.toDate() : null,
             durationMinutes: durationMinutes is num

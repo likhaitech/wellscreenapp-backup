@@ -4,18 +4,20 @@ from pydantic import BaseModel, Field
 
 
 class SystemSettingsUpdate(BaseModel):
-    default_daily_limit_minutes: int | None = Field(
-        default=None,
-        ge=1,
-        le=1440,
-    )
+    """System-wide release settings, set by the admin through a validated
+    system patch and read live by every WellScreen phone
+    (system_settings/global).
 
-    app_blocking_enabled: bool | None = None
-    focus_mode_enabled: bool | None = None
-    cooldown_timer_enabled: bool | None = None
-    scheduled_lock_enabled: bool | None = None
-    category_restriction_enabled: bool | None = None
-    emergency_access_enabled: bool | None = None
+    minimum_app_version: phones running an older app version are asked to
+    update before continuing (how a bug-fix release reaches every phone).
+    maintenance_message: a short notice shown to every user; "" clears it.
+    """
+
+    minimum_app_version: str | None = Field(
+        default=None,
+        pattern=r"^\d{1,3}\.\d{1,3}\.\d{1,3}$",
+    )
+    maintenance_message: str | None = Field(default=None, max_length=200)
 
 from pydantic import ConfigDict
 

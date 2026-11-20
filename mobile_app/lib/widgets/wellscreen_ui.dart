@@ -14,14 +14,13 @@ const List<FontFeature> kTabularFigures = [FontFeature.tabularFigures()];
 
 /// The one top bar.
 ///
-/// * [WellScreenAppBar.primary] - tab screens: menu icon, shield + wordmark,
-///   avatar on the right.
+/// * [WellScreenAppBar.primary] - tab screens: logo + wordmark, then any
+///   actions and the avatar on the right.
 /// * [WellScreenAppBar.subPage] - pushed screens: back arrow, bold title and
 ///   optional trailing actions.
 class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
   const WellScreenAppBar.primary({
     super.key,
-    this.onMenu,
     this.onAvatar,
     this.avatar,
     this.title = 'WellScreen',
@@ -38,14 +37,12 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.showBack = true,
     this.actions = const [],
   }) : isPrimary = false,
-       onMenu = null,
        onAvatar = null,
        avatar = null,
        onTitleLongPress = null;
 
   final bool isPrimary;
   final String title;
-  final VoidCallback? onMenu;
   final VoidCallback? onAvatar;
   final Widget? avatar;
   final VoidCallback? onTitleLongPress;
@@ -73,11 +70,9 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget _primary(BuildContext context) {
     return Row(
       children: [
-        IconButton(
-          tooltip: 'Menu',
-          onPressed: onMenu,
-          icon: const _TwoLineMenuIcon(),
-        ),
+        // No menu button: every menu item was already on screen (dock,
+        // bell, dashboard buttons). The space keeps the logo where it was.
+        const SizedBox(width: 48),
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -171,32 +166,6 @@ class WellScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
         ...actions,
         const SizedBox(width: 4),
       ],
-    );
-  }
-}
-
-class _TwoLineMenuIcon extends StatelessWidget {
-  const _TwoLineMenuIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    Widget line(double width) => Container(
-      width: width,
-      height: 2,
-      decoration: BoxDecoration(
-        color: AppColors.textPrimary,
-        borderRadius: BorderRadius.circular(2),
-      ),
-    );
-
-    return SizedBox(
-      width: 24,
-      height: 24,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [line(20), const SizedBox(height: 6), line(14)],
-      ),
     );
   }
 }

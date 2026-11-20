@@ -8,11 +8,20 @@ class InstalledAppMetadataService {
 
   static const MethodChannel _channel = MethodChannel('wellscreen/apps');
 
+  /// Labels and icons already read this session. Reading and encoding every
+  /// app icon was the slowest part of each sync; app names and icons rarely
+  /// change, so only packages not seen yet are asked for.
+  static final Map<String, Map<String, String>> _cache = {};
+
   Future<Map<String, Map<String, String>>> lookup(
     Iterable<String> packageNames,
   ) async {
-    final packages = packageNames.where((pkg) => pkg.isNotEmpty).toSet().toList();
-    if (packages.isEmpty) return {};
+    final wanted = packageNames.where((pkg) => pkg.isNotEmpty).toSet();
+    if (wanted.isEmpty) return {};
+    final packages = wanted.where((pkg) => !_cache.containsKey(pkg)).toList();
+    if (packages.isEmpty) {
+      return {for (final pkg in wanted) pkg: _cache[pkg]!};
+    }
 
     try {
       final metadata = <String, Map<String, String>>{};
@@ -38,7 +47,11 @@ class InstalledAppMetadataService {
           };
         }
       }
-      return metadata;
+      _cache.addAll(metadata);
+      return {
+        for (final pkg in wanted)
+          if (_cache.containsKey(pkg)) pkg: _cache[pkg]!,
+      };
     } on PlatformException catch (error) {
       debugPrint('Installed app metadata lookup failed: $error');
       return {};

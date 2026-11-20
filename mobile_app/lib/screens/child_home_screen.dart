@@ -7,7 +7,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, MethodChannel;
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,6 +42,7 @@ import '../services/chat_unread_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/time_left_text.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'capture_debug_screen.dart';
 import 'login_screen.dart';
@@ -136,6 +138,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   bool isSharingLocation = false;
   bool isSyncingUsage = false;
   bool isRequestingEmergencyAccess = false;
+
+  /// The block screen's "Request Temporary Access" opens the app with this
+  /// pending, so the request form shows as soon as pairing data is loaded.
+  bool _openEmergencyRequest = false;
+  static const MethodChannel _appsChannel = MethodChannel('wellscreen/apps');
 
   // Real local usage data loaded via UsageDashboardControllerService, which
   // wraps UsageTrackingService (Android UsageStats), PatternDetectionService
@@ -247,6 +254,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _refreshSmsAlertStatus();
     _refreshSyncStatus();
     unawaited(_refreshAccessibilityStatus());
+    unawaited(_checkLaunchAction());
     _connectivitySubscription = _syncStatusService.onlineStatusChanges.listen(
       _handleConnectivityChange,
     );
@@ -408,6 +416,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       _refreshSyncStatus();
       unawaited(_refreshAccessibilityStatus());
       unawaited(_publishOnlineHeartbeat());
+      _syncIfStale();
+      unawaited(_checkLaunchAction());
       final activeProfile = _timeLimitProfileId;
       if (activeProfile != null && activeProfile.isNotEmpty) {
         unawaited(_limitNotifications.startForChild(activeProfile));
@@ -1239,6 +1249,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     // sync plus a short auto-sync interval could stack overlapping
     // Firestore writes.
     if (isSyncingUsage) return;
+    _lastUsageSyncAttempt = DateTime.now();
 
     final user = FirebaseAuth.instance.currentUser;
 
@@ -1257,6 +1268,13 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     }
 
     setState(() => isSyncingUsage = true);
+    // Debug builds log how long each step takes (see syncStep below).
+    final syncWatch = Stopwatch()..start();
+    void syncStep(String step) {
+      if (kDebugMode) {
+        debugPrint('WellScreen sync: $step at ${syncWatch.elapsedMilliseconds} ms');
+      }
+    }
 
     try {
       final hasPermission = await _usageTrackingService.hasUsagePermission();
@@ -1279,9 +1297,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       final report = await _usageTrackingService.getTodayUsageReport();
       // Ask Android for the actual installed label/icon for each PACKAGE.
       // Do not infer names such as Orca or Trill from package suffixes.
+      syncStep('usage read');
       final appMetadata = await const InstalledAppMetadataService().lookup(
         allSummaries.map((app) => app.packageName),
       );
+      syncStep('app names and icons');
       // Keep image data only once in allApps to avoid duplicating icons
       // in topApps and pushing Firestore's document size limit.
       var remainingIconChars = 400000;
@@ -1370,6 +1390,20 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           prefs.getInt('last_browsing_alert_timestamp_ms') ?? 0;
       var newestAlertedMs = lastAlertedMs;
 
+      // Sites the phone BLOCKED (page words, Cloudflare hint, lists...) are
+      // in the restriction log with their category and reason. The address
+      // check below can't see page-word results, so without this a site
+      // blocked by its page words showed up unflagged in Reports.
+      final blockedSites = <String, Map<String, dynamic>>{};
+      for (final entry in restrictionLog) {
+        final target = (entry['packageName'] ?? '').toString();
+        if (entry['outcome'] == 'blocked' &&
+            entry['category'] != null &&
+            target.contains('.')) {
+          blockedSites[target] = entry;
+        }
+      }
+
       final categorizedBrowsingLog = <Map<String, dynamic>>[];
       String? mostRecentHarmfulCategory;
       String? mostRecentHarmfulDomain;
@@ -1398,10 +1432,15 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         // reliable at (see SiteCategoryMlClassifier's doc comment for
         // the measured reasoning behind that restriction, including why
         // 'drugs' was tested and deliberately held back).
+        // Order: the address check, then what the page check found on the
+        // phone (saved on the entry natively), then the block log.
+        final pageTagged = entry['category'] != null;
+        final blocked = match == null && !pageTagged ? blockedSites[domain] : null;
         categorizedBrowsingLog.add({
           ...entry,
-          'category': ?match?.category,
-          'detectionSource': ?match?.source,
+          'category': ?(match?.category ?? entry['category'] ?? blocked?['category']),
+          'detectionSource':
+              ?(match?.source ?? entry['detectionSource'] ?? blocked?['blockSource']),
           'mlConfidence': ?match?.confidence,
         });
         if (match != null &&
@@ -1451,6 +1490,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       // The guardian's App Rules screen lists the apps installed on THIS
       // phone (not the guardian's). Best-effort: an empty list is simply
       // not sent, so a platform-channel hiccup never erases the last one.
+      syncStep('browsing log and risk check');
       List<Map<String, String>> installedApps = const [];
       try {
         installedApps = (await _androidAppService.getInstalledApps())
@@ -1479,6 +1519,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       // (cloud_firestore's set() hangs forever offline instead of throwing
       // - firebase/flutterfire#17643), local queuing for automatic retry on
       // reconnect, and outcome logging - see its doc comment above.
+      syncStep('installed apps and weekly totals');
       final synced = await _attemptFirestoreSync(
         childProfileId: childProfileId,
         payload: {
@@ -1494,6 +1535,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         },
         trigger: 'manual',
       );
+      syncStep(synced ? 'saved to the guardian' : 'save failed or queued');
 
       if (synced) {
         // Backend validates the paired child and de-duplicates usage events.
@@ -1512,8 +1554,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         if (!silent) {
           showMessage('Today\'s usage report synced to the parent dashboard.');
         }
-        await _loadUsageDashboard();
-        await _refreshSmsAlertStatus();
+        // Refresh this screen in the background; the sync itself is done.
+        unawaited(_loadUsageDashboard());
+        unawaited(_refreshSmsAlertStatus());
       }
 
       // Same reasoning as the unhealthy-pattern push above, for a harmful
@@ -1564,6 +1607,21 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   /// for "where is my kid right now."
   static const Duration _usageAutoSyncInterval = Duration(minutes: 5);
   Timer? _usageAutoSyncTimer;
+
+  /// Android pauses apps in the background, so the 5-minute timer above
+  /// often doesn't fire while the child is in another app (e.g. Chrome).
+  /// Coming back to WellScreen syncs straight away if the last try was
+  /// more than 2 minutes ago, so the guardian isn't left with old data.
+  DateTime? _lastUsageSyncAttempt;
+  static const Duration _resumeSyncAfter = Duration(minutes: 2);
+
+  void _syncIfStale() {
+    final last = _lastUsageSyncAttempt;
+    if (last != null && DateTime.now().difference(last) < _resumeSyncAfter) {
+      return;
+    }
+    unawaited(_autoSyncUsage());
+  }
 
   Future<void> _autoSyncUsage() async {
     final data = _cachedUserData;
@@ -2103,6 +2161,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             // moment the timer fires. This builder stays mounted on every
             // tab (Home / Safety / Settings) for the same reason.
             _cachedUserData = data;
+            if (_openEmergencyRequest) _openPendingEmergencyRequest();
             // The Chat tab's unread dot is built outside this stream, so
             // redraw it once the paired profile is known.
             final pairedProfile = (data['pairedChildProfileId'] ?? '')
@@ -2418,8 +2477,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   Future<void> requestEmergencyAccess(
     String childProfileId,
-    String parentId,
-  ) async {
+    String parentId, {
+    int? requestedMinutes,
+  }) async {
     setState(() => isRequestingEmergencyAccess = true);
 
     try {
@@ -2427,6 +2487,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         childProfileId: childProfileId,
         parentId: parentId,
         reason: emergencyReasonController.text,
+        requestedMinutes: requestedMinutes,
       );
       emergencyReasonController.clear();
       showMessage('Request sent - your parent has been notified.');
@@ -3240,7 +3301,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         .toString();
 
     return WellScreenAppBar.primary(
-      onMenu: () => _showMenuSheet(data),
       // Developer builds only: long-press opens the raw capture debug log.
       // Release APKs have no way in, since that log is the child's own
       // monitored browsing data.
@@ -3280,61 +3340,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           icon: _notificationBell(),
         ),
       ],
-    );
-  }
-
-  /// The two-line menu: only actions that fit here and are not already on
-  /// the dock's own tabs.
-  void _showMenuSheet(Map<String, dynamic> data) {
-    final connected = isConnected(data);
-
-    Widget tile(IconData icon, String label, VoidCallback? onTap) {
-      return ListTile(
-        enabled: onTap != null,
-        leading: Icon(icon, color: _ink, size: 22),
-        title: Text(
-          label,
-          style: const TextStyle(
-            color: _ink,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        trailing: const Icon(
-          Icons.chevron_right_rounded,
-          color: AppColors.textDisabled,
-        ),
-        onTap: onTap == null
-            ? null
-            : () {
-                Navigator.pop(context);
-                onTap();
-              },
-      );
-    }
-
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            tile(Icons.chat_bubble_outline_rounded, 'Chat', openFamilyChat),
-            tile(
-              Icons.my_location_rounded,
-              'Share GPS',
-              connected ? () => shareCurrentLocation(data) : null,
-            ),
-            tile(
-              Icons.sync_rounded,
-              'Sync usage',
-              connected ? () => syncUsageReport(data) : null,
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
     );
   }
 
@@ -3439,6 +3444,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         _activeRulesBento(data),
         const SizedBox(height: 14),
         _emergencyAccessBanner(data),
+        ActiveAppGrantsCard(
+          childProfileId: (data['pairedChildProfileId'] ?? '').toString(),
+        ),
       ],
       const SizedBox(height: 14),
       _weeklySummaryCard(),
@@ -4344,10 +4352,21 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Restrictions are lifted until $hh:$mm.',
+                        'Apps are unlocked until $hh:$mm. Harmful '
+                        'websites stay blocked.',
                         style: const TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 12,
+                          fontFeatures: _tabular,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TimeLeftText(
+                        until: until,
+                        style: const TextStyle(
+                          color: _emerald,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
                           fontFeatures: _tabular,
                         ),
                       ),
@@ -4439,9 +4458,47 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     );
   }
 
+  /// Asks the native side whether the app was opened from the block
+  /// screen's request button, and if so opens the request form.
+  Future<void> _checkLaunchAction() async {
+    String? action;
+    try {
+      action = await _appsChannel.invokeMethod<String>('takeLaunchAction');
+    } catch (_) {
+      return;
+    }
+    if (action == null) return;
+    debugPrint('WellScreen launch action: $action');
+    if (action != 'emergency_request' || !mounted) return;
+    _openEmergencyRequest = true;
+    _openPendingEmergencyRequest();
+  }
+
+  void _openPendingEmergencyRequest() {
+    if (!_openEmergencyRequest) return;
+    final data = _cachedUserData;
+    // Opened again once the profile streams in.
+    if (data == null || data.isEmpty) return;
+    final parentId = (data['pairedParentId'] ?? '').toString();
+    final childProfileId = (data['pairedChildProfileId'] ?? '').toString();
+    _openEmergencyRequest = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (parentId.isEmpty || childProfileId.isEmpty) {
+        showMessage('Pair with a parent to request access.');
+        return;
+      }
+      if (currentIndex != 0) setState(() => currentIndex = 0);
+      _showEmergencyRequestSheet(childProfileId, parentId);
+    });
+  }
+
   void _showEmergencyRequestSheet(String childProfileId, String parentId) {
     const presets = <String>['Schoolwork', 'Call Parent', 'Urgent'];
+    const minuteOptions = <int>[5, 10, 15, 30, 60];
     String? selectedPreset;
+    var requestedMinutes = 15;
+    final customMinutes = TextEditingController();
     var sending = false;
 
     showModalBottomSheet<void>(
@@ -4477,8 +4534,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'Need a restricted app for something urgent? Ask '
-                        'your parent to temporarily lift restrictions.',
+                        'Need a blocked app for something urgent? Ask your '
+                        'parent to unlock apps for a while. Harmful websites '
+                        'stay blocked.',
                         style: TextStyle(
                           color: _slate,
                           fontSize: 13,
@@ -4539,6 +4597,84 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                           counterText: '',
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'How long do you need?',
+                        style: TextStyle(
+                          color: _ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          for (final option in minuteOptions)
+                            ChoiceChip(
+                              label: Text(
+                                option == 60 ? '1 hr' : '$option min',
+                              ),
+                              selected: requestedMinutes == option,
+                              showCheckmark: false,
+                              backgroundColor: Colors.white,
+                              selectedColor: AppColors.primaryLight,
+                              side: BorderSide(
+                                color: requestedMinutes == option
+                                    ? _brandIndigo
+                                    : _hairline,
+                              ),
+                              labelStyle: TextStyle(
+                                color: requestedMinutes == option
+                                    ? AppColors.primary
+                                    : _ink,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              onSelected: (_) => setSheetState(() {
+                                requestedMinutes = option;
+                                customMinutes.clear();
+                              }),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: 180,
+                        child: TextField(
+                          controller: customMinutes,
+                          keyboardType: TextInputType.number,
+                          maxLength: 3,
+                          decoration: InputDecoration(
+                            hintText: 'Or type minutes',
+                            suffixText: 'min',
+                            isDense: true,
+                            filled: true,
+                            fillColor: pageBg,
+                            counterText: '',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onChanged: (text) {
+                            final typed = int.tryParse(text.trim());
+                            if (typed != null && typed >= 1 && typed <= 120) {
+                              setSheetState(() => requestedMinutes = typed);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Asking for $requestedMinutes min (1-120). '
+                        'Your parent decides the final time.',
+                        style: const TextStyle(color: _slate, fontSize: 12),
+                      ),
                       const SizedBox(height: 14),
                       SizedBox(
                         width: double.infinity,
@@ -4550,6 +4686,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                   await requestEmergencyAccess(
                                     childProfileId,
                                     parentId,
+                                    requestedMinutes: requestedMinutes,
                                   );
                                   if (sheetContext.mounted) {
                                     Navigator.pop(sheetContext);

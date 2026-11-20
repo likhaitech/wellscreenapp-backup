@@ -7,14 +7,10 @@ from firebase_admin import firestore
 from .firebase_service import get_firestore_client
 
 
+# Read by every phone. "1.0.0" lets every released version run.
 DEFAULT_SYSTEM_SETTINGS = {
-    "default_daily_limit_minutes": 180,
-    "app_blocking_enabled": True,
-    "focus_mode_enabled": True,
-    "cooldown_timer_enabled": True,
-    "scheduled_lock_enabled": False,
-    "category_restriction_enabled": True,
-    "emergency_access_enabled": True,
+    "minimum_app_version": "1.0.0",
+    "maintenance_message": "",
 }
 
 

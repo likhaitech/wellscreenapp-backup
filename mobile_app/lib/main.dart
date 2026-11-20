@@ -12,6 +12,7 @@ import 'screens/splash_screen.dart';
 import 'services/chat_notifications_service.dart';
 import 'services/push_notification_service.dart';
 import 'theme/app_theme.dart';
+import 'widgets/app_release_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +58,9 @@ class WellScreenApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       home: const SplashScreen(),
+      // The admin's system patch: minimum app version and maintenance notice.
+      builder: (context, child) =>
+          AppReleaseGate(child: child ?? const SizedBox.shrink()),
     );
   }
 }

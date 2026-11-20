@@ -29,7 +29,12 @@ import java.util.Locale
  */
 object PageTextClassifier {
 
-    enum class Level { NONE, HINT, BLOCK }
+    /**
+     * NONE: nothing found. LABEL: some explicit adult words - not blocked,
+     * only labelled "adult" in the guardian's report. HINT: review (or block
+     * for ages 6 and below). BLOCK: strong proof.
+     */
+    enum class Level { NONE, LABEL, HINT, BLOCK }
 
     data class Result(
         val level: Level,
@@ -62,6 +67,16 @@ object PageTextClassifier {
      */
     const val STRONG_GAMBLING_WORDS = 6
     const val STRONG_ADULT_WORDS = 5
+
+    /**
+     * LABEL (report only): at least this many different explicit adult
+     * terms. Measured: 0 of 197 normal pages and 0 of 38 education pages
+     * outside the allow list reach 2 (one normal page had a single "cum",
+     * the WHO page a single "anal"); 86 of 93 real adult pages do.
+     * Gambling words are common on normal sites (bonus, deposit, spin), so
+     * gambling is only labelled from the HINT level up.
+     */
+    const val LABEL_MIN_ADULT_TERMS = 2
 
     /**
      * HINT (guardian review, never a block on its own except for the
@@ -231,7 +246,9 @@ object PageTextClassifier {
         val g = score(text, GAMBLING_ACTIONS, GAMBLING_TOPICS, GAMBLING_WORDS)
         val a = score(text, ADULT_ACTIONS, emptyList(), ADULT_WORDS)
         val gLevel = levelFor(g, STRONG_GAMBLING_WORDS)
-        val aLevel = levelFor(a, STRONG_ADULT_WORDS)
+        val aLevel = levelFor(a, STRONG_ADULT_WORDS).let {
+            if (it == Level.NONE && a.matches.size >= LABEL_MIN_ADULT_TERMS) Level.LABEL else it
+        }
         if (gLevel == Level.NONE && aLevel == Level.NONE) {
             return Result(Level.NONE, null, maxOf(g.total, a.total), emptyList())
         }

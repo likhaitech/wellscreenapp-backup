@@ -62,34 +62,6 @@ class AdminSettingsApiService {
     return Map<String, dynamic>.from(response.data);
   }
 
-  Future<Map<String, dynamic>> updateSettings({
-    required int defaultDailyLimitMinutes,
-    required bool appBlockingEnabled,
-    required bool focusModeEnabled,
-    required bool cooldownTimerEnabled,
-    required bool scheduledLockEnabled,
-    required bool categoryRestrictionEnabled,
-    required bool emergencyAccessEnabled,
-  }) async {
-    final token = await _getAdminToken();
-
-    final response = await _dio.patch(
-      '/admin/settings/',
-      data: {
-        'default_daily_limit_minutes': defaultDailyLimitMinutes,
-        'app_blocking_enabled': appBlockingEnabled,
-        'focus_mode_enabled': focusModeEnabled,
-        'cooldown_timer_enabled': cooldownTimerEnabled,
-        'scheduled_lock_enabled': scheduledLockEnabled,
-        'category_restriction_enabled': categoryRestrictionEnabled,
-        'emergency_access_enabled': emergencyAccessEnabled,
-      },
-      options: Options(headers: {'Authorization': 'Bearer $token'}),
-    );
-
-    return Map<String, dynamic>.from(response.data);
-  }
-
   /// Validates (and optionally applies) a system patch. Throws
   /// [SystemPatchRejected] with the server's error list when invalid.
   Future<Map<String, dynamic>> applyPatch(

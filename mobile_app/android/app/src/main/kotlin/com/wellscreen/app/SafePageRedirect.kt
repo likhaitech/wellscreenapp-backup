@@ -19,6 +19,7 @@ import android.provider.Browser
 object SafePageRedirect {
     // Google with SafeSearch requested, so the child lands on filtered search.
     const val SAFE_PAGE_URL = "https://www.google.com/?safe=active"
+    const val SAFE_PAGE_DOMAIN = "google.com"
 
     fun intentFor(context: Context, browserPackage: String): Intent =
         Intent(Intent.ACTION_VIEW, Uri.parse(SAFE_PAGE_URL)).apply {

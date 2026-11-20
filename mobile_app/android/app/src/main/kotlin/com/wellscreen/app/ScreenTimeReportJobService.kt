@@ -116,6 +116,13 @@ class ScreenTimeReportJobService : JobService() {
                             } else {
                                 Log.w(tag, "Usage Access missing; no dashboard overwrite")
                             }
+                            // Browsing Activity + Restriction Enforcement for
+                            // Reports, even when the app itself isn't running.
+                            try {
+                                BackgroundLogSync.addTo(this@ScreenTimeReportJobService, updates)
+                            } catch (error: Exception) {
+                                Log.w(tag, "Background browsing/block logs skipped", error)
+                            }
                             childRef.update(updates).addOnCompleteListener { updateTask ->
                                 if (!updateTask.isSuccessful) {
                                     Log.w(tag, "Catch-up dashboard update failed", updateTask.exception)

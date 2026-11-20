@@ -374,6 +374,14 @@ service cloud.firestore {
     }
 
     // Administrative system logs.
+    // System settings set by the admin through a validated system patch
+    // (written only by the backend): minimum app version and maintenance
+    // notice. Every signed-in phone reads them.
+    match /system_settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     match /system_logs/{logId} {
 
       allow read: if isAdmin();

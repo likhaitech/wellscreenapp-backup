@@ -98,6 +98,10 @@ class AdultKeywordDetector {
     'iyutan',
     'pinayflix',
     'sulasok',
+    'kayatan',
+    'pinayscandal',
+    'pinoyscandal',
+    'scandalpinay',
   ];
 
   /// The keyword list, for the test that keeps it in sync with Kotlin.
