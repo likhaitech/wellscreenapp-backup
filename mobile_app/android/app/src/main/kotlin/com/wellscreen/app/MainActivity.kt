@@ -21,6 +21,16 @@ class MainActivity : FlutterActivity() {
 
         @Volatile
         private var pendingAction: String? = null
+
+        /**
+         * Called by the block screen directly. It lives in WellScreen's own
+         * task, so "opening" the app only brings that task forward and
+         * Android drops the launch intent's extras - the action has to be
+         * handed over in-process instead.
+         */
+        fun requestAction(action: String) {
+            pendingAction = action
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

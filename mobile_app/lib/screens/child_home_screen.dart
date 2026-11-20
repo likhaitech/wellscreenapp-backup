@@ -4450,6 +4450,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     } catch (_) {
       return;
     }
+    if (action == null) return;
+    debugPrint('WellScreen launch action: $action');
     if (action != 'emergency_request' || !mounted) return;
     _openEmergencyRequest = true;
     _openPendingEmergencyRequest();

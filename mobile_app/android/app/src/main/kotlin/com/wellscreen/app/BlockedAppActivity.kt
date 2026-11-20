@@ -345,8 +345,15 @@ class BlockedAppActivity : Activity() {
             // Open WellScreen straight to the Emergency Access request form.
             setOnClickListener {
                 val launch = packageManager.getLaunchIntentForPackage(packageName)
+                MainActivity.requestAction(MainActivity.ACTION_EMERGENCY_REQUEST)
                 if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // CLEAR_TOP + SINGLE_TOP: reuse the running app and remove
+                    // this block screen from above it.
+                    launch.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    )
                     launch.putExtra(
                         MainActivity.EXTRA_ACTION,
                         MainActivity.ACTION_EMERGENCY_REQUEST,
