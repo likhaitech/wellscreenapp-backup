@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
+import 'grant_countdown_notifier.dart';
 
 /// On the child device, mirrors server-approved grants into the existing
 /// native SharedPreferences store. The native AccessibilityService verifies
@@ -72,6 +73,12 @@ class TemporaryAppGrantService {
           'state': 'active',
           'expiresAtMs': until.millisecondsSinceEpoch,
         });
+        final appName = (data['appName'] ?? pkg).toString();
+        unawaited(GrantCountdownNotifier.instance.show(
+          id: GrantCountdownNotifier.idForPackage(pkg),
+          title: '$appName - extra time',
+          until: until.toDate(),
+        ));
       } else if (state == 'pending_activation' && !snapshot.metadata.isFromCache) {
         // Activate only from a server-confirmed approval, never from local
         // pending writes or an unverified client-side status.

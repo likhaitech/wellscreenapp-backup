@@ -42,6 +42,7 @@ import '../services/chat_unread_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/time_left_text.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'capture_debug_screen.dart';
 import 'login_screen.dart';
@@ -3441,6 +3442,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         _activeRulesBento(data),
         const SizedBox(height: 14),
         _emergencyAccessBanner(data),
+        ActiveAppGrantsCard(
+          childProfileId: (data['pairedChildProfileId'] ?? '').toString(),
+        ),
       ],
       const SizedBox(height: 14),
       _weeklySummaryCard(),
@@ -4350,6 +4354,16 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                         style: const TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 12,
+                          fontFeatures: _tabular,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TimeLeftText(
+                        until: until,
+                        style: const TextStyle(
+                          color: _emerald,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
                           fontFeatures: _tabular,
                         ),
                       ),
