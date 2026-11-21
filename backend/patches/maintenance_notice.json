@@ -1,7 +1,0 @@
-{
-  "version": "1.0.1",
-  "description": "Show a maintenance notice to all users",
-  "settings": {
-    "maintenance_message": "WellScreen server maintenance tonight at 10 PM. Protection keeps working."
-  }
-}

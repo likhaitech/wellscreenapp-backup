@@ -1,5 +1,5 @@
 """Tests for require_admin() in app/services/admin_auth_service.py - the
-gate every /admin/* route sits behind (admin_logs, admin_settings,
+gate every /admin/* route sits behind (admin_logs, admin_overview,
 admin_users). Covers the branches that decide who gets in: no credentials
 at all, a revoked token, a token that plain fails to verify, a valid token
 with no admin claim, and the two independent ways a token IS recognized as

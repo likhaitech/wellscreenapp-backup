@@ -2,31 +2,33 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../services/admin_settings_api_service.dart';
+import '../services/admin_overview_api_service.dart';
 import '../services/admin_users_api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/admin_activity_widgets.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'admin_logs_screen.dart';
-import 'admin_patch_screen.dart';
+import 'admin_health_screen.dart';
 import 'admin_users_screen.dart';
 import 'login_screen.dart';
 
 /// Admin app (design: "WellScreen Admin UI"). Same shell as the guardian
 /// and child apps - logo app bar and floating pill dock - with four tabs
 /// matching the admin modules: Home (View Admin Dashboard), Users (Manage
-/// Users), Patch (Monitor System Patches, view only) and Logs (Monitor
-/// System Logs). Sign out is under the avatar. The class name is kept
-/// because login/splash route admins here.
-class AdminSettingsScreen extends StatefulWidget {
-  const AdminSettingsScreen({super.key});
+/// Users), Health (Monitor System Health, view only) and Logs (Monitor
+/// System Logs). Sign out is in the app bar and under the avatar.
+///
+/// The admin watches the system and manages accounts. It cannot change
+/// how the system works: updates and bug fixes are made by the developers.
+class AdminHomeScreen extends StatefulWidget {
+  const AdminHomeScreen({super.key});
 
   @override
-  State<AdminSettingsScreen> createState() => _AdminSettingsScreenState();
+  State<AdminHomeScreen> createState() => _AdminHomeScreenState();
 }
 
-class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
+class _AdminHomeScreenState extends State<AdminHomeScreen> {
   static const Color darkText = AppColors.textPrimary;
   static const Color grayText = AppColors.textSecondary;
 
@@ -38,7 +40,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   String? _usersError;
   bool _usersLoading = false;
 
-  final AdminSettingsApiService _overviewApi = AdminSettingsApiService();
+  final AdminOverviewApiService _overviewApi = AdminOverviewApiService();
   AdminOverview? _overview;
   String? _overviewError;
   bool _overviewLoading = false;
@@ -226,7 +228,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         children: [
           _homeTab(),
           const AdminUsersScreen(embedded: true),
-          const AdminPatchScreen(embedded: true),
+          AdminHealthScreen(embedded: true, onViewLogs: () => _goTo(3)),
           const AdminLogsScreen(embedded: true),
         ],
       ),
@@ -235,7 +237,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         items: const [
           DockItem(icon: Icons.home_outlined, label: 'Home'),
           DockItem(icon: Icons.group_outlined, label: 'Users'),
-          DockItem(icon: Icons.system_update_alt_rounded, label: 'Patch'),
+          DockItem(icon: Icons.monitor_heart_outlined, label: 'Health'),
           DockItem(icon: Icons.receipt_long_outlined, label: 'Logs'),
         ],
         onTap: _goTo,
@@ -283,11 +285,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: _quickLink(
-                  icon: Icons.system_update_alt_rounded,
+                  icon: Icons.monitor_heart_outlined,
                   tint: AppColors.violetBg,
                   color: AppColors.violet,
-                  title: 'System patch',
-                  subtitle: 'Version and history',
+                  title: 'System health',
+                  subtitle: 'Server and jobs',
                   onTap: () => _goTo(2),
                 ),
               ),
@@ -305,9 +307,11 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          AdminJobHealthCard(
-            jobs: _overview?.jobs ?? const {},
-            loaded: _overview != null,
+          AdminSystemStatusCard(
+            overview: _overview,
+            loading: _overviewLoading,
+            failed: _overviewError != null,
+            onTap: () => _goTo(2),
           ),
           const SizedBox(height: 12),
           _recentActivity(),

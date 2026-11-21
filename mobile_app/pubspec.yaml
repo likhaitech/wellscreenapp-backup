@@ -52,9 +52,7 @@ dependencies:
   path_provider: ^2.1.5
   share_plus: ^13.3.0
 
-  # The app's own version, compared with the admin's minimum app version
-  # (system patch). Already in the build through geolocator; listed here
-  # because the app now uses it directly.
+  # The app's own version, shown on the admin's System health page.
   package_info_plus: ^10.2.1
 
   # QR pairing (device_pairing_screen.dart generates, qr_scan_screen.dart /

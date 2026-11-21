@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/admin_settings_api_service.dart';
+import '../services/admin_overview_api_service.dart';
 import '../theme/app_theme.dart';
 import 'wellscreen_ui.dart';
 
@@ -366,7 +366,7 @@ class AdminJobHealthCard extends StatelessWidget {
   final bool loaded;
   final DateTime? now;
 
-  static const _names = {
+  static const names = {
     'monitoring': ('Monitoring check', 'Every 5 minutes', 15),
     'chat_notifications': ('Chat notifications', 'Every 5 minutes', 15),
     'data_cleanup': ('90-day data cleanup', 'Daily', 60 * 26),
@@ -388,6 +388,21 @@ class AdminJobHealthCard extends StatelessWidget {
       return ('Late', AppColors.warning, AppColors.warningBg);
     }
     return ('OK', AppColors.success, AppColors.successBg);
+  }
+
+  /// Jobs that failed or are late. A job that was never set up is shown
+  /// as such but not counted as a problem.
+  static int issues(Map<String, AdminJobStatus?> jobs, DateTime now) {
+    var count = 0;
+    names.forEach((key, info) {
+      final (label, _, _) = status(
+        jobs[key],
+        lateAfterMinutes: info.$3,
+        now: now,
+      );
+      if (label == 'Failed' || label == 'Late') count++;
+    });
+    return count;
   }
 
   static String lastRunLabel(DateTime? last, DateTime now) {
@@ -416,7 +431,7 @@ class AdminJobHealthCard extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          for (final entry in _names.entries)
+          for (final entry in names.entries)
             _row(entry.key, entry.value, at),
         ],
       ),
@@ -475,6 +490,120 @@ class AdminJobHealthCard extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dashboard summary of System health: one line that opens the full page.
+class AdminSystemStatusCard extends StatelessWidget {
+  const AdminSystemStatusCard({
+    super.key,
+    required this.overview,
+    required this.loading,
+    required this.failed,
+    required this.onTap,
+    this.now,
+  });
+
+  final AdminOverview? overview;
+  final bool loading;
+
+  /// The server could not be reached.
+  final bool failed;
+  final VoidCallback onTap;
+  final DateTime? now;
+
+  (IconData, Color, Color, String, String) _state() {
+    final data = overview;
+    if (data == null && loading) {
+      return (
+        Icons.hourglass_empty_rounded,
+        AppColors.textSecondary,
+        AppColors.surfaceMuted,
+        'Checking the system',
+        'The server may take a minute to wake up.',
+      );
+    }
+    if (data == null || failed) {
+      return (
+        Icons.cloud_off_rounded,
+        AppColors.danger,
+        AppColors.dangerBg,
+        'Server not reachable',
+        'Tap to see System health.',
+      );
+    }
+    final issues = AdminJobHealthCard.issues(data.jobs, now ?? DateTime.now());
+    final subtitle = 'Server version ${data.serverVersion} · tap for details';
+    if (issues == 0) {
+      return (
+        Icons.verified_rounded,
+        AppColors.success,
+        AppColors.successBg,
+        'All systems running',
+        subtitle,
+      );
+    }
+    return (
+      Icons.warning_amber_rounded,
+      AppColors.warning,
+      AppColors.warningBg,
+      issues == 1
+          ? '1 background job needs attention'
+          : '$issues background jobs need attention',
+      subtitle,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color, tint, title, subtitle) = _state();
+
+    return BentoCard(
+      key: const Key('adminSystemStatusCard'),
+      padding: const EdgeInsets.all(14),
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: tint,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.textSecondary,
           ),
         ],
       ),

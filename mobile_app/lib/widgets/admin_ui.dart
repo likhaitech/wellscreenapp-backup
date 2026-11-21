@@ -153,9 +153,18 @@ class AdminFilterChip extends StatelessWidget {
   }
 }
 
-/// "system_patch_applied" -> "System patch applied".
+/// Log actions whose stored name reads differently from what happened.
+/// Server deploys were once logged as "server_patch_deployed".
+const Map<String, String> _actionTitles = {
+  'server_patch_deployed': 'Server updated',
+};
+
+/// "user_updated" -> "User updated".
 String adminActionTitle(Object? action) {
-  final text = (action ?? '').toString().trim().replaceAll('_', ' ');
+  final raw = (action ?? '').toString().trim();
+  final known = _actionTitles[raw];
+  if (known != null) return known;
+  final text = raw.replaceAll('_', ' ');
   if (text.isEmpty) return 'Unknown action';
   return text[0].toUpperCase() + text.substring(1);
 }

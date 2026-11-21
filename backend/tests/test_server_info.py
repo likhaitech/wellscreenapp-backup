@@ -1,4 +1,4 @@
-"""record_deploy logs a server patch once per new version (Render restarts
+"""record_deploy logs a server update once per new version (Render restarts
 the same build often on the free tier - those must not be logged again)."""
 from __future__ import annotations
 
@@ -18,16 +18,18 @@ def _db(stored: dict | None):
 
 
 def test_new_version_is_recorded_and_logged():
-    db, ref = _db({"server_version": "abc1234"})
+    db, ref = _db({"version": "abc1234"})
     log = MagicMock()
     assert server_info.record_deploy(version="def5678", get_db=lambda: db, log=log)
-    assert ref.set.call_args.args[0]["server_version"] == "def5678"
-    assert log.call_args.kwargs["action"] == "server_patch_deployed"
+    assert db.collection.call_args.args[0] == "system_status"
+    assert db.collection.return_value.document.call_args.args[0] == "server"
+    assert ref.set.call_args.args[0]["version"] == "def5678"
+    assert log.call_args.kwargs["action"] == "server_updated"
     assert log.call_args.kwargs["details"] == {"version": "def5678", "previous": "abc1234"}
 
 
 def test_same_version_restart_is_not_logged_again():
-    db, ref = _db({"server_version": "def5678"})
+    db, ref = _db({"version": "def5678"})
     log = MagicMock()
     assert not server_info.record_deploy(version="def5678", get_db=lambda: db, log=log)
     ref.set.assert_not_called()

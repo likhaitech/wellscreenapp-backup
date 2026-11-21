@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('log actions read as words', () {
-    expect(adminActionTitle('system_patch_applied'), 'System patch applied');
+    expect(adminActionTitle('user_updated'), 'User updated');
+    expect(adminActionTitle('server_updated'), 'Server updated');
+    expect(adminActionTitle('server_patch_deployed'), 'Server updated');
     expect(adminActionTitle(null), 'Unknown action');
   });
 
