@@ -375,8 +375,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
               onPressed: registerUser,
             ),
             const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            // Wraps onto two lines on narrow screens or with a large
+            // system font size instead of overflowing.
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 const Text(
                   'Already have an account?',
