@@ -24,6 +24,13 @@ class SetupChecklistText {
             'without your guardian knowing.';
 
   static const String pairedWithParent = 'Paired with your parent';
+
+  static const String smsPermissionOff =
+      'Off. Grant SMS permission so a backup text alert can reach your '
+      'parent even without internet, when a restricted app is opened.';
+
+  static const String gpsShared =
+      'Current GPS location shared to parent dashboard.';
 }
 
 /// The six-digit pairing code inside a scanned QR payload, or null.

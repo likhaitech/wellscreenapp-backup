@@ -54,11 +54,14 @@ object SmsAlertSender {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val phoneNumber = prefs.getString(PHONE_NUMBER_KEY, null)
 
-        if (phoneNumber.isNullOrBlank()) return
-        if (!hasSmsPermission(context)) return
-        if (isOnCooldown(prefs, blockedPackage)) return
+        if (!SmsBackupAlert.shouldSend(
+                phoneNumber,
+                hasSmsPermission(context),
+                isOnCooldown(prefs, blockedPackage),
+            )
+        ) return
 
-        val message = "WellScreen alert: \"$appLabel\" was opened and blocked on your child's device."
+        val message = SmsBackupAlert.restrictedAppMessage(appLabel)
 
         try {
             val smsManager = getSmsManager(context) ?: run {

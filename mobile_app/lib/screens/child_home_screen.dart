@@ -916,7 +916,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
       if (!mounted) return;
 
-      showMessage('Current GPS location shared to parent dashboard.');
+      showMessage(SetupChecklistText.gpsShared);
 
       final parentId = (data['pairedParentId'] ?? '').toString();
       unawaited(
@@ -5285,9 +5285,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     if (!connected) {
       smsSubtitle = 'Available after this phone is paired with a parent.';
     } else if (!_smsPermissionGranted) {
-      smsSubtitle =
-          'Off. Grant SMS permission so a backup text alert can reach your '
-          'parent even without internet, when a restricted app is opened.';
+      smsSubtitle = SetupChecklistText.smsPermissionOff;
     } else if (hasPhoneNumber) {
       smsSubtitle =
           'Enabled. Blocked-app alerts will text '

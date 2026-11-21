@@ -720,21 +720,13 @@ class _ParentNotificationsScreenState
               );
             }
 
-            final newAlerts = alerts
-                .where(
-                  (doc) => !_readAlerts.contains(
-                    '$profileId:${doc.id}',
-                  ),
-                )
-                .toList();
-
-            final historyAlerts = alerts
-                .where(
-                  (doc) => _readAlerts.contains(
-                    '$profileId:${doc.id}',
-                  ),
-                )
-                .toList();
+            final split = splitAlertsByRead(
+              alerts,
+              (doc) => '$profileId:${doc.id}',
+              _readAlerts,
+            );
+            final newAlerts = split.fresh;
+            final historyAlerts = split.viewed;
 
             Widget buildGroup(
               String title,
@@ -991,3 +983,13 @@ class _ParentNotificationsScreenState
     );
   }
 }
+
+/// Splits alerts into "New" (not opened yet) and "Previously viewed".
+({List<T> fresh, List<T> viewed}) splitAlertsByRead<T>(
+  List<T> alerts,
+  String Function(T alert) keyOf,
+  Set<String> readKeys,
+) => (
+  fresh: [for (final a in alerts) if (!readKeys.contains(keyOf(a))) a],
+  viewed: [for (final a in alerts) if (readKeys.contains(keyOf(a))) a],
+);

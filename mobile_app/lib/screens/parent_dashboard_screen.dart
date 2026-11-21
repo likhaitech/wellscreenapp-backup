@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/daily_goal.dart';
+import '../services/child_location_text.dart';
 import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
@@ -128,36 +129,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
         childAccountId.isNotEmpty;
   }
 
-  String formatDate(dynamic value) {
-    if (value is Timestamp) {
-      final date = value.toDate();
-      final month = date.month.toString().padLeft(2, '0');
-      final day = date.day.toString().padLeft(2, '0');
-      final year = date.year.toString();
-      final hour = date.hour.toString().padLeft(2, '0');
-      final minute = date.minute.toString().padLeft(2, '0');
+  String formatDate(dynamic value) => formatDashboardDate(value);
 
-      return '$month/$day/$year $hour:$minute';
-    }
-
-    return 'Not available';
-  }
-
-  Map<String, dynamic>? latestLocation(Map<String, dynamic>? data) {
-    if (data == null) return null;
-
-    final latestLocation = data['latestLocation'];
-
-    if (latestLocation is Map<String, dynamic>) {
-      return latestLocation;
-    }
-
-    if (latestLocation is Map) {
-      return Map<String, dynamic>.from(latestLocation);
-    }
-
-    return null;
-  }
+  Map<String, dynamic>? latestLocation(Map<String, dynamic>? data) =>
+      latestLocationOf(data);
 
   bool hasSharedLocation(Map<String, dynamic>? data) {
     final location = latestLocation(data);
@@ -189,37 +164,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     return 0;
   }
 
-  String locationText(Map<String, dynamic>? data) {
-    final location = latestLocation(data);
+  String locationText(Map<String, dynamic>? data) => locationTextOf(data);
 
-    if (location == null) return 'No shared GPS yet';
-
-    final label = location['label'];
-    final latitude = location['latitude'];
-    final longitude = location['longitude'];
-
-    if (label != null && label.toString().isNotEmpty) {
-      return label.toString();
-    }
-
-    if (latitude is num && longitude is num) {
-      return '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}';
-    }
-
-    return 'No shared GPS yet';
-  }
-
-  String locationUpdatedText(Map<String, dynamic>? data) {
-    if (data == null) return 'Waiting for update';
-
-    final updatedAt = data['locationUpdatedAt'];
-
-    if (updatedAt is Timestamp) {
-      return formatDate(updatedAt);
-    }
-
-    return 'Waiting for update';
-  }
+  String locationUpdatedText(Map<String, dynamic>? data) =>
+      locationUpdatedTextOf(data);
 
   Map<String, dynamic>? latestUsageReport(Map<String, dynamic>? data) {
     if (data == null) return null;
