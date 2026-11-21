@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/password_policy.dart';
+import '../services/register_error_message.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'child_home_screen.dart';
@@ -144,7 +145,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
-      showMessage(e.message ?? 'Registration failed.');
+      showMessage(registerErrorMessage(e));
     } catch (e) {
       showMessage('Registration error: $e');
     } finally {
