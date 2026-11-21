@@ -104,44 +104,9 @@ class _AppReleaseGateState extends State<AppReleaseGate> {
 
     return Column(
       children: [
-        Material(
-          color: AppColors.warningBg,
-          child: SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.campaign_outlined,
-                    color: AppColors.warning,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      message,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Hide notice',
-                    onPressed: () =>
-                        setState(() => _dismissedMessage = message),
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: AppColors.warning,
-                      size: 20,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        MaintenanceNoticeBar(
+          message: message,
+          onHide: () => setState(() => _dismissedMessage = message),
         ),
         Expanded(
           child: MediaQuery.removePadding(
@@ -151,6 +116,73 @@ class _AppReleaseGateState extends State<AppReleaseGate> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The slim maintenance notice above every screen.
+///
+/// It sits in MaterialApp.builder, above the Navigator, so there is no
+/// Overlay here: no tooltips or other overlay widgets may be used.
+class MaintenanceNoticeBar extends StatelessWidget {
+  const MaintenanceNoticeBar({
+    super.key,
+    required this.message,
+    required this.onHide,
+  });
+
+  final String message;
+  final VoidCallback onHide;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.warningBg,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.campaign_outlined,
+                color: AppColors.warning,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Semantics(
+                button: true,
+                label: 'Hide notice',
+                excludeSemantics: true,
+                child: InkResponse(
+                  key: const Key('hideMaintenanceNotice'),
+                  onTap: onHide,
+                  radius: 22,
+                  child: const SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: AppColors.warning,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
