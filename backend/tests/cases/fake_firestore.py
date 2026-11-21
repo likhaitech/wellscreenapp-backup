@@ -37,6 +37,9 @@ class DocRef:
     def update(self, data: dict) -> None:
         self._db._write(self, data, merge=True)
 
+    def delete(self) -> None:
+        self._db.docs.pop(self.path, None)
+
     def collection(self, name: str) -> "Collection":
         return Collection(self._db, f"{self.path}/{name}")
 
@@ -106,6 +109,10 @@ class FakeDb:
 
     def collection(self, name: str) -> Collection:
         return Collection(self, name)
+
+    def recursive_delete(self, ref: DocRef) -> None:
+        for path in [p for p in self.docs if p == ref.path or p.startswith(ref.path + "/")]:
+            self.docs.pop(path)
 
     def transaction(self) -> Transaction:
         return Transaction(self)
