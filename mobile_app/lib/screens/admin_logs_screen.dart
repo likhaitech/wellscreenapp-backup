@@ -20,10 +20,10 @@ class AdminLogsScreen extends StatefulWidget {
   State<AdminLogsScreen> createState() => _AdminLogsScreenState();
 }
 
-enum _LevelFilter { all, activity, warnings, errors, sync }
+enum AdminLogFilter { all, activity, warnings, errors, sync }
 
 class _AdminLogsScreenState extends State<AdminLogsScreen> {
-  _LevelFilter _filter = _LevelFilter.all;
+  AdminLogFilter _filter = AdminLogFilter.all;
   String _search = '';
 
   // Keyed by Firestore document id (stable and unique) rather than list
@@ -38,54 +38,10 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
         .limit(100);
   }
 
-  String _formatDetails(dynamic details) {
-    if (details == null) return '';
-    if (details is Map) {
-      return details.entries
-          .map((entry) => '${entry.key}: ${entry.value}')
-          .join('\n');
-    }
-    return details.toString();
-  }
+  String _level(Map<String, dynamic> data) => adminLogLevel(data);
 
-  String _level(Map<String, dynamic> data) =>
-      (data['level'] ?? 'info').toString().toLowerCase();
-
-  bool _matches(Map<String, dynamic> data) {
-    final level = _level(data);
-    final problem = level == 'error' || level == 'warning';
-
-    switch (_filter) {
-      case _LevelFilter.errors:
-        if (level != 'error') return false;
-        break;
-      case _LevelFilter.warnings:
-        if (level != 'warning') return false;
-        break;
-      case _LevelFilter.sync:
-        if (!adminLogIsSync(data)) return false;
-        break;
-      case _LevelFilter.activity:
-        if (problem || adminLogIsSync(data)) return false;
-        break;
-      case _LevelFilter.all:
-        break;
-    }
-
-    final q = _search.trim().toLowerCase();
-    if (q.isEmpty) return true;
-
-    final haystack = [
-      data['action'],
-      adminActionTitle(data['action']),
-      data['message'],
-      data['actor_uid'],
-      data['level'],
-      _formatDetails(data['details']),
-    ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
-
-    return haystack.contains(q);
-  }
+  bool _matches(Map<String, dynamic> data) =>
+      adminLogMatches(data, _filter, _search);
 
   @override
   Widget build(BuildContext context) {
@@ -158,19 +114,19 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _chip('All', _LevelFilter.all),
-                    _chip('Activity', _LevelFilter.activity),
+                    _chip('All', AdminLogFilter.all),
+                    _chip('Activity', AdminLogFilter.activity),
                     _chip(
                       warnings > 0 ? 'Warning $warnings' : 'Warning',
-                      _LevelFilter.warnings,
+                      AdminLogFilter.warnings,
                       color: AppColors.warning,
                     ),
                     _chip(
                       errors > 0 ? 'Error $errors' : 'Error',
-                      _LevelFilter.errors,
+                      AdminLogFilter.errors,
                       color: AppColors.danger,
                     ),
-                    _chip('Sync', _LevelFilter.sync),
+                    _chip('Sync', AdminLogFilter.sync),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -210,7 +166,7 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
     );
   }
 
-  Widget _chip(String label, _LevelFilter filter, {Color? color}) {
+  Widget _chip(String label, AdminLogFilter filter, {Color? color}) {
     return AdminFilterChip(
       label: label,
       selected: _filter == filter,
@@ -229,7 +185,7 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
     final message = (data['message'] ?? '').toString();
     final actorUid = data['actor_uid']?.toString();
     final time = adminLogTime(data['timestamp']);
-    final details = _formatDetails(data['details']);
+    final details = adminLogDetails(data['details']);
     final (kind, color, _) = adminLogKind(data);
     final expanded = _expandedDocIds.contains(document.id);
     final hasMore =
@@ -341,4 +297,50 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
       ),
     );
   }
+}
+
+String adminLogDetails(dynamic details) {
+  if (details == null) return '';
+  if (details is Map) {
+    return details.entries
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join('\n');
+  }
+  return details.toString();
+}
+
+String adminLogLevel(Map<String, dynamic> data) =>
+    (data['level'] ?? 'info').toString().toLowerCase();
+
+/// True when a log entry passes the chosen filter chip and search text.
+bool adminLogMatches(
+  Map<String, dynamic> data,
+  AdminLogFilter filter,
+  String search,
+) {
+  final level = adminLogLevel(data);
+  final problem = level == 'error' || level == 'warning';
+  switch (filter) {
+    case AdminLogFilter.errors:
+      if (level != 'error') return false;
+    case AdminLogFilter.warnings:
+      if (level != 'warning') return false;
+    case AdminLogFilter.sync:
+      if (!adminLogIsSync(data)) return false;
+    case AdminLogFilter.activity:
+      if (problem || adminLogIsSync(data)) return false;
+    case AdminLogFilter.all:
+      break;
+  }
+  final q = search.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  final haystack = [
+    data['action'],
+    adminActionTitle(data['action']),
+    data['message'],
+    data['actor_uid'],
+    data['level'],
+    adminLogDetails(data['details']),
+  ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
+  return haystack.contains(q);
 }

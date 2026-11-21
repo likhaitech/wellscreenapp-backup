@@ -6,7 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/wellscreen_ui.dart';
 
-enum _UserFilter { all, guardians, children, admins, deactivated }
+enum AdminUserFilter { all, guardians, children, admins, deactivated }
 
 /// Admin "Manage Users" module (manuscript use case "Manage Users"):
 /// retrieve the user list, view a user's details, update a user record,
@@ -32,7 +32,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   List<AdminManagedUser> _users = <AdminManagedUser>[];
   bool _loading = true;
   String? _loadError;
-  _UserFilter _filter = _UserFilter.all;
+  AdminUserFilter _filter = AdminUserFilter.all;
   String _query = '';
 
   String? get _currentUid => FirebaseAuth.instance.currentUser?.uid;
@@ -75,30 +75,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  List<AdminManagedUser> get _visibleUsers {
-    final query = _query.trim().toLowerCase();
-    return _users.where((user) {
-      switch (_filter) {
-        case _UserFilter.all:
-          break;
-        case _UserFilter.guardians:
-          if (user.role != 'parent') return false;
-          break;
-        case _UserFilter.children:
-          if (user.role != 'child') return false;
-          break;
-        case _UserFilter.admins:
-          if (user.role != 'admin') return false;
-          break;
-        case _UserFilter.deactivated:
-          if (!user.disabled) return false;
-          break;
-      }
-      if (query.isEmpty) return true;
-      return user.email.toLowerCase().contains(query) ||
-          user.displayName.toLowerCase().contains(query);
-    }).toList();
-  }
+  List<AdminManagedUser> get _visibleUsers =>
+      filterAdminUsers(_users, _query, _filter);
 
   String _roleLabel(String role) {
     switch (role) {
@@ -231,7 +209,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           email: emailChanged ? newEmail : null,
         ),
       );
-      _toast('User details updated.');
+      _toast(adminUserUpdatedMessage);
     } catch (error) {
       _toast(_api.errorMessage(error));
     }
@@ -267,8 +245,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final newPassword = passwordController.text;
     passwordController.dispose();
     if (confirmed != true) return;
-    if (newPassword.length < 6) {
-      _toast('Password must be at least 6 characters.');
+    final passwordError = adminPasswordError(newPassword);
+    if (passwordError != null) {
+      _toast(passwordError);
       return;
     }
     try {
@@ -635,27 +614,27 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 
-  int _count(_UserFilter filter) {
+  int _count(AdminUserFilter filter) {
     switch (filter) {
-      case _UserFilter.all:
+      case AdminUserFilter.all:
         return _users.length;
-      case _UserFilter.guardians:
+      case AdminUserFilter.guardians:
         return _users.where((u) => u.role == 'parent').length;
-      case _UserFilter.children:
+      case AdminUserFilter.children:
         return _users.where((u) => u.role == 'child').length;
-      case _UserFilter.admins:
+      case AdminUserFilter.admins:
         return _users.where((u) => u.role == 'admin').length;
-      case _UserFilter.deactivated:
+      case AdminUserFilter.deactivated:
         return _users.where((u) => u.disabled).length;
     }
   }
 
-  static const Map<_UserFilter, String> _filterLabels = {
-    _UserFilter.all: 'All',
-    _UserFilter.guardians: 'Guardians',
-    _UserFilter.children: 'Children',
-    _UserFilter.admins: 'Admins',
-    _UserFilter.deactivated: 'Deactivated',
+  static const Map<AdminUserFilter, String> _filterLabels = {
+    AdminUserFilter.all: 'All',
+    AdminUserFilter.guardians: 'Guardians',
+    AdminUserFilter.children: 'Children',
+    AdminUserFilter.admins: 'Admins',
+    AdminUserFilter.deactivated: 'Deactivated',
   };
 
   @override
@@ -722,7 +701,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      for (final filter in _UserFilter.values)
+                      for (final filter in AdminUserFilter.values)
                         AdminFilterChip(
                           label: '${_filterLabels[filter]} ${_count(filter)}',
                           selected: _filter == filter,
@@ -753,3 +732,35 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 }
+
+/// Users shown for the chosen filter chip and search text (email or name).
+List<AdminManagedUser> filterAdminUsers(
+  List<AdminManagedUser> users,
+  String query,
+  AdminUserFilter filter,
+) {
+  final q = query.trim().toLowerCase();
+  return users.where((user) {
+    switch (filter) {
+      case AdminUserFilter.all:
+        break;
+      case AdminUserFilter.guardians:
+        if (user.role != 'parent') return false;
+      case AdminUserFilter.children:
+        if (user.role != 'child') return false;
+      case AdminUserFilter.admins:
+        if (user.role != 'admin') return false;
+      case AdminUserFilter.deactivated:
+        if (!user.disabled) return false;
+    }
+    if (q.isEmpty) return true;
+    return user.email.toLowerCase().contains(q) ||
+        user.displayName.toLowerCase().contains(q);
+  }).toList();
+}
+
+/// Why an administrator's new password for a user is refused, or null.
+String? adminPasswordError(String password) =>
+    password.length < 6 ? 'Password must be at least 6 characters.' : null;
+
+const String adminUserUpdatedMessage = 'User details updated.';

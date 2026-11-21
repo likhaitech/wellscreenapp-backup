@@ -126,9 +126,11 @@ class _AdminHealthScreenState extends State<AdminHealthScreen> {
   Widget _serverCard() {
     final overview = _overview;
     final online = overview != null && !_failed;
-    final status = _loading && overview == null
-        ? 'Checking'
-        : (online ? 'Online' : 'Not reachable');
+    final status = adminServerStatus(
+      loading: _loading,
+      hasOverview: overview != null,
+      failed: _failed,
+    );
     final since = _sinceLabel(overview?.runningSince);
 
     return Container(
@@ -241,7 +243,7 @@ class _AdminHealthScreenState extends State<AdminHealthScreen> {
             GestureDetector(
               onTap: _load,
               child: const Text(
-                'The server may be waking up. Tap to try again.',
+                adminServerWakingMessage,
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 12,
@@ -415,3 +417,16 @@ class _AdminHealthScreenState extends State<AdminHealthScreen> {
     );
   }
 }
+
+/// The server card's status word on System health.
+String adminServerStatus({
+  required bool loading,
+  required bool hasOverview,
+  required bool failed,
+}) {
+  if (loading && !hasOverview) return 'Checking';
+  return hasOverview && !failed ? 'Online' : 'Not reachable';
+}
+
+const String adminServerWakingMessage =
+    'The server may be waking up. Tap to try again.';
