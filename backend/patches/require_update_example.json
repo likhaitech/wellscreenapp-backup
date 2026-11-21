@@ -1,0 +1,7 @@
+{
+  "version": "1.0.3",
+  "description": "Phones older than 1.0.1 must update (raise only after the new APK is released)",
+  "settings": {
+    "minimum_app_version": "1.0.1"
+  }
+}

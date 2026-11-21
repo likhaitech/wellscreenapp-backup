@@ -7,12 +7,36 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.services.admin_auth_service import require_admin
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _patch_api_on(monkeypatch):
+    """The HTTP patch routes are off in production (patches go through the
+    backend tool); these tests exercise them with the developer switch on."""
+    monkeypatch.setenv("SYSTEM_PATCH_API_ENABLED", "true")
+
+
+def test_patch_routes_are_off_by_default(monkeypatch):
+    monkeypatch.delenv("SYSTEM_PATCH_API_ENABLED", raising=False)
+    app.dependency_overrides[require_admin] = lambda: {"uid": "admin-1", "admin": True}
+    try:
+        with patch("app.routes.admin_settings.update_system_settings") as upd:
+            r1 = client.post(
+                "/admin/settings/patch",
+                json={"settings": {"maintenance_message": "Hi"}},
+            )
+            r2 = client.patch("/admin/settings/", json={"maintenance_message": "Hi"})
+    finally:
+        app.dependency_overrides.pop(require_admin, None)
+    assert r1.status_code == r2.status_code == 403
+    upd.assert_not_called()
 
 
 def test_get_without_auth_header_is_rejected():

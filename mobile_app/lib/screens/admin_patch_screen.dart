@@ -7,19 +7,20 @@ import '../theme/app_theme.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/wellscreen_ui.dart';
 
-/// Manuscript "Manage System Settings -> Upload System Patch".
+/// Monitor System Patches (view only).
 ///
-/// A patch itself is a code change: pushed, then the backend redeploys and
-/// records the new server version in System logs. This page is how the
-/// admin rolls the fix out and checks it landed:
-/// - the server version that is running now;
-/// - the minimum app version - phones below it must update first;
-/// - a maintenance notice shown to every user;
-/// - the patch history (deploys and applied/rejected patches).
-/// The server validates every change (version must be like 1.4.0, notice
-/// at most 200 characters); a rejected change does nothing and is logged.
+/// Patches and fixes are applied on the backend, never from the app: a
+/// code fix is pushed and Render redeploys (logged as "Server patch
+/// deployed"), and a settings patch - minimum app version or maintenance
+/// notice - is a reviewed JSON file applied with the backend patch tool
+/// (backend/scripts/apply_system_patch.py), which validates it and logs
+/// it as applied or rejected. This page shows what is running now and the
+/// patch history so the admin can confirm a patch landed.
 class AdminPatchScreen extends StatefulWidget {
-  const AdminPatchScreen({super.key});
+  const AdminPatchScreen({super.key, this.embedded = false});
+
+  /// True inside the admin dock (no app bar of its own).
+  final bool embedded;
 
   @override
   State<AdminPatchScreen> createState() => _AdminPatchScreenState();
@@ -33,19 +34,14 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
   };
 
   final AdminSettingsApiService _api = AdminSettingsApiService();
-  final TextEditingController _minimum = TextEditingController();
-  final TextEditingController _notice = TextEditingController();
 
   bool _loading = true;
-  bool _busy = false;
   String? _loadError;
   String _serverVersion = '-';
   String? _runningSince;
   String _currentMinimum = '1.0.0';
   String _currentNotice = '';
   String? _thisAppVersion;
-  List<String> _errors = [];
-  String? _success;
 
   @override
   void initState() {
@@ -54,13 +50,6 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
       if (mounted) setState(() => _thisAppVersion = v);
     }).catchError((Object _) {});
     _load();
-  }
-
-  @override
-  void dispose() {
-    _minimum.dispose();
-    _notice.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -79,113 +68,11 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
           server is Map ? server['running_since']?.toString() : null;
       _currentMinimum = minimum is String ? minimum : '1.0.0';
       _currentNotice = notice is String ? notice : '';
-      _minimum.text = _currentMinimum;
-      _notice.text = _currentNotice;
     } catch (e) {
       _loadError = 'Could not load the current settings. The server may be '
           'waking up - try again in a minute.';
     }
     if (mounted) setState(() => _loading = false);
-  }
-
-  /// Only what changed. Format checks are left to the server, so a wrong
-  /// version (for example "1.4") is shown as a rejection.
-  Map<String, Object> _changes() {
-    final minimum = _minimum.text.trim();
-    final notice = _notice.text.trim();
-    return {
-      if (minimum.isNotEmpty && minimum != _currentMinimum)
-        'minimum_app_version': minimum,
-      if (notice != _currentNotice) 'maintenance_message': notice,
-    };
-  }
-
-  List<String> _preview() {
-    final changes = _changes();
-    final notice = changes['maintenance_message'];
-    return [
-      if (changes.containsKey('minimum_app_version'))
-        'Minimum app version: $_currentMinimum -> '
-            '${changes['minimum_app_version']}',
-      if (notice is String)
-        notice.isEmpty
-            ? 'Maintenance notice: removed'
-            : 'Maintenance notice: "$notice"',
-    ];
-  }
-
-  Future<void> _run({required bool validateOnly}) async {
-    setState(() {
-      _errors = [];
-      _success = null;
-    });
-    final changes = _changes();
-    if (changes.isEmpty) {
-      setState(() => _errors = ['Nothing changed yet.']);
-      return;
-    }
-    setState(() => _busy = true);
-    try {
-      await _api.applyPatch({'settings': changes}, validateOnly: validateOnly);
-      if (!mounted) return;
-      if (validateOnly) {
-        setState(
-          () => _success =
-              'The server checked this change. Nothing is applied yet.',
-        );
-      } else {
-        setState(
-          () => _success =
-              'Applied and recorded in System logs. Phones pick it up '
-              'within seconds.',
-        );
-        await _load();
-      }
-    } on SystemPatchRejected catch (e) {
-      if (!mounted) return;
-      setState(() => _errors = e.errors);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _errors = ['Request failed: $e']);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _confirmApply() async {
-    final preview = _preview();
-    final minimum = _changes()['minimum_app_version'];
-    final thisApp = _thisAppVersion;
-    final warnsOldPhones = minimum is String &&
-        AppReleaseService.isVersion(minimum) &&
-        thisApp != null &&
-        AppReleaseService.needsUpdate(thisApp, minimum);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Apply this patch?'),
-        content: Text(
-          [
-            if (preview.isNotEmpty) preview.join('\n'),
-            if (warnsOldPhones)
-              'Phones on version $thisApp (this build) will have to '
-                  'update before they can continue.',
-            'It is recorded in System logs.',
-          ].join('\n\n'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Apply'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await _run(validateOnly: false);
   }
 
   String _sinceLabel() {
@@ -198,24 +85,23 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final preview = _preview();
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: WellScreenAppBar.subPage(
-        title: 'System patch',
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+    final body = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                widget.embedded ? 4 : 8,
+                16,
+                widget.embedded ? kAdminDockClearance : 24,
+              ),
               children: [
+                if (widget.embedded) ...[
+                  const AdminPageTitle('System patch'),
+                  const SizedBox(height: 14),
+                ],
                 if (_loadError != null) ...[
                   _resultCard(
                     icon: Icons.cloud_off_rounded,
@@ -232,85 +118,46 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
                 ] else ...[
                   _versionCard(),
                   const SizedBox(height: 12),
-                  _minimumCard(),
-                  const SizedBox(height: 12),
-                  _noticeCard(),
-                  if (preview.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _resultCard(
-                      icon: Icons.compare_arrows_rounded,
-                      color: AppColors.primary,
-                      tint: AppColors.primaryLight,
-                      title: 'Changes',
-                      lines: preview,
-                    ),
-                  ],
-                  if (_errors.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    _resultCard(
-                      icon: Icons.error_outline_rounded,
-                      color: AppColors.danger,
-                      tint: AppColors.dangerBg,
-                      title: 'Rejected - no changes made',
-                      lines: _errors,
-                    ),
-                  ],
-                  if (_success != null) ...[
-                    const SizedBox(height: 12),
-                    _resultCard(
-                      icon: Icons.check_rounded,
-                      color: AppColors.success,
-                      tint: AppColors.successBg,
-                      title: _success!,
-                      lines: const [],
-                    ),
-                  ],
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.tonal(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.primaryLight,
-                            foregroundColor: AppColors.primary,
-                            minimumSize: const Size.fromHeight(50),
-                            shape: const StadiumBorder(),
-                          ),
-                          onPressed: _busy
-                              ? null
-                              : () => _run(validateOnly: true),
-                          child: const Text('Check'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(50),
-                            shape: const StadiumBorder(),
-                          ),
-                          onPressed: _busy ? null : _confirmApply,
-                          child: _busy
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text('Apply'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  const AdminSectionTitle('Patch history'),
-                  const SizedBox(height: 8),
-                  _history(),
+                  _settingsCard(),
                 ],
+                const SizedBox(height: 12),
+                _resultCard(
+                  icon: Icons.lock_outline_rounded,
+                  color: AppColors.primary,
+                  tint: AppColors.primaryLight,
+                  title: 'Patches are applied on the backend',
+                  lines: const [
+                    'Code fixes are deployed to the server and recorded '
+                        'here as "Server patch deployed".',
+                    'Settings patches are reviewed files applied with the '
+                        'backend patch tool. Every patch is checked first; '
+                        'a rejected patch changes nothing.',
+                    'This page is view only, so the app cannot change the '
+                        'system.',
+                  ],
+                ),
+                const SizedBox(height: 18),
+                const AdminSectionTitle('Patch history'),
+                const SizedBox(height: 8),
+                _history(),
               ],
             ),
+          );
+
+    if (widget.embedded) return body;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: WellScreenAppBar.subPage(
+        title: 'System patch',
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: body,
     );
   }
 
@@ -378,94 +225,95 @@ class _AdminPatchScreenState extends State<AdminPatchScreen> {
     );
   }
 
-  Widget _cardTitle(String title, String help) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontFamily: AppFonts.heading,
-            color: AppColors.textPrimary,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          help,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 12,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 10),
-      ],
-    );
-  }
-
-  InputDecoration _fieldDecoration(String hint) {
-    return InputDecoration(
-      counterText: '',
-      hintText: hint,
-      filled: true,
-      fillColor: AppColors.surfaceMuted,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-    );
-  }
-
-  Widget _minimumCard() {
+  Widget _settingsCard() {
+    final thisApp = _thisAppVersion;
+    final mustUpdate = thisApp != null &&
+        AppReleaseService.isVersion(_currentMinimum) &&
+        AppReleaseService.needsUpdate(thisApp, _currentMinimum);
     return BentoCard(
+      padding: EdgeInsets.zero,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _cardTitle(
-            'Minimum app version',
-            'After a bug-fix release, raise this so phones on an older '
-                'version must update first. Format: 1.4.0',
+          _settingRow(
+            icon: Icons.system_update_outlined,
+            title: 'Minimum app version',
+            value: _currentMinimum,
+            note: mustUpdate
+                ? 'Phones on $thisApp must update to continue.'
+                : 'Phones below this version must update first.',
           ),
-          TextField(
-            controller: _minimum,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            maxLength: 11,
-            onChanged: (_) => setState(() {}),
-            decoration: _fieldDecoration('1.0.0'),
+          const Divider(height: 1, color: AppColors.surfaceMuted),
+          _settingRow(
+            icon: Icons.campaign_outlined,
+            title: 'Maintenance notice',
+            value: _currentNotice.isEmpty ? 'None' : 'On',
+            note: _currentNotice.isEmpty
+                ? 'No notice is shown to guardians and children.'
+                : _currentNotice,
           ),
         ],
       ),
     );
   }
 
-  Widget _noticeCard() {
-    final length = _notice.text.trim().length;
-    return BentoCard(
-      child: Column(
+  Widget _settingRow({
+    required IconData icon,
+    required String title,
+    required String value,
+    required String note,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _cardTitle(
-            'Maintenance notice',
-            'Shown at the top of every guardian and child screen. Leave '
-                'empty for no notice.',
-          ),
-          TextField(
-            controller: _notice,
-            maxLines: 3,
-            minLines: 2,
-            onChanged: (_) => setState(() {}),
-            decoration: _fieldDecoration(
-              'e.g. Server maintenance tonight at 10 PM',
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.violetBg,
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: Icon(icon, color: AppColors.violet, size: 20),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '$length/200',
-            style: TextStyle(
-              color: length > 200 ? AppColors.danger : AppColors.textSecondary,
-              fontSize: 11,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.heading,
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  note,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

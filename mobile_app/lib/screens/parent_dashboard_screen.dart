@@ -10,6 +10,7 @@ import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
 import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
+import '../services/guardian_activity_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
@@ -35,7 +36,8 @@ class ParentDashboardScreen extends StatefulWidget {
   State<ParentDashboardScreen> createState() => _ParentDashboardScreenState();
 }
 
-class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
+class _ParentDashboardScreenState extends State<ParentDashboardScreen>
+    with WidgetsBindingObserver {
   // Aliased onto the shared AppColors palette (theme/app_theme.dart) rather
   // than the ad hoc literals this screen used to declare on its own - same
   // names so the body below didn't need a line-by-line rewrite, but now
@@ -83,6 +85,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     // Keep each child's copy of the verified guardian number current, so
     // the child's phone can send backup SMS alerts.
     ParentPhoneSyncService.syncToChildProfiles();
+    // Counts this guardian as active today on the admin dashboard.
+    WidgetsBinding.instance.addObserver(this);
+    GuardianActivityService.instance.markActive();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ChatNotificationsService.instance.markDashboardReady();
     });
@@ -93,7 +98,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      GuardianActivityService.instance.markActive();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _presenceRefreshTimer?.cancel();
     super.dispose();
   }
@@ -1023,8 +1036,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   const StatusPill(label: 'Usage Access off', tone: StatusTone.danger),
                 if (child['smsPermissionGranted'] == false)
                   const StatusPill(label: 'SMS backup off', tone: StatusTone.warning),
-                if (child['locationEnabled'] == false)
-                  const StatusPill(label: 'Location off', tone: StatusTone.warning),
               ],
             ),
           ],
@@ -1069,14 +1080,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final status = online ? 'Online' : 'Offline';
     final base = when.isEmpty ? status : '$status • $when';
     return '$base$smsNote';
-  }
-
-  /// Warning shown next to the location (G2, G3), or null.
-  String? _locationWarning(Map<String, dynamic>? child) {
-    final location = latestLocation(child);
-    if (location?['isMocked'] == true) return 'may be faked (fake GPS app)';
-    if (child?['locationEnabled'] == false) return 'turned off on child phone';
-    return null;
   }
 
   /// "2m ago" style label for the device card and the location footer.
@@ -1459,32 +1462,20 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Widget _locationFooter(Map<String, dynamic>? child) {
     final hasLocation = hasSharedLocation(child);
     final location = locationText(child);
-    final warning = _locationWarning(child);
     final locationLine = hasLocation
         ? 'Location • $location'
         : 'Location • waiting for GPS update';
 
     return Row(
       children: [
-        Icon(
-          warning == null
-              ? Icons.location_on_outlined
-              : Icons.location_off_outlined,
-          color: warning == null ? grayText : AppColors.danger,
-          size: 20,
-        ),
+        const Icon(Icons.location_on_outlined, color: grayText, size: 20),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            warning == null
-                ? locationLine
-                : '$locationLine\n⚠ Location $warning',
+            locationLine,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: warning == null ? darkText : AppColors.danger,
-              fontSize: 13,
-            ),
+            style: const TextStyle(color: darkText, fontSize: 13),
           ),
         ),
         TextButton(

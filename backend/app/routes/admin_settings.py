@@ -1,14 +1,26 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, status
-from pydantic import ValidationError
+import os
 
-from app.models.system_settings import SystemPatchRequest, SystemSettingsUpdate
+from fastapi import APIRouter, Body, Depends, HTTPException, status
+
+from app.models.system_settings import SystemSettingsUpdate
 from app.services.admin_auth_service import require_admin
 from app.services.server_info import server_info
+from app.services.system_patch_service import PatchRejected, apply_patch
 from app.services.system_log_service import create_system_log
 from app.services.system_settings_service import (
     get_system_settings,
     update_system_settings,
 )
+
+def _require_patch_api() -> None:
+    """System settings change only through the backend patch tool unless a
+    developer turns the HTTP routes on (SYSTEM_PATCH_API_ENABLED=true)."""
+    if os.getenv("SYSTEM_PATCH_API_ENABLED", "").strip().lower() != "true":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="System patches are applied through the backend, not the app.",
+        )
+
 
 router = APIRouter(
     prefix="/admin/settings",
@@ -35,6 +47,7 @@ def edit_system_settings(
     request: SystemSettingsUpdate,
     current_admin: dict = Depends(require_admin),
 ):
+    _require_patch_api()
     changes = request.model_dump(exclude_none=True)
 
     try:
@@ -67,71 +80,25 @@ def apply_system_patch(
     payload: dict = Body(...),
     current_admin: dict = Depends(require_admin),
 ):
-    """Validate and apply a system configuration patch.
+    """Validate and apply a system configuration patch over HTTP.
 
-    A rejected patch changes nothing and is recorded as a warning log.
+    Off by default: patches are applied on the backend with
+    scripts/apply_system_patch.py, never from the app. Developers can turn
+    this route on for maintenance with SYSTEM_PATCH_API_ENABLED=true.
     """
-    actor = current_admin.get("uid")
-
+    _require_patch_api()
     try:
-        patch = SystemPatchRequest.model_validate(payload)
-    except ValidationError as exc:
-        errors = [
-            f"{'.'.join(str(p) for p in err['loc']) or 'patch'}: {err['msg']}"
-            for err in exc.errors()
-        ]
-        create_system_log(
-            level="warning",
-            action="system_patch_rejected",
-            message="System patch failed validation; no changes applied",
-            actor_uid=actor,
-            details={"errors": errors},
+        return apply_patch(
+            payload,
+            actor=current_admin.get("uid"),
+            update=update_system_settings,
+            log=create_system_log,
         )
+    except PatchRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"message": "Patch rejected", "errors": errors},
-        )
-
-    changes = patch.settings.model_dump(exclude_none=True)
-
-    if not changes:
-        create_system_log(
-            level="warning",
-            action="system_patch_rejected",
-            message="System patch contained no settings; no changes applied",
-            actor_uid=actor,
-            details={"errors": ["settings: no changes provided"]},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "message": "Patch rejected",
-                "errors": ["settings: no changes provided"],
-            },
-        )
-
-    if patch.validate_only:
-        return {"valid": True, "applied": False, "changes": changes}
-
-    try:
-        updated = update_system_settings(changes, updated_by=actor or "unknown")
-        create_system_log(
-            level="info",
-            action="system_patch_applied",
-            message=f"System patch {patch.version or '(unversioned)'} applied",
-            actor_uid=actor,
-            details={
-                "version": patch.version,
-                "description": patch.description,
-                "changes": changes,
-            },
-        )
-        return {
-            "valid": True,
-            "applied": True,
-            "changes": changes,
-            "settings": updated,
-        }
+            detail={"message": "Patch rejected", "errors": exc.errors},
+        ) from None
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

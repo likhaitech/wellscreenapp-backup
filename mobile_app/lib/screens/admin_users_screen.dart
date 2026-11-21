@@ -376,6 +376,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 child: Column(
                   children: [
                     _detailRow('Email', user.email),
+                    _detailRow(
+                      'Email verified',
+                      user.emailVerified ? 'Yes' : 'No',
+                    ),
+                    if (user.paired != null)
+                      _detailRow(
+                        'Pairing',
+                        user.paired! ? 'Paired' : 'Not paired',
+                      ),
                     _detailRow('Created', _formatDate(user.createdAt)),
                     _detailRow('Last sign-in', _formatDate(user.lastSignInAt)),
                     _detailRow('User ID', user.uid, last: true, mono: true),

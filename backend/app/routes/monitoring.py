@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from app.services.system_activity_service import record_job, refresh_daily_activity
 from app.services.monitoring_alerts_service import (
     accept_child_events, sweep_missing_heartbeats,
     begin_parent_sms_opt_in, confirm_parent_sms_opt_in, disable_parent_sms_opt_in,
@@ -86,4 +87,18 @@ def sweep(x_monitoring_secret: str | None = Header(default=None)):
     secret = os.getenv("MONITORING_CRON_SECRET", "")
     if not secret or not x_monitoring_secret or not hmac.compare_digest(secret, x_monitoring_secret):
         raise HTTPException(status_code=403, detail="Forbidden")
-    return sweep_missing_heartbeats()
+    try:
+        result = sweep_missing_heartbeats()
+    except Exception as exc:
+        record_job("monitoring", ok=False, summary={"error": type(exc).__name__},
+                   log_entry=True, message="Monitoring check failed")
+        raise
+    activity = refresh_daily_activity()
+    alerts = int(result.get("newAlerts", 0))
+    record_job(
+        "monitoring", ok=True,
+        summary={**result, **(activity or {})},
+        log_entry=alerts > 0,
+        message=f"Monitoring check sent {alerts} guardian alert(s)",
+    )
+    return result
