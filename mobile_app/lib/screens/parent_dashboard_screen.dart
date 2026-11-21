@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../models/daily_goal.dart';
 import '../services/child_location_text.dart';
+import '../services/guardian_dashboard_text.dart';
 import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
@@ -119,15 +120,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
         .snapshots();
   }
 
-  bool isChildConnected(Map<String, dynamic> data) {
-    final pairingStatus = (data['pairingStatus'] ?? '').toString();
-    final childEmail = (data['childEmail'] ?? '').toString();
-    final childAccountId = (data['childAccountId'] ?? '').toString();
-
-    return pairingStatus == 'connected' ||
-        childEmail.isNotEmpty ||
-        childAccountId.isNotEmpty;
-  }
+  bool isChildConnected(Map<String, dynamic> data) =>
+      childLooksConnected(data);
 
   String formatDate(dynamic value) => formatDashboardDate(value);
 
@@ -701,7 +695,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                     if (askedMinutes != null) ...[
                       const SizedBox(height: 3),
                       Text(
-                        'Asked for $askedMinutes min',
+                        askedForLabel(askedMinutes),
                         style: const TextStyle(
                           color: darkText,
                           fontSize: 13,
@@ -762,10 +756,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     String childProfileId, {
     int? askedMinutes,
   }) async {
-    final options = <int>{5, 10, 15, 30, 45, 60, 90, 120, ?askedMinutes}
-        .where((m) => m > 0 && m <= 120)
-        .toList()
-      ..sort();
+    final options = emergencyMinuteChoices(askedMinutes);
     // Starts on what the child asked for; the guardian can change it.
     var minutes =
         askedMinutes != null && options.contains(askedMinutes) ? askedMinutes : 15;
@@ -844,7 +835,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                     ),
                     onChanged: (text) {
                       final typed = int.tryParse(text.trim());
-                      if (typed != null && typed >= 1 && typed <= 120) {
+                      if (typed != null && isValidEmergencyMinutes(typed)) {
                         setSheet(() => minutes = typed);
                       }
                     },
@@ -938,7 +929,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
 
   Widget _deviceProfileCard(Map<String, dynamic>? child) {
     final childName = childNameOf(child, fallback: 'Child Profile');
-    final childEmail = (child?['childEmail'] ?? 'Pair a child account first')
+    final childEmail = (child?['childEmail'] ?? pairChildFirst)
         .toString();
     final connected = child != null && isChildConnected(child);
 
@@ -977,13 +968,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               spacing: 8,
               runSpacing: 6,
               children: [
-                child['accessibilityEnabled'] == false
-                    ? const StatusPill(label: 'Blocking off', tone: StatusTone.danger)
-                    : const StatusPill(label: 'Protection on', tone: StatusTone.success),
-                if (child['usageAccessEnabled'] == false)
-                  const StatusPill(label: 'Usage Access off', tone: StatusTone.danger),
-                if (child['smsPermissionGranted'] == false)
-                  const StatusPill(label: 'SMS backup off', tone: StatusTone.warning),
+                for (final label in protectionStatusLabels(child))
+                  StatusPill(
+                    label: label,
+                    tone: switch (label) {
+                      'Protection on' => StatusTone.success,
+                      'SMS backup off' => StatusTone.warning,
+                      _ => StatusTone.danger,
+                    },
+                  ),
               ],
             ),
           ],

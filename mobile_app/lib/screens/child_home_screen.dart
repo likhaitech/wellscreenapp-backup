@@ -22,6 +22,7 @@ import '../models/usage_report.dart';
 import '../services/alert_notification_client.dart';
 import '../services/privacy_text.dart';
 import '../services/setup_checklist_text.dart';
+import '../services/child_status_text.dart';
 import '../services/visible_apps.dart';
 import '../services/android_app_service.dart';
 import '../services/monitoring_usage_alert_service.dart';
@@ -1613,8 +1614,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   static const Duration _resumeSyncAfter = Duration(minutes: 2);
 
   void _syncIfStale() {
-    final last = _lastUsageSyncAttempt;
-    if (last != null && DateTime.now().difference(last) < _resumeSyncAfter) {
+    if (!ChildStatusText.shouldSyncOnReopen(
+      _lastUsageSyncAttempt,
+      DateTime.now(),
+      _resumeSyncAfter,
+    )) {
       return;
     }
     unawaited(_autoSyncUsage());
@@ -2429,19 +2433,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         ? _syncLog.last['outcome']?.toString()
         : null;
 
-    String label;
-    if (!_isOnline) {
-      label = 'Offline - will sync when reconnected';
-    } else if (lastOutcome == 'synced') {
-      label = 'Synced - auto-syncs every ${_usageAutoSyncInterval.inMinutes} min';
-    } else if (lastOutcome == 'queued_offline' ||
-        lastOutcome == 'failed_timeout') {
-      label = 'Online - usage recovery will run automatically when scheduled.';
-    } else if (lastOutcome != null) {
-      label = 'Online - last sync failed. Tap Sync Usage to retry.';
-    } else {
-      label = 'Auto-syncs every ${_usageAutoSyncInterval.inMinutes} min';
-    }
+    final label = ChildStatusText.syncIndicator(
+      isOnline: _isOnline,
+      lastOutcome: lastOutcome,
+      autoSyncMinutes: _usageAutoSyncInterval.inMinutes,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(top: 10),
@@ -2480,7 +2476,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         requestedMinutes: requestedMinutes,
       );
       emergencyReasonController.clear();
-      showMessage('Request sent - your parent has been notified.');
+      showMessage(ChildStatusText.requestSent);
     } catch (e) {
       showMessage('Could not send request: $e');
     } finally {
@@ -3047,25 +3043,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     );
   }
 
-  String _lastSyncLabel() {
-    int? lastSyncedMs;
-    for (final entry in _syncLog.reversed) {
-      final timestamp = entry['timestampMs'];
-      if (entry['outcome'] == 'synced' && timestamp is int) {
-        lastSyncedMs = timestamp;
-        break;
-      }
-    }
-    if (lastSyncedMs == null) return 'Not synced yet';
+  String _lastSyncLabel() => ChildStatusText.lastSync(
+    _syncLog.whereType<Map<String, dynamic>>().toList(),
+    DateTime.now(),
+  );
 
-    final elapsed = DateTime.now().difference(
-      DateTime.fromMillisecondsSinceEpoch(lastSyncedMs),
-    );
-    if (elapsed.inMinutes < 1) return 'Synced just now';
-    if (elapsed.inMinutes < 60) return 'Synced ${elapsed.inMinutes}m ago';
-    if (elapsed.inHours < 24) return 'Synced ${elapsed.inHours}h ago';
-    return 'Synced ${elapsed.inDays}d ago';
-  }
 
   String? _coordinatesText(Map<String, dynamic> data) {
     final latestLocation = data['latestLocation'];
@@ -4303,7 +4285,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Urgent Access Approved',
+                        ChildStatusText.urgentApproved,
                         style: TextStyle(
                           color: _ink,
                           fontSize: 15,
@@ -4339,18 +4321,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         }
 
         final pending = status == 'requested';
-        final String title;
-        final String subtitle;
-        if (pending) {
-          title = 'Request Sent';
-          subtitle = 'Waiting for your parent to respond';
-        } else if (status == 'denied') {
-          title = 'Need Urgent Access?';
-          subtitle = 'Your last request was denied. You can ask again.';
-        } else {
-          title = 'Need Urgent Access?';
-          subtitle = 'Request temporary time from parent';
-        }
+        final card = ChildStatusText.emergencyCard(status);
+        final title = card.title;
+        final subtitle = card.subtitle;
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
