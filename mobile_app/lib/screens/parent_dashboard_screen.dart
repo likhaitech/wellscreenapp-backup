@@ -10,6 +10,7 @@ import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
 import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
+import '../services/guardian_activity_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
@@ -35,7 +36,8 @@ class ParentDashboardScreen extends StatefulWidget {
   State<ParentDashboardScreen> createState() => _ParentDashboardScreenState();
 }
 
-class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
+class _ParentDashboardScreenState extends State<ParentDashboardScreen>
+    with WidgetsBindingObserver {
   // Aliased onto the shared AppColors palette (theme/app_theme.dart) rather
   // than the ad hoc literals this screen used to declare on its own - same
   // names so the body below didn't need a line-by-line rewrite, but now
@@ -83,6 +85,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     // Keep each child's copy of the verified guardian number current, so
     // the child's phone can send backup SMS alerts.
     ParentPhoneSyncService.syncToChildProfiles();
+    // Counts this guardian as active today on the admin dashboard.
+    WidgetsBinding.instance.addObserver(this);
+    GuardianActivityService.instance.markActive();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ChatNotificationsService.instance.markDashboardReady();
     });
@@ -93,7 +98,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      GuardianActivityService.instance.markActive();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _presenceRefreshTimer?.cancel();
     super.dispose();
   }
