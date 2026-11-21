@@ -34,18 +34,59 @@ class DocRef:
     def set(self, data: dict, merge: bool = False) -> None:
         self._db._write(self, data, merge=merge)
 
+    def update(self, data: dict) -> None:
+        self._db._write(self, data, merge=True)
+
+    def collection(self, name: str) -> "Collection":
+        return Collection(self._db, f"{self.path}/{name}")
+
 
 class Collection:
-    def __init__(self, db: "FakeDb", name: str):
+    """A collection, also used as a simple query (where / order_by / limit)."""
+
+    def __init__(self, db: "FakeDb", name: str, filters=(), order=None, count=None):
         self._db, self._name = db, name
+        self._filters, self._order, self._count = list(filters), order, count
 
     def document(self, doc_id: str | None = None) -> DocRef:
         return DocRef(self._db, self._name, doc_id or f"auto{next(_ids)}")
+
+    def where(self, field=None, op=None, value=None, *, filter=None) -> "Collection":
+        if filter is not None:
+            field, op, value = filter.field_path, filter.op_string, filter.value
+        return Collection(self._db, self._name, self._filters + [(field, op, value)],
+                          self._order, self._count)
+
+    def order_by(self, field, direction="ASCENDING") -> "Collection":
+        return Collection(self._db, self._name, self._filters, (field, direction), self._count)
+
+    def limit(self, count: int) -> "Collection":
+        return Collection(self._db, self._name, self._filters, self._order, count)
+
+    def stream(self, transaction: Any = None):
+        prefix = self._name + "/"
+        rows = []
+        for path, data in self._db.docs.items():
+            if not path.startswith(prefix) or "/" in path[len(prefix):]:
+                continue
+            ok = True
+            for field, op, value in self._filters:
+                have = data.get(field)
+                ok = ok and ((op == "==" and have == value) or (op == "in" and have in value))
+            if ok:
+                rows.append(Snapshot(DocRef(self._db, self._name, path[len(prefix):]), data))
+        if self._order:
+            field, direction = self._order
+            rows.sort(key=lambda r: r.to_dict().get(field), reverse=str(direction).upper().startswith("DESC"))
+        return iter(rows[: self._count] if self._count else rows)
 
 
 class Transaction:
     def __init__(self, db: "FakeDb"):
         self._db = db
+
+    def get(self, ref):
+        return ref.get(transaction=self)
 
     def create(self, ref: DocRef, data: dict) -> None:
         if ref.path in self._db.docs:
