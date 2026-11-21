@@ -67,7 +67,7 @@ class BlockedAppActivity : Activity() {
          * send. The guardian can still allow a wrongly blocked site from
          * their own app.
          */
-        fun canAskToAllow(category: String?): Boolean = category != "adult"
+        fun canAskToAllow(category: String?): Boolean = BlockScreenText.canAskToAllow(category)
     }
 
     private var isDailyTimeLimitBlock = false
@@ -219,16 +219,10 @@ class BlockedAppActivity : Activity() {
         }
 
         val badge = TextView(this).apply {
-            text = when {
-                isProtectedSettings -> "Protected"
-                isSignInRequired -> "Sign in needed"
-                scheduleReason == "bedtime" -> "Bedtime"
-                scheduleReason == "break" -> "Break time"
-                scheduleReason != null -> "Focus time"
-                blockedDomain != null -> "Blocked"
-                isDailyTimeLimitBlock -> "Time limit reached"
-                else -> "Restricted"
-            }
+            text = BlockScreenText.badge(
+                isProtectedSettings, isSignInRequired, scheduleReason,
+                blockedDomain, isDailyTimeLimitBlock,
+            )
             textSize = 12f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(accent)
@@ -241,15 +235,10 @@ class BlockedAppActivity : Activity() {
         }
 
         val title = TextView(this).apply {
-            text = when {
-                isProtectedSettings -> "Ask your guardian"
-                isSignInRequired -> "Sign in to WellScreen"
-                scheduleReason == "bedtime" -> "Time to rest"
-                scheduleReason == "break" -> "Take a break"
-                scheduleReason != null -> "Focus time"
-                blockedDomain != null -> "Website blocked"
-                else -> "$displayName is paused"
-            }
+            text = BlockScreenText.title(
+                isProtectedSettings, isSignInRequired, scheduleReason,
+                blockedDomain, displayName,
+            )
             textSize = 30f
             typeface = headingFace
             setTextColor(ink)
@@ -330,7 +319,7 @@ class BlockedAppActivity : Activity() {
         }
 
         val requestButton = TextView(this).apply {
-            text = "Request Temporary Access"
+            text = BlockScreenText.REQUEST_BUTTON
             textSize = 15f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -455,12 +444,11 @@ class BlockedAppActivity : Activity() {
         root.addView(title)
         root.addView(message)
         // Signing in needs WellScreen itself, not a request to the guardian.
-        if (isSignInRequired) {
-            root.addView(openAppButton)
-        } else if (blockedDomain == null) {
-            root.addView(card)
-        } else if (canAsk) {
-            root.addView(askButton)
+        when (BlockScreenText.action(isSignInRequired, blockedDomain, blockedCategory)) {
+            BlockScreenText.Action.SIGN_IN -> root.addView(openAppButton)
+            BlockScreenText.Action.REQUEST_TEMPORARY_ACCESS -> root.addView(card)
+            BlockScreenText.Action.ASK_PARENT -> root.addView(askButton)
+            BlockScreenText.Action.NONE -> Unit
         }
         root.addView(backButton)
         setContentView(root)

@@ -85,6 +85,16 @@ internal object ScheduleEnforcer {
      * screens, a notification) do not end a session. Null if the app is not
      * in the foreground now.
      */
+    /**
+     * True when one app has been used non-stop (gaps under a minute join the
+     * session) for the break timer's "after" minutes.
+     */
+    fun needsBreak(events: List<Pair<Int, Long>>, now: Long, schedule: Schedule): Boolean {
+        if (!schedule.breaksEnabled) return false
+        val start = sessionStart(events, SESSION_GAP_MS) ?: return false
+        return now - start >= schedule.breakAfterMinutes * 60_000L
+    }
+
     fun sessionStart(events: List<Pair<Int, Long>>, gapMs: Long): Long? {
         var start: Long? = null
         var lastBackground: Long? = null
@@ -164,8 +174,7 @@ internal object ScheduleEnforcer {
             lastSessionCheck[packageName] = now
         }
         val events = AppTimeLimitEnforcer.foregroundEvents(context, packageName, now) ?: return null
-        val start = sessionStart(events, SESSION_GAP_MS) ?: return null
-        if (now - start < schedule.breakAfterMinutes * 60_000L) return null
+        if (!needsBreak(events, now, schedule)) return null
 
         val newUntil = now + breakMs
         store.edit().putLong(packageName, newUntil).apply()

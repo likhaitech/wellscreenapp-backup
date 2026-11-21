@@ -90,9 +90,7 @@ class _RulesScreenState extends State<RulesScreen> {
     final domain = WebsiteRules.normalizeDomain(input);
     if (domain == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enter a valid website such as example.com.'),
-        ),
+        const SnackBar(content: Text(WebsiteRules.invalidDomainMessage)),
       );
       return;
     }
@@ -412,56 +410,7 @@ class _RulesScreenState extends State<RulesScreen> {
         const SizedBox(height: 12),
         // Automatic harmful-site blocking has no off switch in WellScreen,
         // so this shows its state instead of a toggle that does nothing.
-        BentoCard(
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: AppColors.violetBg,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: AppColors.violet,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Harmful sites are blocked automatically',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Harmful categories from the UT1 list, plus on-device AI '
-                      'at 90%+ confidence',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const AppBadge(
-                label: 'Always on',
-                color: AppColors.success,
-                background: AppColors.successBg,
-              ),
-            ],
-          ),
-        ),
+        const HarmfulSitesNotice(),
         const SizedBox(height: 12),
         _websiteRuleList(
           title: 'Blocked websites',
@@ -1180,6 +1129,67 @@ class _RuleSwitch extends StatelessWidget {
           scale: 0.82,
           child: Switch(value: value, onChanged: onChanged),
         ),
+      ),
+    );
+  }
+}
+
+/// "Harmful sites are blocked automatically" - shown on the website rules.
+/// Automatic harmful-site blocking has no off switch, so this card shows its
+/// state ("Always on") instead of a switch.
+class HarmfulSitesNotice extends StatelessWidget {
+  const HarmfulSitesNotice({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BentoCard(
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.violetBg,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.auto_awesome_rounded,
+              color: AppColors.violet,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Harmful sites are blocked automatically',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Harmful categories from the UT1 list, plus on-device AI '
+                  'at 90%+ confidence',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const AppBadge(
+            label: 'Always on',
+            color: AppColors.success,
+            background: AppColors.successBg,
+          ),
+        ],
       ),
     );
   }

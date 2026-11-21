@@ -39,6 +39,10 @@ class WebsiteRules {
   final List<String> allowedDomains;
 
   static const int maxDomainsPerList = 200;
+
+  /// Shown when the guardian types something that is not a website.
+  static const String invalidDomainMessage =
+      'Enter a valid website such as example.com.';
   static final RegExp _labelPattern = RegExp(
     r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$',
   );
@@ -200,7 +204,7 @@ class SiteCategoryService {
   ) async {
     final domain = WebsiteRules.normalizeDomain(input);
     if (domain == null) {
-      throw const FormatException('Enter a valid website such as example.com.');
+      throw const FormatException(WebsiteRules.invalidDomainMessage);
     }
 
     final ref = _guardianRef();

@@ -129,6 +129,11 @@ class ScheduleRules {
     breakLengthMinutes: breakLengthMinutes ?? this.breakLengthMinutes,
   );
 
+  /// Why a bedtime cannot be saved, or null when it can.
+  String? get bedtimeError => bedtimeStartMinutes == bedtimeEndMinutes
+      ? 'Start and end time must be different.'
+      : null;
+
   /// "9:00 PM" style label for minutes after midnight.
   static String timeLabel(int minutes) {
     final hour24 = minutes ~/ 60;
