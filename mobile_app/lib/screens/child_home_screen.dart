@@ -22,6 +22,7 @@ import '../models/usage_report.dart';
 import '../services/alert_notification_client.dart';
 import '../services/privacy_text.dart';
 import '../services/setup_checklist_text.dart';
+import '../services/visible_apps.dart';
 import '../services/android_app_service.dart';
 import '../services/monitoring_usage_alert_service.dart';
 import '../services/installed_app_metadata_service.dart';
@@ -1288,6 +1289,14 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         allSummaries.map((app) => app.packageName),
       );
       syncStep('app names and icons');
+      // Times each app was opened today, for the guardian's All Apps page.
+      // Best effort: a failure here must not stop the usage sync.
+      var openCounts = const <String, int>{};
+      try {
+        openCounts = await _usageTrackingService.getTodayOpenCounts();
+      } catch (error) {
+        debugPrint('Open counts not read: $error');
+      }
       // Keep image data only once in allApps to avoid duplicating icons
       // in topApps and pushing Firestore's document size limit.
       var remainingIconChars = 400000;
@@ -1315,6 +1324,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
               appMetadata[app.packageName]?['displayName'] ?? app.packageName,
           'usageDurationMs': app.usageDuration.inMilliseconds,
           'lastTimeUsed': app.lastTimeUsed?.toIso8601String(),
+          if (openCounts[app.packageName] != null)
+            'openCount': openCounts[app.packageName],
           if (keepIcon) 'iconBase64': icon,
         };
       }).toList();
@@ -2970,20 +2981,9 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
   /// Hides Android system / launcher packages from display lists only. The
   /// underlying usage data and reports are not filtered.
-  bool _isSystemPackage(String packageName) {
-    final package = packageName.toLowerCase();
-    return package.contains('launcher') ||
-        package.contains('permissioncontroller') ||
-        package.contains('systemui') ||
-        package.contains('packageinstaller') ||
-        package.endsWith('.settings');
-  }
-
-  List<AppUsageSummary> _visibleTodayApps() {
-    return (_usageDashboardState?.appUsageList ?? <AppUsageSummary>[])
-        .where((app) => !_isSystemPackage(app.packageName))
-        .toList();
-  }
+  List<AppUsageSummary> _visibleTodayApps() => visibleUserApps(
+    _usageDashboardState?.appUsageList ?? <AppUsageSummary>[],
+  );
 
   String _appLabel(String packageName, String fallback) {
     return _appLabelCache[packageName] ?? fallback;

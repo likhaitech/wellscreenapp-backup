@@ -78,11 +78,14 @@ class UsageTrackingService {
     return ms < 0 ? 0 : ms;
   }
 
-  Future<int> getTodayMaxAppOpenCount() async {
+  Future<int> getTodayMaxAppOpenCount() async =>
+      countMaxAppOpens(await _queryTodayEvents());
+
+  Future<List<UsageEventRecord>> _queryTodayEvents() async {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
     final events = await UsageStats.queryEvents(startOfDay, now);
-    final rawEvents = <UsageEventRecord>[
+    return <UsageEventRecord>[
       for (final event in events)
         (
           packageName: event.packageName ?? '',
@@ -90,10 +93,15 @@ class UsageTrackingService {
           timestampMs: int.tryParse(event.timeStamp ?? '') ?? 0,
         ),
     ];
-    return countMaxAppOpens(rawEvents);
   }
 
-  int countMaxAppOpens(List<UsageEventRecord> events) {
+  /// How many times each app was opened today (for the guardian's All Apps).
+  Future<Map<String, int>> getTodayOpenCounts() async =>
+      countOpensByPackage(await _queryTodayEvents());
+
+  /// Opens per app: each switch into an app counts once; staying in the
+  /// same app (screen changes inside it) does not.
+  Map<String, int> countOpensByPackage(List<UsageEventRecord> events) {
     final sorted = [...events]
       ..sort((a, b) => a.timestampMs.compareTo(b.timestampMs));
     final opensByPackage = <String, int>{};
@@ -107,6 +115,11 @@ class UsageTrackingService {
       }
       lastResumedPackage = event.packageName;
     }
+    return opensByPackage;
+  }
+
+  int countMaxAppOpens(List<UsageEventRecord> events) {
+    final opensByPackage = countOpensByPackage(events);
     if (opensByPackage.isEmpty) return 0;
     return opensByPackage.values.reduce((a, b) => a > b ? a : b);
   }

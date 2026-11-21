@@ -8,7 +8,7 @@ import android.util.Log
 class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        if (!BootRestore.shouldRestoreReporting(intent.action)) return
 
         Log.i(TAG, "Device boot completed; restoring screen-time reporting job")
 
