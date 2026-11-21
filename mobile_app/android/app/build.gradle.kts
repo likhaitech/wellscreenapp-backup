@@ -101,3 +101,11 @@ dependencies {
     // Required for standard Kotlin/JUnit unit tests.
     testImplementation("junit:junit:4.13.2")
 }
+// Show the Chapter 4 test cases' "Test Case ID ... Outcome: PASSED" lines
+// (println output) when running unit tests from the terminal.
+tasks.withType<Test>().configureEach {
+    testLogging {
+        showStandardStreams = true
+        events("passed", "failed")
+    }
+}

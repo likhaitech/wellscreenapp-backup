@@ -111,6 +111,23 @@ class WebsiteRules {
   };
 
   /// The guardian's own rule for exactly this site (www. ignored), or null.
+  /// The rules after the guardian taps Block or Allow on [domain] (null
+  /// removes the guardian's rule). Throws when a list would pass 200 sites.
+  WebsiteRules withRule(String domain, WebsiteRuleAction? action) {
+    final blocked = blockedDomains.toSet()..remove(domain);
+    final allowed = allowedDomains.toSet()..remove(domain);
+    if (action == WebsiteRuleAction.block) blocked.add(domain);
+    if (action == WebsiteRuleAction.allow) allowed.add(domain);
+    if (blocked.length > maxDomainsPerList ||
+        allowed.length > maxDomainsPerList) {
+      throw const FormatException('Maximum 200 websites per list.');
+    }
+    return WebsiteRules(
+      blockedDomains: blocked.toList()..sort(),
+      allowedDomains: allowed.toList()..sort(),
+    );
+  }
+
   WebsiteRuleAction? ruleFor(String domain) {
     final normalized = normalizeDomain(domain);
     if (normalized == null) return null;
@@ -192,21 +209,7 @@ class SiteCategoryService {
     ) async {
       final snapshot = await transaction.get(ref);
       final previous = WebsiteRules.fromDocument(snapshot.data());
-      final blocked = previous.blockedDomains.toSet()..remove(domain);
-      final allowed = previous.allowedDomains.toSet()..remove(domain);
-
-      if (action == WebsiteRuleAction.block) blocked.add(domain);
-      if (action == WebsiteRuleAction.allow) allowed.add(domain);
-
-      if (blocked.length > WebsiteRules.maxDomainsPerList ||
-          allowed.length > WebsiteRules.maxDomainsPerList) {
-        throw const FormatException('Maximum 200 websites per list.');
-      }
-
-      final next = WebsiteRules(
-        blockedDomains: blocked.toList()..sort(),
-        allowedDomains: allowed.toList()..sort(),
-      );
+      final next = previous.withRule(domain, action);
 
       transaction.set(ref, {
         'parentId': ref.id,
