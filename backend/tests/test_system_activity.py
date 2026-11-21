@@ -129,11 +129,14 @@ def test_overview_route_requires_admin_and_returns_counts():
     app.dependency_overrides[require_admin] = lambda: {"uid": "a", "admin": True}
     try:
         with patch("app.routes.admin_overview.admin_overview",
-                   return_value={"daily": [], "jobs": {}}) as overview:
+                   return_value={"daily": [], "jobs": {}}) as overview, \
+             patch("app.routes.admin_overview.refresh_daily_activity") as refresh:
             r = client.get("/admin/overview/?days=30")
             assert client.get("/admin/overview/?days=31").status_code == 422
     finally:
         app.dependency_overrides.pop(require_admin, None)
     assert r.status_code == 200
     assert overview.call_args.kwargs["days"] == 30
+    # Today is recounted on every request, so the dashboard is current.
+    refresh.assert_called()
     assert set(r.json()) == {"daily", "jobs", "server"}
