@@ -18,6 +18,7 @@ from typing import Any
 
 from google.api_core.exceptions import AlreadyExists, Conflict
 
+from .system_activity_service import log_delivery_problem
 from .firebase_service import get_firestore_client
 from .notification_service import send_alert_notification
 
@@ -141,6 +142,8 @@ def _create_and_dispatch(*, profile_id: str, parent_uid: str, alert_id: str,
     alert_ref.update({"pushStatus": push["status"], "pushMessageId": push.get("messageId", ""),
                       "smsStatus": sms["status"], "smsProviderId": sms.get("providerId", ""),
                       "dispatchedAt": _utcnow()})
+    log_delivery_problem(alert_kind=kind, push_status=push["status"],
+                         sms_status=sms["status"])
     return True
 
 

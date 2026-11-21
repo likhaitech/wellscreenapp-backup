@@ -7,6 +7,7 @@ import os
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from ..services.system_activity_service import record_job
 from ..services.chat_access_service import (
     AppRequestLimitError, ChatAccessError, activate_grant, authenticated_uid,
     dispatch_event, respond_to_request, submit_access_request,
@@ -93,4 +94,17 @@ def sweep(x_chat_cron_secret: str | None = Header(default=None)):
         or not hmac.compare_digest(x_chat_cron_secret, expected)
     ):
         raise HTTPException(status_code=403, detail="Unauthorized")
-    return sweep_chat_notifications()
+    try:
+        result = sweep_chat_notifications()
+    except Exception as exc:
+        record_job("chat_notifications", ok=False, summary={"error": type(exc).__name__},
+                   log_entry=True, message="Chat notification sweep failed")
+        raise
+    claimed = int(result.get("claimed", 0))
+    sent = int(result.get("sent", 0))
+    record_job(
+        "chat_notifications", ok=True, summary=result,
+        log_entry=claimed > 0,
+        message=f"Chat notifications: {sent} of {claimed} sent",
+    )
+    return result

@@ -10,6 +10,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Header, HTTPException, Response
 
 from ..services.data_cleanup_service import cleanup_old_data
+from ..services.system_activity_service import record_job
 
 
 router = APIRouter(prefix="/internal/maintenance", tags=["Internal maintenance"])
@@ -56,9 +57,22 @@ def run_scheduled_cleanup(
     except Exception as exc:
         # Do not expose credentials, database internals, or user history.
         _logger.error("Scheduled cleanup failed: %s", type(exc).__name__)
+        record_job("data_cleanup", ok=False, summary={"error": type(exc).__name__},
+                   log_entry=True, message="Data cleanup failed")
         raise HTTPException(status_code=500, detail="Cleanup failed") from None
     finally:
         _cleanup_lock.release()
+
+    removed = report.get("removed") if isinstance(report, dict) else None
+    total = sum(v for v in (removed or {}).values() if isinstance(v, int))
+    dry_run = apply_setting != "true"
+    record_job(
+        "data_cleanup", ok=True,
+        summary={"dryRun": dry_run, "removed": total},
+        log_entry=True,
+        message=("Data cleanup check (dry run): nothing deleted" if dry_run
+                 else f"Data cleanup removed {total} old record(s)"),
+    )
 
     response.headers["Cache-Control"] = "no-store"
     return report
