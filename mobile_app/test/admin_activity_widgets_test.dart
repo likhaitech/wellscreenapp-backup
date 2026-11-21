@@ -1,4 +1,4 @@
-import 'package:app/services/admin_settings_api_service.dart';
+import 'package:app/services/admin_overview_api_service.dart';
 import 'package:app/widgets/admin_activity_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -137,6 +137,70 @@ void main() {
       expect(find.text('OK'), findsOneWidget);
       expect(find.text('Failed'), findsOneWidget);
       expect(find.text('Not set up'), findsOneWidget);
+    });
+  });
+
+  group('AdminSystemStatusCard', () {
+    final now = DateTime(2026, 11, 21, 10, 0);
+    AdminOverview overview(Map<String, AdminJobStatus?> jobs) => AdminOverview(
+      daily: const [],
+      jobs: jobs,
+      serverVersion: 'abc1234',
+      runningSince: null,
+    );
+    final ok = AdminJobStatus(
+      ok: true,
+      lastRunAt: now.subtract(const Duration(minutes: 2)),
+    );
+
+    test('only failed or late jobs count; not set up is not a problem', () {
+      expect(
+        AdminJobHealthCard.issues({
+          'monitoring': ok,
+          'chat_notifications': ok,
+          'data_cleanup': null,
+        }, now),
+        0,
+      );
+      expect(
+        AdminJobHealthCard.issues({
+          'monitoring': AdminJobStatus(ok: false, lastRunAt: now),
+          'chat_notifications': AdminJobStatus(
+            ok: true,
+            lastRunAt: now.subtract(const Duration(hours: 2)),
+          ),
+        }, now),
+        2,
+      );
+    });
+
+    testWidgets('all running, issues, and an unreachable server',
+        (tester) async {
+      var tapped = 0;
+      Future<void> show(AdminOverview? data, {bool failed = false}) =>
+          tester.pumpWidget(_host(AdminSystemStatusCard(
+            overview: data,
+            loading: false,
+            failed: failed,
+            onTap: () => tapped++,
+            now: now,
+          )));
+
+      await show(overview({'monitoring': ok, 'chat_notifications': ok}));
+      expect(find.text('All systems running'), findsOneWidget);
+      expect(find.textContaining('abc1234'), findsOneWidget);
+
+      await show(overview({
+        'monitoring': AdminJobStatus(ok: false, lastRunAt: now),
+        'chat_notifications': ok,
+      }));
+      expect(find.text('1 background job needs attention'), findsOneWidget);
+
+      await show(null, failed: true);
+      expect(find.text('Server not reachable'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('adminSystemStatusCard')));
+      expect(tapped, 1);
     });
   });
 }

@@ -48,7 +48,7 @@ def notify(
         # is broken", matching AlertNotifyResponse's shape either way.
         result = {"status": "failed", "error": str(exc)}
     except Exception:
-        # FIX: unlike admin_users.py/admin_logs.py/admin_settings.py (all
+        # FIX: unlike admin_users.py/admin_logs.py/admin_overview.py (all
         # gated by require_admin - an already-trusted caller seeing their
         # own action's error text is low-stakes), this route is gated by
         # require_user, so ANY signed-in parent or child hits this path -

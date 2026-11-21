@@ -1,7 +1,0 @@
-{
-  "version": "1.0.4",
-  "description": "Every released app version may run",
-  "settings": {
-    "minimum_app_version": "1.0.0"
-  }
-}

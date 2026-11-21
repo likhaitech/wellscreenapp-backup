@@ -3,14 +3,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../config/app_config.dart';
 
-class AdminSettingsApiService {
+/// The admin dashboard and System health data (GET /admin/overview).
+/// Read only: the admin app cannot change the system.
+class AdminOverviewApiService {
   // Both params are injectable so tests can supply a Dio wired to a fake
   // interceptor (no real network call) and a canned token function
   // (no real Firebase Auth / platform channels), without changing
   // behavior for the app's real callers, who get exactly the same Dio
   // config and the same real-FirebaseAuth token flow as before - both
   // params are optional and default to that real behavior.
-  AdminSettingsApiService({Dio? dio, Future<String> Function()? getAdminToken})
+  AdminOverviewApiService({Dio? dio, Future<String> Function()? getAdminToken})
     : _dio =
           dio ??
           Dio(
@@ -49,17 +51,6 @@ class AdminSettingsApiService {
     }
 
     return token;
-  }
-
-  Future<Map<String, dynamic>> getSettings() async {
-    final token = await _getAdminToken();
-
-    final response = await _dio.get(
-      '/admin/settings/',
-      options: Options(headers: {'Authorization': 'Bearer $token'}),
-    );
-
-    return Map<String, dynamic>.from(response.data);
   }
 
   /// Dashboard data: daily active totals for the last [days] days (7 or

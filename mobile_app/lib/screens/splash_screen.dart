@@ -4,7 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import 'admin_settings_screen.dart';
+import 'admin_home_screen.dart';
 import 'child_home_screen.dart';
 import 'login_screen.dart';
 import 'parent_dashboard_screen.dart';
@@ -56,7 +56,7 @@ class _SplashScreenState extends State<SplashScreen> {
       if (isAdmin) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const AdminSettingsScreen()),
+          MaterialPageRoute(builder: (_) => const AdminHomeScreen()),
         );
         return;
       }

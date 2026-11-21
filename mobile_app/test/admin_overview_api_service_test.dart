@@ -1,13 +1,13 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:app/services/admin_settings_api_service.dart';
+import 'package:app/services/admin_overview_api_service.dart';
 
-/// Covers AdminSettingsApiService - previously untestable because it
+/// Covers AdminOverviewApiService - previously untestable because it
 /// constructed a real Dio() and called the real FirebaseAuth.instance
 /// directly, with no injection seam at all. Fixed by making both
 /// injectable (optional constructor params defaulting to the real
-/// behavior, so the app's one real call site in admin_settings_screen.dart
+/// behavior, so the app's real call sites
 /// needed no change).
 ///
 /// No real network call is made here: each test wires the injected Dio
@@ -31,10 +31,10 @@ void main() {
     return dio;
   }
 
-  group('AdminSettingsApiService token handling', () {
+  group('AdminOverviewApiService token handling', () {
     test(
-      'getSettings propagates an error from the token provider without '
-      'ever making a request',
+      'propagates an error from the token provider without ever making a '
+      'request',
       () async {
         var requestWasMade = false;
         final dio = dioWithInterceptor((options, handler) {
@@ -42,13 +42,13 @@ void main() {
           handler.next(options);
         });
 
-        final service = AdminSettingsApiService(
+        final service = AdminOverviewApiService(
           dio: dio,
           getAdminToken: () async => throw Exception('No authenticated user.'),
         );
 
         await expectLater(
-          service.getSettings(),
+          service.getOverview(),
           throwsA(
             isA<Exception>().having(
               (e) => e.toString(),
@@ -61,59 +61,31 @@ void main() {
       },
     );
 
-    test(
-      'getSettings sends the token from the provider as a Bearer header',
-      () async {
-        String? capturedAuthHeader;
-
-        final dio = dioWithInterceptor((options, handler) {
-          capturedAuthHeader = options.headers['Authorization'] as String?;
-          handler.resolve(
-            Response(
-              requestOptions: options,
-              statusCode: 200,
-              data: {'default_daily_limit_minutes': 120},
-            ),
-          );
-        });
-
-        final service = AdminSettingsApiService(
-          dio: dio,
-          getAdminToken: () async => 'test-token-123',
-        );
-
-        final result = await service.getSettings();
-
-        expect(capturedAuthHeader, 'Bearer test-token-123');
-        expect(result['default_daily_limit_minutes'], 120);
-      },
-    );
-
-    test('getSettings requests GET /admin/settings/', () async {
-      String? capturedPath;
+    test('sends the token as a Bearer header on a GET', () async {
+      String? capturedAuthHeader;
       String? capturedMethod;
 
       final dio = dioWithInterceptor((options, handler) {
-        capturedPath = options.path;
+        capturedAuthHeader = options.headers['Authorization'] as String?;
         capturedMethod = options.method;
         handler.resolve(
           Response(requestOptions: options, statusCode: 200, data: {}),
         );
       });
 
-      final service = AdminSettingsApiService(
+      final service = AdminOverviewApiService(
         dio: dio,
-        getAdminToken: () async => 'tok',
+        getAdminToken: () async => 'test-token-123',
       );
 
-      await service.getSettings();
+      await service.getOverview();
 
-      expect(capturedPath, '/admin/settings/');
+      expect(capturedAuthHeader, 'Bearer test-token-123');
       expect(capturedMethod, 'GET');
     });
   });
 
-  group('AdminSettingsApiService.getOverview', () {
+  group('AdminOverviewApiService.getOverview', () {
     test('GETs /admin/overview/ with the day range and parses the counts',
         () async {
       String? capturedPath;
@@ -158,7 +130,7 @@ void main() {
         );
       });
 
-      final service = AdminSettingsApiService(
+      final service = AdminOverviewApiService(
         dio: dio,
         getAdminToken: () async => 'tok',
       );

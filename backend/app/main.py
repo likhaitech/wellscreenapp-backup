@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse, Response
 
 from .routes.admin_users import router as admin_users_router
 from .services.server_info import record_deploy_safely
-from .routes.admin_settings import router as admin_settings_router
 from .routes.admin_logs import router as admin_logs_router
 from .routes.admin_overview import router as admin_overview_router
 from .routes.alerts import router as alerts_router
@@ -154,7 +153,6 @@ def health() -> dict[str, str]:
 
 # Register API routers
 app.include_router(admin_users_router)
-app.include_router(admin_settings_router)
 app.include_router(admin_logs_router)
 app.include_router(admin_overview_router)
 app.include_router(alerts_router)

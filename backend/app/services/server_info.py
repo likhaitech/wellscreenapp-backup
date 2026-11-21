@@ -1,11 +1,11 @@
-"""Which server version (patch) is running, and a record of each new one.
+"""Which server version is running, and a record of each new one.
 
-A WellScreen system patch is a code change: it is pushed to GitHub and
-Render redeploys the backend. Render sets RENDER_GIT_COMMIT for the running
-build; when a build that hasn't been seen before starts, it is recorded as
-"server_patch_deployed" in System logs so the admin can see the patch
-landed (Render's free tier restarts the same build often - those are not
-recorded again).
+Updates and bug fixes are made by the developers: the code is pushed to
+GitHub and Render redeploys the backend. Render sets RENDER_GIT_COMMIT for
+the running build; when a build that hasn't been seen before starts, it is
+recorded as "server_updated" in System logs and shown on the admin's
+System health page (Render's free tier restarts the same build often -
+those are not recorded again). The admin can see updates, not make them.
 """
 from __future__ import annotations
 
@@ -41,22 +41,22 @@ def record_deploy(
     """Logs this server version once. True when it was new."""
     if version == "local":
         return False
-    ref = get_db().collection("system_settings").document("global")
+    ref = get_db().collection("system_status").document("server")
     snapshot = ref.get()
-    previous = (snapshot.to_dict() or {}).get("server_version") if snapshot.exists else None
+    previous = (snapshot.to_dict() or {}).get("version") if snapshot.exists else None
     if previous == version:
         return False
     ref.set(
         {
-            "server_version": version,
-            "server_deployed_at": firestore.SERVER_TIMESTAMP,
+            "version": version,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
         },
         merge=True,
     )
     log(
         level="info",
-        action="server_patch_deployed",
-        message=f"Server patch {version} deployed",
+        action="server_updated",
+        message=f"Server updated to version {version}",
         details={"version": version, "previous": previous},
     )
     return True
