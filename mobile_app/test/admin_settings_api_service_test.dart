@@ -113,19 +113,47 @@ void main() {
     });
   });
 
-  group('AdminSettingsApiService.applyPatch', () {
-    test('POSTs the patch to /admin/settings/patch with validate_only', () async {
-      Map<String, dynamic>? capturedBody;
+  group('AdminSettingsApiService.getOverview', () {
+    test('GETs /admin/overview/ with the day range and parses the counts',
+        () async {
       String? capturedPath;
+      Map<String, dynamic>? capturedQuery;
 
       final dio = dioWithInterceptor((options, handler) {
         capturedPath = options.path;
-        capturedBody = Map<String, dynamic>.from(options.data as Map);
+        capturedQuery = options.queryParameters;
         handler.resolve(
           Response(
             requestOptions: options,
             statusCode: 200,
-            data: {'valid': true, 'applied': false, 'changes': {'minimum_app_version': '1.4.0'}},
+            data: {
+              'daily': [
+                {
+                  'date': '2026-11-20',
+                  'activeGuardians': 0,
+                  'activeChildren': 0,
+                  'recorded': false,
+                },
+                {
+                  'date': '2026-11-21',
+                  'activeGuardians': 2,
+                  'activeChildren': 3,
+                  'recorded': true,
+                },
+              ],
+              'jobs': {
+                'monitoring': {
+                  'ok': true,
+                  'lastRunAt': '2026-11-21T02:00:00+00:00',
+                  'summary': {'scanned': 4},
+                },
+                'data_cleanup': null,
+              },
+              'server': {
+                'version': 'abc1234',
+                'running_since': '2026-11-21T01:00:00+00:00',
+              },
+            },
           ),
         );
       });
@@ -135,51 +163,33 @@ void main() {
         getAdminToken: () async => 'tok',
       );
 
-      final result = await service.applyPatch(
-        {'settings': {'minimum_app_version': '1.4.0'}},
-        validateOnly: true,
-      );
+      final overview = await service.getOverview(days: 30);
 
-      expect(capturedPath, '/admin/settings/patch');
-      expect(capturedBody, {
-        'settings': {'minimum_app_version': '1.4.0'},
-        'validate_only': true,
-      });
-      expect(result['applied'], false);
+      expect(capturedPath, '/admin/overview/');
+      expect(capturedQuery, {'days': 30});
+      expect(overview.daily, hasLength(2));
+      expect(overview.daily.first.recorded, isFalse);
+      expect(overview.daily.last.total, 5);
+      expect(overview.daily.last.activeGuardians, 2);
+      expect(overview.jobs['monitoring']!.ok, isTrue);
+      expect(overview.jobs['monitoring']!.lastRunAt, isNotNull);
+      expect(overview.jobs.containsKey('data_cleanup'), isTrue);
+      expect(overview.jobs['data_cleanup'], isNull);
+      expect(overview.serverVersion, 'abc1234');
     });
 
-    test('a 422 from the server becomes SystemPatchRejected', () async {
-      final dio = dioWithInterceptor((options, handler) {
-        handler.reject(
-          DioException(
-            requestOptions: options,
-            response: Response(
-              requestOptions: options,
-              statusCode: 422,
-              data: {
-                'detail': {
-                  'message': 'Patch rejected',
-                  'errors': ['settings.minimum_app_version: String should match pattern'],
-                },
-              },
-            ),
-            type: DioExceptionType.badResponse,
-          ),
-        );
+    test('tolerates missing or malformed fields', () {
+      final overview = AdminOverview.fromJson({
+        'daily': [
+          {'date': 'not a date'},
+          'junk',
+        ],
+        'jobs': 'junk',
       });
-
-      final service = AdminSettingsApiService(
-        dio: dio,
-        getAdminToken: () async => 'tok',
-      );
-
-      await expectLater(
-        service.applyPatch(
-          {'settings': {'minimum_app_version': '1.4'}},
-          validateOnly: false,
-        ),
-        throwsA(isA<SystemPatchRejected>()),
-      );
+      expect(overview.daily, isEmpty);
+      expect(overview.jobs, isEmpty);
+      expect(overview.serverVersion, '-');
+      expect(overview.runningSince, isNull);
     });
   });
 }

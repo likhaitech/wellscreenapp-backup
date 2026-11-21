@@ -22,5 +22,8 @@ void main() {
     expect(adminLogKind({'level': 'warning'}).$1, 'Warning');
     expect(adminLogKind({'level': 'info', 'action': 'usage_sync'}).$1, 'Sync');
     expect(adminLogKind({'level': 'info', 'action': 'user_updated'}).$1, 'Activity');
+    expect(adminLogKind({'level': 'info', 'action': 'data_cleanup_completed'}).$1, 'Sync');
+    expect(adminLogKind({'level': 'info', 'action': 'monitoring_completed'}).$1, 'Sync');
+    expect(adminLogKind({'level': 'info', 'action': 'chat_notifications_completed'}).$1, 'Sync');
   });
 }

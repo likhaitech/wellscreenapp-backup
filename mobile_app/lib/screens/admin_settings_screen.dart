@@ -2,8 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/admin_settings_api_service.dart';
 import '../services/admin_users_api_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_activity_widgets.dart';
 import '../widgets/admin_ui.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'admin_logs_screen.dart';
@@ -12,10 +14,11 @@ import 'admin_users_screen.dart';
 import 'login_screen.dart';
 
 /// Admin app (design: "WellScreen Admin UI"). Same shell as the guardian
-/// and child apps - logo app bar and floating pill dock - with four tabs:
-/// Home, Users, Logs and Settings. Matches the manuscript's admin module:
-/// Manage Users, Manage System Settings (system patch) and Monitor System
-/// Logs. The class name is kept because login/splash route admins here.
+/// and child apps - logo app bar and floating pill dock - with four tabs
+/// matching the admin modules: Home (View Admin Dashboard), Users (Manage
+/// Users), Patch (Monitor System Patches, view only) and Logs (Monitor
+/// System Logs). Sign out is under the avatar. The class name is kept
+/// because login/splash route admins here.
 class AdminSettingsScreen extends StatefulWidget {
   const AdminSettingsScreen({super.key});
 
@@ -34,6 +37,12 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   List<AdminManagedUser>? _users;
   String? _usersError;
   bool _usersLoading = false;
+
+  final AdminSettingsApiService _overviewApi = AdminSettingsApiService();
+  AdminOverview? _overview;
+  String? _overviewError;
+  bool _overviewLoading = false;
+  int _range = 7;
 
   @override
   void initState() {
@@ -62,6 +71,36 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   }
 
   Future<void> loadStats() async {
+    await Future.wait([_loadUsers(), _loadOverview()]);
+  }
+
+  Future<void> _loadOverview() async {
+    setState(() {
+      _overviewLoading = true;
+      _overviewError = null;
+    });
+    final range = _range;
+    try {
+      final overview = await _overviewApi.getOverview(days: range);
+      if (!mounted || range != _range) return;
+      setState(() => _overview = overview);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _overviewError = 'Could not load activity.');
+    } finally {
+      if (mounted) setState(() => _overviewLoading = false);
+    }
+  }
+
+  void _setRange(int days) {
+    setState(() {
+      _range = days;
+      _overview = null;
+    });
+    _loadOverview();
+  }
+
+  Future<void> _loadUsers() async {
     setState(() {
       _usersLoading = true;
       _usersError = null;
@@ -91,6 +130,41 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
     );
   }
 
+  void _accountSheet() {
+    final email = FirebaseAuth.instance.currentUser?.email ?? 'admin';
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.verified_user_outlined),
+              title: const Text('Administrator'),
+              subtitle: Text(email),
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.logout_rounded,
+                color: AppColors.danger,
+              ),
+              title: const Text(
+                'Sign out',
+                style: TextStyle(color: AppColors.danger),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmLogout();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmLogout() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -109,15 +183,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       ),
     );
     if (ok == true) await logout();
-  }
-
-  void open(Widget screen) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => screen),
-    ).then((_) {
-      if (mounted) loadStats();
-    });
   }
 
   void showMessage(String message) {
@@ -147,15 +212,22 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       backgroundColor: AppColors.background,
       appBar: WellScreenAppBar.primary(
         title: 'WellScreen Admin',
-        onAvatar: () => _goTo(3),
+        onAvatar: _accountSheet,
+        actions: [
+          IconButton(
+            tooltip: 'Sign out',
+            onPressed: _confirmLogout,
+            icon: const Icon(Icons.logout_rounded),
+          ),
+        ],
       ),
       body: IndexedStack(
         index: _tab,
         children: [
           _homeTab(),
           const AdminUsersScreen(embedded: true),
+          const AdminPatchScreen(embedded: true),
           const AdminLogsScreen(embedded: true),
-          _settingsTab(),
         ],
       ),
       bottomNavigationBar: FloatingPillDock(
@@ -163,8 +235,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         items: const [
           DockItem(icon: Icons.home_outlined, label: 'Home'),
           DockItem(icon: Icons.group_outlined, label: 'Users'),
+          DockItem(icon: Icons.system_update_alt_rounded, label: 'Patch'),
           DockItem(icon: Icons.receipt_long_outlined, label: 'Logs'),
-          DockItem(icon: Icons.settings_outlined, label: 'Settings'),
         ],
         onTap: _goTo,
       ),
@@ -186,7 +258,17 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           const SizedBox(height: 12),
           _statTiles(),
           const SizedBox(height: 12),
+          AdminActiveUsersChart(
+            days: _overview?.daily ?? const [],
+            range: _range,
+            onRangeChanged: _setRange,
+            loading: _overviewLoading,
+            error: _overviewError,
+            onRetry: _loadOverview,
+          ),
+          const SizedBox(height: 12),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _quickLink(
@@ -194,22 +276,38 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   tint: AppColors.primaryLight,
                   color: AppColors.primary,
                   title: 'Manage users',
-                  subtitle: 'Edit, reset password, deactivate',
+                  subtitle: 'Edit, reset, deactivate',
                   onTap: () => _goTo(1),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _quickLink(
+                  icon: Icons.system_update_alt_rounded,
+                  tint: AppColors.violetBg,
+                  color: AppColors.violet,
+                  title: 'System patch',
+                  subtitle: 'Version and history',
+                  onTap: () => _goTo(2),
+                ),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: _quickLink(
                   icon: Icons.receipt_long_outlined,
                   tint: AppColors.warningBg,
                   color: AppColors.warning,
                   title: 'System logs',
-                  subtitle: 'Activity, errors and sync',
-                  onTap: () => _goTo(2),
+                  subtitle: 'Errors and sync',
+                  onTap: () => _goTo(3),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          AdminJobHealthCard(
+            jobs: _overview?.jobs ?? const {},
+            loaded: _overview != null,
           ),
           const SizedBox(height: 12),
           _recentActivity(),
@@ -265,7 +363,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             u.lastSignInAt != null &&
             !u.lastSignInAt!.toLocal().isBefore(startOfDay))
         .length;
-    final online = _usersError == null;
+    final online = _usersError == null || _overview != null;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -310,7 +408,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      _usersLoading && users == null
+                      _usersLoading && users == null && _overview == null
                           ? 'Checking server'
                           : (online ? 'Server online' : 'Server waking up'),
                       style: const TextStyle(
@@ -538,7 +636,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => _goTo(2),
+                    onPressed: () => _goTo(3),
                     child: const Text('View all'),
                   ),
                 ],
@@ -610,127 +708,6 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  // -------------------------------------------------------------- settings
-
-  Widget _settingsTab() {
-    final email = FirebaseAuth.instance.currentUser?.email ?? 'admin';
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, kAdminDockClearance),
-      children: [
-        const AdminPageTitle('Settings'),
-        const SizedBox(height: 14),
-        BentoCard(
-          padding: EdgeInsets.zero,
-          child: Column(
-            children: [
-              _settingsRow(
-                icon: Icons.tune_rounded,
-                tint: AppColors.violetBg,
-                color: AppColors.violet,
-                title: 'System patch',
-                subtitle: 'App version, maintenance notice and patch history',
-                onTap: () => open(const AdminPatchScreen()),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        BentoCard(
-          padding: EdgeInsets.zero,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                child: Row(
-                  children: [
-                    const Icon(Icons.verified_user_outlined, color: grayText),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Signed in as $email',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: darkText, fontSize: 14),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: AppColors.surfaceMuted),
-              _settingsRow(
-                icon: Icons.logout_rounded,
-                tint: AppColors.dangerBg,
-                color: AppColors.danger,
-                title: 'Sign out',
-                onTap: _confirmLogout,
-                danger: true,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _settingsRow({
-    required IconData icon,
-    required Color tint,
-    required Color color,
-    required String title,
-    String? subtitle,
-    required VoidCallback onTap,
-    bool danger = false,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: tint,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 22),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: danger ? AppColors.danger : darkText,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(color: grayText, fontSize: 12),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (!danger)
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: grayText,
-                size: 20,
-              ),
-          ],
-        ),
       ),
     );
   }

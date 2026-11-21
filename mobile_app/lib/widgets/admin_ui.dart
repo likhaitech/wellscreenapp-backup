@@ -180,7 +180,8 @@ bool adminLogIsSync(Map<String, dynamic> data) {
       action.contains('sweep') ||
       action.contains('dispatch') ||
       action.contains('notification') ||
-      action.contains('monitoring');
+      action.contains('monitoring') ||
+      action.contains('cleanup');
 }
 
 /// "05:12" for today and yesterday, "21 Nov 05:12" otherwise.

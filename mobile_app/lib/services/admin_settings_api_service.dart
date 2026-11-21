@@ -62,48 +62,110 @@ class AdminSettingsApiService {
     return Map<String, dynamic>.from(response.data);
   }
 
-  /// Validates (and optionally applies) a system patch. Throws
-  /// [SystemPatchRejected] with the server's error list when invalid.
-  Future<Map<String, dynamic>> applyPatch(
-    Map<String, dynamic> patch, {
-    required bool validateOnly,
-  }) async {
+  /// Dashboard data: daily active totals for the last [days] days (7 or
+  /// 30) and the last run of each background job. Counts only.
+  Future<AdminOverview> getOverview({int days = 7}) async {
     final token = await _getAdminToken();
 
-    try {
-      final response = await _dio.post(
-        '/admin/settings/patch',
-        data: {...patch, 'validate_only': validateOnly},
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
-      );
+    final response = await _dio.get(
+      '/admin/overview/',
+      queryParameters: {'days': days},
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
 
-      return Map<String, dynamic>.from(response.data);
-    } on DioException catch (e) {
-      final data = e.response?.data;
-
-      if (e.response?.statusCode == 422 && data is Map) {
-        final detail = data['detail'];
-
-        if (detail is Map && detail['errors'] is List) {
-          throw SystemPatchRejected(
-            (detail['errors'] as List).map((x) => x.toString()).toList(),
-          );
-        }
-
-        if (detail is List) {
-          throw SystemPatchRejected(
-            detail.map((x) => (x is Map ? x['msg'] : x).toString()).toList(),
-          );
-        }
-      }
-
-      rethrow;
-    }
+    return AdminOverview.fromJson(Map<String, dynamic>.from(response.data));
   }
 }
 
-class SystemPatchRejected implements Exception {
-  SystemPatchRejected(this.errors);
+/// One day of the active-users graph. [recorded] is false when the
+/// monitoring check did not run that day (shown as "no record", not 0).
+class AdminDailyActive {
+  const AdminDailyActive({
+    required this.date,
+    required this.activeGuardians,
+    required this.activeChildren,
+    required this.recorded,
+  });
 
-  final List<String> errors;
+  final DateTime date;
+  final int activeGuardians;
+  final int activeChildren;
+  final bool recorded;
+
+  int get total => activeGuardians + activeChildren;
+}
+
+/// Last run of a background job (monitoring check, chat notifications,
+/// data cleanup).
+class AdminJobStatus {
+  const AdminJobStatus({required this.ok, required this.lastRunAt});
+
+  final bool ok;
+  final DateTime? lastRunAt;
+}
+
+class AdminOverview {
+  const AdminOverview({
+    required this.daily,
+    required this.jobs,
+    required this.serverVersion,
+    required this.runningSince,
+  });
+
+  /// Oldest day first.
+  final List<AdminDailyActive> daily;
+
+  /// Job name -> status, or null when the job has never run (not set up).
+  final Map<String, AdminJobStatus?> jobs;
+  final String serverVersion;
+  final DateTime? runningSince;
+
+  static int _int(Object? v) => v is num ? v.toInt() : 0;
+
+  factory AdminOverview.fromJson(Map<String, dynamic> json) {
+    final daily = <AdminDailyActive>[];
+    final rawDaily = json['daily'];
+    if (rawDaily is List) {
+      for (final item in rawDaily) {
+        if (item is! Map) continue;
+        final date = DateTime.tryParse((item['date'] ?? '').toString());
+        if (date == null) continue;
+        daily.add(
+          AdminDailyActive(
+            date: date,
+            activeGuardians: _int(item['activeGuardians']),
+            activeChildren: _int(item['activeChildren']),
+            recorded: item['recorded'] == true,
+          ),
+        );
+      }
+    }
+
+    final jobs = <String, AdminJobStatus?>{};
+    final rawJobs = json['jobs'];
+    if (rawJobs is Map) {
+      rawJobs.forEach((name, value) {
+        jobs[name.toString()] = value is Map
+            ? AdminJobStatus(
+                ok: value['ok'] == true,
+                lastRunAt: DateTime.tryParse(
+                  (value['lastRunAt'] ?? '').toString(),
+                )?.toLocal(),
+              )
+            : null;
+      });
+    }
+
+    final server = json['server'];
+    return AdminOverview(
+      daily: daily,
+      jobs: jobs,
+      serverVersion:
+          server is Map ? (server['version'] ?? '-').toString() : '-',
+      runningSince: server is Map
+          ? DateTime.tryParse((server['running_since'] ?? '').toString())
+                ?.toLocal()
+          : null,
+    );
+  }
 }
