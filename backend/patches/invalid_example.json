@@ -1,0 +1,8 @@
+{
+  "version": "bad-1",
+  "description": "Invalid on purpose: wrong version format and an unknown setting",
+  "settings": {
+    "minimum_app_version": "1.4",
+    "focus_mode_enabled": false
+  }
+}
