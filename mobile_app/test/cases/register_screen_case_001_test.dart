@@ -2,7 +2,7 @@
 // User leaves the full name, email, or password field empty.
 // Code being tested: lib/screens/register_screen.dart (registerUser)
 //
-// Run: flutter test test/cases/case_001_test.dart
+// Run: flutter test test/cases/register_screen_case_001_test.dart
 
 import 'package:app/screens/register_screen.dart';
 import 'package:app/theme/app_theme.dart';
@@ -55,6 +55,8 @@ Future<String> _submit(
 void main() {
   testCase(
     'CASE-001',
+    file: 'test/cases/register_screen_case_001_test.dart',
+    codeTested: 'lib/screens/register_screen.dart',
     description: 'User leaves the full name, email, or password field empty.',
     expected:
         'Registration is blocked and "Please complete all required fields." '
