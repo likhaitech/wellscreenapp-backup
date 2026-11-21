@@ -9,6 +9,7 @@ import '../services/privacy_text.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/app_rules_service.dart';
 import '../services/password_policy.dart';
+import '../services/profile_validation.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
 import 'login_screen.dart';
@@ -67,8 +68,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final photoUrl = profilePhotoUrlController.text.trim();
     final extraDetail = extraDetailController.text.trim();
 
-    if (fullName.isEmpty) {
-      showMessage('Full name is required.');
+    final nameError = ProfileValidation.nameError(fullName);
+    if (nameError != null) {
+      showMessage(nameError);
       return;
     }
 
@@ -135,7 +137,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       showMessage(
         identitySyncFailed
             ? 'Profile saved. Open Devices and tap Sync Parent Details.'
-            : 'Profile details updated successfully.',
+            : ProfileValidation.profileSaved,
       );
     } catch (e) {
       showMessage('Failed to update profile: $e');
@@ -167,23 +169,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final newPassword = newPasswordController.text;
     final confirmPassword = confirmPasswordController.text;
 
-    if (currentPassword.isEmpty) {
-      showMessage('Enter your current password.');
-      return;
-    }
-
-    if (!PasswordPolicy.isStrong(newPassword)) {
+    final problem = ProfileValidation.passwordChangeError(
+      current: currentPassword,
+      newPassword: newPassword,
+      confirm: confirmPassword,
+    );
+    if (problem == ProfileValidation.weakPassword) {
       await showPasswordRequirementsDialog(context, newPassword);
       return;
     }
-
-    if (newPassword != confirmPassword) {
-      showMessage('New password and confirmation do not match.');
-      return;
-    }
-
-    if (newPassword == currentPassword) {
-      showMessage('New password must be different from the current one.');
+    if (problem != null) {
+      showMessage(problem);
       return;
     }
 
@@ -205,17 +201,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       if (!mounted) return;
 
       Navigator.pop(context);
-      showMessage('Password changed successfully.');
+      showMessage(ProfileValidation.passwordChanged);
     } on FirebaseAuthException catch (e) {
-      final message = switch (e.code) {
-        'wrong-password' ||
-        'invalid-credential' => 'Current password is incorrect.',
-        'weak-password' => 'New password is too weak.',
-        'requires-recent-login' =>
-          'Please log out and log back in, then try again.',
-        'too-many-requests' => 'Too many attempts. Please try again later.',
-        _ => 'Failed to change password: ${e.message ?? e.code}',
-      };
+      final message =
+          ProfileValidation.passwordChangeFailure(e.code, e.message);
       showMessage(message);
     } catch (e) {
       showMessage('Failed to change password: $e');

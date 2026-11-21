@@ -1,10 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
+import '../services/phone_auth_error.dart';
 
 /// Verifies a mobile number and links it to the CURRENT Firebase Auth user.
 ///
@@ -346,41 +346,8 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
     debugPrint('PhoneOTP $stage: code=${error.code}; message=${error.message}');
   }
 
-  String _friendlyAuthError(FirebaseAuthException error) {
-    switch (error.code) {
-      case 'invalid-phone-number':
-        return 'Firebase rejected the mobile number. Check the +63 format.';
-      case 'invalid-verification-code':
-        return 'The SMS verification code is incorrect. Please try again.';
-      case 'session-expired':
-      case 'invalid-verification-id':
-        return 'This verification code has expired. Request a new code.';
-      case 'credential-already-in-use':
-      case 'account-exists-with-different-credential':
-        return 'This phone is linked to another Firebase account. Use a different number.';
-      case 'requires-recent-login':
-        return 'For security, sign out and sign back in with your password, then retry.';
-      case 'too-many-requests':
-      case 'quota-exceeded':
-        return 'Firebase temporarily limited SMS requests. Please try again later.';
-      case 'operation-not-allowed':
-        return 'Phone Authentication is not enabled for this Firebase project.';
-      case 'app-not-authorized':
-      case 'invalid-app-credential':
-      case 'captcha-check-failed':
-        return 'Android app verification failed. Check Firebase SHA fingerprints and Play services.';
-      case 'network-request-failed':
-        return 'Network unavailable. SMS verification requires internet access.';
-      default:
-        final details = error.message?.trim() ?? '';
-        // While running a debug APK, show the underlying Firebase message so
-        // "unknown" can be diagnosed without modifying unrelated features.
-        if (kDebugMode && details.isNotEmpty) {
-          return 'Phone verification failed (${error.code}): $details';
-        }
-        return 'Phone verification failed (${error.code}). Check debug logs.';
-    }
-  }
+  String _friendlyAuthError(FirebaseAuthException error) =>
+      phoneAuthErrorMessage(error.code, error.message);
 
   /// Six rounded digit boxes drawn over one hidden text field, so the
   /// existing single [_codeController] (and SMS autofill) keeps working.
