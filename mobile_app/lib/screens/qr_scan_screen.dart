@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../services/setup_checklist_text.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../theme/app_theme.dart';
@@ -37,15 +39,8 @@ class _QrScanScreenState extends State<QrScanScreen> {
     if (_handled) return;
 
     for (final barcode in capture.barcodes) {
-      final raw = barcode.rawValue;
-      if (raw == null) continue;
-
-      // The parent side encodes the plain 6-digit code (see
-      // device_pairing_screen.dart's _generatedCodeCard), so this just
-      // strips anything that isn't a digit rather than assuming the QR
-      // payload arrives pre-cleaned.
-      final digits = raw.replaceAll(RegExp(r'\D'), '');
-      if (digits.length != 6) continue;
+      final digits = pairingCodeFromQr(barcode.rawValue);
+      if (digits == null) continue;
 
       _handled = true;
       Navigator.of(context).pop(digits);

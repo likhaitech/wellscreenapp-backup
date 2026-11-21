@@ -21,6 +21,7 @@ import '../models/daily_goal.dart';
 import '../models/usage_report.dart';
 import '../services/alert_notification_client.dart';
 import '../services/privacy_text.dart';
+import '../services/setup_checklist_text.dart';
 import '../services/android_app_service.dart';
 import '../services/monitoring_usage_alert_service.dart';
 import '../services/installed_app_metadata_service.dart';
@@ -5367,9 +5368,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           _checklistRow(
             icon: Icons.bar_chart_rounded,
             title: 'Usage access',
-            subtitle: usageGranted == true
-                ? 'Allowed. Screen time is read from this phone.'
-                : 'Needed to show real screen time and app usage.',
+            subtitle: SetupChecklistText.usageAccess(usageGranted),
             done: usageGranted,
             actionLabel: usageGranted == false ? 'Allow' : null,
             onAction: usageGranted == false
@@ -5379,10 +5378,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           _checklistRow(
             icon: Icons.accessibility_new_rounded,
             title: 'Accessibility',
-            subtitle: _accessibilityEnabled == true
-                ? 'On. Restricted apps and websites are blocked.'
-                : 'Needed to block restricted apps. Switch WellScreen on in '
-                      'Android Accessibility settings.',
+            subtitle: SetupChecklistText.accessibility(_accessibilityEnabled),
             done: _accessibilityEnabled,
             actionLabel: _accessibilityEnabled == true ? null : 'Open',
             onAction: _openAccessibilitySettings,
@@ -5390,10 +5386,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           _checklistRow(
             icon: Icons.battery_charging_full_rounded,
             title: 'Run in background',
-            subtitle: _batteryUnrestricted == true
-                ? 'Allowed. Battery saver will not stop WellScreen.'
-                : 'Set WellScreen to "Not optimized" / "Unrestricted" so '
-                      'battery saver does not stop protection.',
+            subtitle: SetupChecklistText.battery(_batteryUnrestricted),
             done: _batteryUnrestricted,
             actionLabel: _batteryUnrestricted == false ? 'Open' : null,
             onAction: _batteryUnrestricted == false
@@ -5403,11 +5396,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           _checklistRow(
             icon: Icons.shield_outlined,
             title: 'Uninstall protection',
-            subtitle: _deviceAdminActive == true
-                ? 'On. WellScreen cannot be uninstalled without turning '
-                      'this off, and your guardian is told.'
-                : 'Optional. Stops WellScreen from being uninstalled '
-                      'without your guardian knowing.',
+            subtitle: SetupChecklistText.uninstallProtection(_deviceAdminActive),
             done: _deviceAdminActive,
             actionLabel: _deviceAdminActive == false ? 'Turn on' : null,
             onAction: _deviceAdminActive == false
@@ -5589,7 +5578,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                         const SizedBox(height: 3),
                         Text(
                           connected
-                              ? 'Paired with your parent'
+                              ? SetupChecklistText.pairedWithParent
                               : (email.isEmpty ? 'Not paired yet' : email),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
