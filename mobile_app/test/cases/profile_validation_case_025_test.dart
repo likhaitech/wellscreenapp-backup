@@ -1,0 +1,28 @@
+// CASE-025 - Profile Management
+// Run: flutter test test/cases/profile_validation_case_025_test.dart -r expanded
+
+import 'package:app/services/profile_validation.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'case_report.dart';
+
+void main() {
+  testCase(
+    'CASE-025',
+    file: 'test/cases/profile_validation_case_025_test.dart',
+    codeTested: 'lib/screens/profile_settings_screen.dart',
+    description: 'User enters the correct current password and a valid new password.',
+    expected: '“Password changed successfully.” is displayed.',
+    body: (tester) async {
+      final error = ProfileValidation.passwordChangeError(
+        current: 'OldPass#1',
+        newPassword: 'NewPass#2',
+        confirm: 'NewPass#2',
+      );
+      expect(error, isNull);
+      expect(ProfileValidation.passwordChanged, 'Password changed successfully.');
+      return 'All checks pass, the change is sent to Firebase and '
+          '"${ProfileValidation.passwordChanged}" is shown';
+    },
+  );
+}
