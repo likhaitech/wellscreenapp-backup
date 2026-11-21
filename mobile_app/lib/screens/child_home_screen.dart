@@ -565,19 +565,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   Future<void> _publishProtectionStatus(String profileId) async {
     final usageEnabled = _usageAccessEnabled;
 
-    // Location: phone GPS switched on AND WellScreen allowed to use it.
-    bool? locationEnabled;
-    try {
-      final serviceOn = await Geolocator.isLocationServiceEnabled();
-      final permission = await Geolocator.checkPermission();
-      locationEnabled =
-          serviceOn &&
-          (permission == LocationPermission.always ||
-              permission == LocationPermission.whileInUse);
-    } catch (_) {
-      locationEnabled = null;
-    }
-
     // SMS backup alerts need the SMS permission on this phone.
     bool? smsGranted;
     try {
@@ -588,7 +575,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
     final update = <String, dynamic>{
       'usageAccessEnabled': ?usageEnabled,
-      'locationEnabled': ?locationEnabled,
       'smsPermissionGranted': ?smsGranted,
     };
     if (update.isEmpty) return;
@@ -1027,8 +1013,6 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       'longitude': position.longitude,
       'accuracyMeters': position.accuracy,
       'capturedAt': position.timestamp.toIso8601String(),
-      // True when a fake-GPS app supplied this location (G2).
-      'isMocked': position.isMocked,
     };
 
     // Location isn't queued/auto-retried like usage data (see
