@@ -42,6 +42,7 @@ import '../services/chat_unread_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/logout_flow.dart';
 import '../widgets/time_left_text.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'capture_debug_screen.dart';
@@ -1632,15 +1633,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     _dailyGoalSubscription = null;
     await _temporaryGrants.stop();
     await _limitNotifications.stopForSignOut();
-    await FirebaseAuth.instance.signOut();
-
     if (!mounted) return;
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+    await signOutToLogin(context);
   }
 
   void openFamilyChat() {
@@ -3152,27 +3146,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   }
 
   Future<void> _confirmLogout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Log out?'),
-        content: const Text(
-          'You will need to sign in again to use WellScreen on this device.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: _coral),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) await logout();
+    final confirmed = await confirmLogoutDialog(context, confirmColor: _coral);
+    if (confirmed) await logout();
   }
 
   // ------------------------- shared building blocks ----------------------

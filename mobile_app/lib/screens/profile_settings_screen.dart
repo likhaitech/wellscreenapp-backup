@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../widgets/logout_flow.dart';
 import '../widgets/wellscreen_ui.dart';
 
 import '../theme/app_theme.dart';
@@ -370,15 +371,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     if (!await AppRulesService.isMonitoredChildDevice()) {
       await AppTimeLimitService().clearCachedLimits();
     }
-    await FirebaseAuth.instance.signOut();
-
     if (!mounted) return;
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+    await signOutToLogin(context);
   }
 
   /// What WellScreen does and does not collect, matching the code: usage
