@@ -21,6 +21,11 @@ Future<String> _submit(
   String email = '',
   String password = '',
 }) async {
+  // A typical Android phone screen (411 x 914).
+  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.devicePixelRatio = 1080 / 411;
+  addTearDown(tester.view.reset);
+
   await tester.pumpWidget(const MaterialApp(home: RegisterScreen()));
   await tester.pump();
 
@@ -30,8 +35,13 @@ Future<String> _submit(
   await tester.enterText(fields.at(1), email);
   await tester.enterText(fields.at(2), password);
 
+  // Scroll down to "Create account" like a user would, then tap it.
   final button = find.byType(AppPillButton);
-  await tester.ensureVisible(button);
+  await tester.scrollUntilVisible(
+    button,
+    200,
+    scrollable: find.byType(Scrollable).first,
+  );
   await tester.tap(button);
   await tester.pump(); // show the SnackBar
   await tester.pump(const Duration(milliseconds: 300));
