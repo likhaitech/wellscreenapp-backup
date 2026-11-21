@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -46,6 +48,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   bool _overviewLoading = false;
   int _range = 7;
 
+  /// Home refreshes itself while it is open, so new sign-ins and active
+  /// users show up without pulling down.
+  static const Duration _autoRefreshEvery = Duration(seconds: 60);
+  Timer? _autoRefresh;
+
   @override
   void initState() {
     super.initState();
@@ -69,7 +76,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
 
     if (mounted) setState(() => isChecking = false);
+    _autoRefresh = Timer.periodic(_autoRefreshEvery, (_) {
+      if (mounted && _tab == 0 && !_usersLoading && !_overviewLoading) {
+        loadStats();
+      }
+    });
     loadStats();
+  }
+
+  @override
+  void dispose() {
+    _autoRefresh?.cancel();
+    super.dispose();
   }
 
   Future<void> loadStats() async {

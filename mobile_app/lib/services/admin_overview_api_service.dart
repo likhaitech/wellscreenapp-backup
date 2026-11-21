@@ -23,8 +23,11 @@ class AdminOverviewApiService {
               // alert_notification_client.dart) share one place to update once
               // the backend is actually deployed, instead of two.
               baseUrl: AppConfig.backendBaseUrl,
-              connectTimeout: const Duration(seconds: 10),
-              receiveTimeout: const Duration(seconds: 10),
+              // Render's free tier can take up to a minute to wake up
+              // (same as the Users screen), so a sleeping server is not
+              // reported as unreachable.
+              connectTimeout: const Duration(seconds: 60),
+              receiveTimeout: const Duration(seconds: 60),
             ),
           ),
       _getAdminTokenOverride = getAdminToken;
