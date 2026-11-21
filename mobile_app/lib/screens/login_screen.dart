@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/login_error_message.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'admin_home_screen.dart';
@@ -99,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
         showMessage('Account role not found. Please contact the developer.');
       }
     } on FirebaseAuthException catch (e) {
-      showMessage(authErrorMessage(e.code));
+      showMessage(loginErrorMessage(e.code));
     } catch (e) {
       showMessage(e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -138,34 +139,6 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => isLoading = false);
       }
     }
-  }
-
-  String authErrorMessage(String code) {
-    if (code == 'user-not-found') {
-      return 'No account found with this email.';
-    }
-
-    if (code == 'wrong-password') {
-      return 'Incorrect password.';
-    }
-
-    if (code == 'invalid-email') {
-      return 'Invalid email address.';
-    }
-
-    if (code == 'invalid-credential') {
-      return 'Invalid email or password.';
-    }
-
-    if (code == 'user-disabled') {
-      return 'This account has been disabled.';
-    }
-
-    if (code == 'network-request-failed') {
-      return 'Network error. Please check your internet connection.';
-    }
-
-    return 'Login failed. Please try again.';
   }
 
   void showMessage(String message) {
