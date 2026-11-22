@@ -162,7 +162,7 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                     child: _messageState(
                       Icons.event_busy_rounded,
                       'No usage report for today',
-                      'The most recent report is from ${_formatDate(recordedAt)}. '
+                      'The most recent report is from ${_formatDate(recordedAt!)}. '
                       '$syncUsageTodayMessage',
                     ),
                   )
