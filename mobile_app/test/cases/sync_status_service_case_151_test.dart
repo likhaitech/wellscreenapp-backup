@@ -18,18 +18,22 @@ void main() {
     description: 'Child phone reconnects to the internet.',
     expected: 'Saved usage is uploaded automatically and the status shows “Synced just now”.',
     body: (tester) async {
-      final changes = StreamController<List<ConnectivityResult>>();
-      final service = SyncStatusService(
-        checkConnectivity: () async => [ConnectivityResult.none],
-        connectivityChanges: changes.stream,
-      );
+      // Real async (not the widget test's fake clock), so the stream can
+      // close and the test can finish instead of hanging.
       final seen = <bool>[];
-      final sub = service.onlineStatusChanges.listen(seen.add);
-      changes.add([ConnectivityResult.none]);
-      changes.add([ConnectivityResult.wifi]);
-      await tester.pump();
-      await sub.cancel();
-      await changes.close();
+      await tester.runAsync(() async {
+        final changes = StreamController<List<ConnectivityResult>>();
+        final service = SyncStatusService(
+          checkConnectivity: () async => [ConnectivityResult.none],
+          connectivityChanges: changes.stream,
+        );
+        final sub = service.onlineStatusChanges.listen(seen.add);
+        changes.add([ConnectivityResult.none]);
+        changes.add([ConnectivityResult.wifi]);
+        await Future<void>.delayed(Duration.zero);
+        await sub.cancel();
+        await changes.close();
+      });
       expect(seen, [false, true]);
       final now = DateTime(2026, 11, 22, 10);
       final label = ChildStatusText.lastSync(

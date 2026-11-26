@@ -350,6 +350,15 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
+  /// Asks "Log out?" first, like the child and admin apps.
+  Future<void> _confirmLogout() async {
+    final confirmed = await confirmLogoutDialog(
+      context,
+      confirmColor: AppColors.danger,
+    );
+    if (confirmed) await logout();
+  }
+
   Future<void> logout() async {
     // Revoke the child's registered push token before leaving this account.
     await AppTimeLimitNotificationService.instance.stopForSignOut();
@@ -787,7 +796,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     backgroundColor: softRed,
                     title: 'Sign Out',
                     subtitle: 'Sign out from this WellScreen account.',
-                    onTap: logout,
+                    onTap: _confirmLogout,
                   ),
                 ],
               ),
