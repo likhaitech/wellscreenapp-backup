@@ -213,7 +213,7 @@ internal object AppTimeLimitEnforcer {
         ) == AppOpsManager.MODE_ALLOWED
     }
 
-    private fun isDefaultLauncher(context: Context, targetPackage: String): Boolean {
+    fun isDefaultLauncher(context: Context, targetPackage: String): Boolean {
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val resolved = context.packageManager.resolveActivity(home, 0)
         return resolved?.activityInfo?.packageName == targetPackage

@@ -75,9 +75,16 @@ class WellScreenAccessibilityService : AccessibilityService() {
                     checkRestrictedApp(activePackage)
                 }
                 // Split screen and picture-in-picture: a restricted app can be
-                // visible without being the active window.
-                for (visiblePackage in otherVisibleAppPackages(activePackage)) {
-                    checkRestrictedApp(visiblePackage, notInFront = true)
+                // visible without being the active window. Not on the home
+                // screen: its search bar and feed are Google app windows, so a
+                // blocked Google app was "visible" there and the block screen
+                // came back every 5 seconds (an endless loop).
+                val onHomeScreen = activePackage != null &&
+                    AppTimeLimitEnforcer.isDefaultLauncher(this@WellScreenAccessibilityService, activePackage)
+                if (!onHomeScreen) {
+                    for (visiblePackage in otherVisibleAppPackages(activePackage)) {
+                        checkRestrictedApp(visiblePackage, notInFront = true)
+                    }
                 }
             } catch (e: Exception) {
                 Log.w("WellScreenLimits", "Foreground limit check failed", e)
@@ -125,7 +132,14 @@ class WellScreenAccessibilityService : AccessibilityService() {
                     maybeGuardSettings(currentPackage)
                 }
                 maybeCaptureBrowserUrl(currentPackage)
-                checkRestrictedApp(currentPackage)
+                // Only block the app that is really in front. Background apps
+                // also send window events (the Google app does while the home
+                // screen is open), and blocking those looped the block screen.
+                val activePackage = rootInActiveWindow?.packageName?.toString()
+                Log.d("WellScreenLimits", "event from $currentPackage, front: $activePackage")
+                if (activePackage == null || activePackage == currentPackage) {
+                    checkRestrictedApp(currentPackage)
+                }
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                 // Covers in-app navigation that DOESN'T fire a window-state
@@ -673,9 +687,12 @@ class WellScreenAccessibilityService : AccessibilityService() {
 
         // Send the browser to a safe page first, so reopening it does not land
         // on the blocked site again (that caused an endless block loop).
-        SafePageRedirect.leaveBlockedPage(this, browserPackage)
-        // The safe page is our redirect, not a visit - keep it out of the report.
-        lastCapturedDomain[browserPackage] = SafePageRedirect.SAFE_PAGE_DOMAIN
+        // Never reopen a browser that is itself blocked (that looped).
+        if (!BrowserAppBlock.isBlockedAsApp(this, browserPackage)) {
+            SafePageRedirect.leaveBlockedPage(this, browserPackage)
+            // The safe page is our redirect, not a visit - keep it out of the report.
+            lastCapturedDomain[browserPackage] = SafePageRedirect.SAFE_PAGE_DOMAIN
+        }
 
         try {
             val intent = Intent(this, BlockedAppActivity::class.java)
@@ -729,6 +746,9 @@ class WellScreenAccessibilityService : AccessibilityService() {
      */
     private fun maybeCaptureBrowserUrl(currentPackage: String) {
         if (!BrowserUrlExtractor.isKnownBrowser(currentPackage)) return
+        // A blocked browser gets the app block screen (checkRestrictedApp);
+        // checking its pages too would reopen it and loop.
+        if (BrowserAppBlock.isBlockedAsApp(this, currentPackage)) return
 
         try {
             val root = rootInActiveWindow
@@ -831,6 +851,7 @@ class WellScreenAccessibilityService : AccessibilityService() {
     }
 
     private fun openBlockedScreen(blockedPackage: String, timeLimitReached: Boolean = false) {
+        Log.d("WellScreenLimits", "block screen for $blockedPackage")
         val intent = Intent(this, BlockedAppActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)

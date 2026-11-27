@@ -587,7 +587,8 @@ class BlockedAppActivity : Activity() {
      */
     private fun leaveToSafePage() {
         val browser = blockedBrowser
-        if (browser.isNullOrBlank()) {
+        // A blocked browser goes home: reopening it would block it again.
+        if (browser.isNullOrBlank() || BrowserAppBlock.isBlockedAsApp(this, browser)) {
             returnToHome()
             return
         }
