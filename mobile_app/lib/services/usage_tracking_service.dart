@@ -79,6 +79,19 @@ class UsageTrackingService {
     return summarizeAllUsage(today.ms, lastUsed: today.lastUsed);
   }
 
+  /// Per-app time over the last 7 days (6 days ago through now), for the
+  /// guardian's weekly summary. WellScreen itself is left out, as today.
+  Future<List<AppUsageSummary>> getWeekUsage() async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day - 6);
+    final usageMap = await UsageStats.queryAndAggregateUsageStats(start, now);
+    final ms = <String, int>{
+      for (final entry in usageMap.entries)
+        entry.key: int.tryParse(entry.value.totalTimeInForeground ?? '0') ?? 0,
+    };
+    return summarizeAllUsage(ms);
+  }
+
   /// Pure helper to allow tests without the Android usage_stats plugin.
   List<AppUsageSummary> summarizeUsage(
     Map<String, int> usage, {

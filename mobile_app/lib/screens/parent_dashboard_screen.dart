@@ -9,6 +9,7 @@ import '../services/child_location_text.dart';
 import '../services/guardian_dashboard_text.dart';
 import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
+import '../services/weekly_summary.dart';
 import '../services/emergency_access_service.dart';
 import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
@@ -1796,12 +1797,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
   /// Today's bar uses the same live total as the Screen Time card above.
   /// Days with no reading stay empty rather than being guessed, and the
   /// card falls back to an empty state until the child's phone has synced.
-  Widget _weeklyTrendSection(Map<String, dynamic>? child) {
-    final warningLimit = DailyGoal.durationFor(child);
-    const dayLabels = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const maxBarHeight = 110.0;
-
-    final now = DateTime.now();
+  /// Daily totals for the chart and the weekly summary, with today's live
+  /// total when it is newer than the stored one.
+  Map<String, int> _weeklyTotals(Map<String, dynamic>? child, DateTime now) {
     final totals = DailyUsageHistory.parse(child?['dailyUsageTotals']);
     final liveToday = usageTotalDuration(child);
     if (totals.isNotEmpty && liveToday > Duration.zero) {
@@ -1810,6 +1808,255 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
         totals[todayKey] = liveToday.inMilliseconds;
       }
     }
+    return totals;
+  }
+
+  static const List<String> _weekdayNames = [
+    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+  ];
+  static const List<String> _monthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  String _dayLabel(DateTime day) =>
+      '${_weekdayNames[day.weekday - 1]}, ${_monthNames[day.month - 1]} ${day.day}';
+
+  /// "This week" sheet: totals, average, days over the goal, busiest and
+  /// lightest day, comparison with the 30-day average, and the top apps.
+  void _showWeeklySummary(Map<String, dynamic>? child) {
+    final now = DateTime.now();
+    final goal = DailyGoal.durationFor(child);
+    final report = latestUsageReport(child);
+    final week = WeeklySummary.from(
+      totals: _weeklyTotals(child, now),
+      goal: goal,
+      now: now,
+      weeklyTopApps: report?['weeklyTopApps'],
+      weeklyAppsTotalMs: report?['weeklyAppsTotalMs'],
+    );
+    final first = week.days.first.key;
+    final childName = childNameOf(child, fallback: 'Your child');
+
+    Widget tile(String label, String value) => Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(color: grayText, fontSize: 11)),
+            const SizedBox(height: 2),
+            Text(
+              value,
+              style: const TextStyle(
+                fontFamily: AppFonts.heading,
+                color: darkText,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                fontFeatures: kTabularFigures,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    Widget line(IconData icon, String label, String value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: grayText, fontSize: 13),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: darkText,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    String vsUsual() {
+      final percent = week.percentVsUsual;
+      if (percent == null) return 'Not enough days yet';
+      if (percent == 0) return 'Same as usual';
+      return percent > 0 ? '▲ $percent% above usual' : '▼ ${-percent}% below usual';
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(sheetContext).size.height * 0.85,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            children: [
+              Text(
+                'This week',
+                style: const TextStyle(
+                  fontFamily: AppFonts.heading,
+                  color: darkText,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                '$childName · ${_dayLabel(first)} to ${_dayLabel(now)}',
+                style: const TextStyle(color: grayText, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              if (week.daysWithData == 0)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'No screen time synced this week yet. Ask your child to '
+                    'open WellScreen and tap Sync usage now.',
+                    style: TextStyle(color: grayText, fontSize: 14),
+                  ),
+                )
+              else ...[
+                Row(
+                  children: [
+                    tile('Total this week', formatDurationLabel(week.total)),
+                    const SizedBox(width: 10),
+                    tile(
+                      'Daily average',
+                      formatDurationLabel(week.dailyAverage!),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                line(
+                  Icons.flag_outlined,
+                  'Days over the ${DailyGoal.label(goal.inMinutes)} goal',
+                  '${week.daysOverGoal} of ${week.daysWithData}',
+                ),
+                if (week.busiest != null)
+                  line(
+                    Icons.trending_up_rounded,
+                    'Busiest day',
+                    '${_dayLabel(week.busiest!.key)} · '
+                        '${formatDurationLabel(week.busiest!.value)}',
+                  ),
+                if (week.lightest != null)
+                  line(
+                    Icons.trending_down_rounded,
+                    'Lightest day',
+                    '${_dayLabel(week.lightest!.key)} · '
+                        '${formatDurationLabel(week.lightest!.value)}',
+                  ),
+                line(
+                  Icons.compare_arrows_rounded,
+                  week.usualAverage == null
+                      ? 'Compared with usual'
+                      : 'Compared with the 30-day average '
+                            '(${formatDurationLabel(week.usualAverage!)} a day)',
+                  vsUsual(),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Most used apps this week',
+                  style: TextStyle(
+                    color: darkText,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (week.topApps.isEmpty)
+                  const Text(
+                    'Appears after the child\'s phone syncs (open WellScreen '
+                    'and tap Sync usage now).',
+                    style: TextStyle(color: grayText, fontSize: 13),
+                  )
+                else
+                  for (final app in week.topApps)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  app.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: darkText,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '${formatDurationLabel(app.duration)} · '
+                                '${(app.share * 100).round()}%',
+                                style: const TextStyle(
+                                  color: grayText,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: app.share.clamp(0.0, 1.0),
+                              minHeight: 6,
+                              color: AppColors.primary,
+                              backgroundColor: AppColors.primaryLight,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Days with no reading are not counted. WellScreen itself '
+                  'is not counted as screen time.',
+                  style: TextStyle(color: grayText, fontSize: 11),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _weeklyTrendSection(Map<String, dynamic>? child) {
+    final warningLimit = DailyGoal.durationFor(child);
+    const dayLabels = <String>['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const maxBarHeight = 110.0;
+
+    final now = DateTime.now();
+    final totals = _weeklyTotals(child, now);
     final days = DailyUsageHistory.lastSevenDays(totals, now);
     final hasData = days.any((day) => day.value != null);
     final average = DailyUsageHistory.averageOfCompletedDays(totals, now);
@@ -1827,11 +2074,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
           '${DailyGoal.label(warningLimit.inMinutes)} daily goal',
           style: const TextStyle(color: grayText, fontSize: 12),
         ),
+        // The card opens the weekly summary.
+        const Icon(Icons.chevron_right_rounded, color: grayText, size: 20),
       ],
     );
 
     if (!hasData) {
       return BentoCard(
+      // Tapping the card opens the weekly summary.
+      onTap: () => _showWeeklySummary(child),
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1874,6 +2125,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
         maxBarHeight * warningLimit.inMilliseconds / maxMs;
 
     return BentoCard(
+      // Tapping the card opens the weekly summary.
+      onTap: () => _showWeeklySummary(child),
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

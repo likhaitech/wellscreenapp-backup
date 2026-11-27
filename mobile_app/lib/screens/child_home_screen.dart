@@ -1336,8 +1336,38 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         (runningTotal, app) => runningTotal + app.usageDuration.inMilliseconds,
       );
 
+      // Top apps over the last 7 days for the guardian's weekly summary.
+      // Best-effort: a failure here must not stop the usage sync.
+      var weeklyTopApps = const <Map<String, dynamic>>[];
+      var weeklyAppsTotalMs = 0;
+      try {
+        final week = await _usageTrackingService.getWeekUsage();
+        weeklyAppsTotalMs = week.fold<int>(
+          0,
+          (sum, app) => sum + app.usageDuration.inMilliseconds,
+        );
+        final top = week.take(5).toList();
+        final weekMetadata = await const InstalledAppMetadataService().lookup(
+          top.map((app) => app.packageName),
+        );
+        weeklyTopApps = [
+          for (final app in top)
+            {
+              'packageName': app.packageName,
+              'displayName':
+                  weekMetadata[app.packageName]?['displayName'] ??
+                  app.packageName,
+              'usageDurationMs': app.usageDuration.inMilliseconds,
+            },
+        ];
+      } catch (_) {
+        weeklyTopApps = const [];
+      }
+
       final usageReportData = {
         'totalUsageDurationMs': report.totalUsageDuration.inMilliseconds,
+        if (weeklyTopApps.isNotEmpty) 'weeklyTopApps': weeklyTopApps,
+        if (weeklyTopApps.isNotEmpty) 'weeklyAppsTotalMs': weeklyAppsTotalMs,
         'topApps': topApps,
         'allApps': allApps,
         'allAppsTotalUsageDurationMs': allAppsTotalMs,
