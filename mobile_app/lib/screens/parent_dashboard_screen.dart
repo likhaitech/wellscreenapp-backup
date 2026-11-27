@@ -18,6 +18,7 @@ import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/daily_goal_sheet.dart';
+import '../widgets/weekly_summary_sheet.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'all_apps_screen.dart';
 import 'device_pairing_screen.dart';
@@ -1811,19 +1812,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     return totals;
   }
 
-  static const List<String> _weekdayNames = [
-    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
-  ];
-  static const List<String> _monthNames = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-
-  String _dayLabel(DateTime day) =>
-      '${_weekdayNames[day.weekday - 1]}, ${_monthNames[day.month - 1]} ${day.day}';
-
-  /// "This week" sheet: totals, average, days over the goal, busiest and
-  /// lightest day, comparison with the 30-day average, and the top apps.
+  /// "This week" sheet (WeeklySummarySheet): daily bar chart with the goal,
+  /// totals, busiest and lightest day, and a donut of the top apps.
   void _showWeeklySummary(Map<String, dynamic>? child) {
     final now = DateTime.now();
     final goal = DailyGoal.durationFor(child);
@@ -1835,68 +1825,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
       weeklyTopApps: report?['weeklyTopApps'],
       weeklyAppsTotalMs: report?['weeklyAppsTotalMs'],
     );
-    final first = week.days.first.key;
-    final childName = childNameOf(child, fallback: 'Your child');
-
-    Widget tile(String label, String value) => Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(color: grayText, fontSize: 11)),
-            const SizedBox(height: 2),
-            Text(
-              value,
-              style: const TextStyle(
-                fontFamily: AppFonts.heading,
-                color: darkText,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                fontFeatures: kTabularFigures,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    Widget line(IconData icon, String label, String value) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: AppColors.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(color: grayText, fontSize: 13),
-            ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(
-              color: darkText,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    String vsUsual() {
-      final percent = week.percentVsUsual;
-      if (percent == null) return 'Not enough days yet';
-      if (percent == 0) return 'Same as usual';
-      return percent > 0 ? '▲ $percent% above usual' : '▼ ${-percent}% below usual';
-    }
-
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1905,147 +1833,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (sheetContext) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(sheetContext).size.height * 0.85,
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            children: [
-              Text(
-                'This week',
-                style: const TextStyle(
-                  fontFamily: AppFonts.heading,
-                  color: darkText,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                '$childName · ${_dayLabel(first)} to ${_dayLabel(now)}',
-                style: const TextStyle(color: grayText, fontSize: 13),
-              ),
-              const SizedBox(height: 14),
-              if (week.daysWithData == 0)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text(
-                    'No screen time synced this week yet. Ask your child to '
-                    'open WellScreen and tap Sync usage now.',
-                    style: TextStyle(color: grayText, fontSize: 14),
-                  ),
-                )
-              else ...[
-                Row(
-                  children: [
-                    tile('Total this week', formatDurationLabel(week.total)),
-                    const SizedBox(width: 10),
-                    tile(
-                      'Daily average',
-                      formatDurationLabel(week.dailyAverage!),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                line(
-                  Icons.flag_outlined,
-                  'Days over the ${DailyGoal.label(goal.inMinutes)} goal',
-                  '${week.daysOverGoal} of ${week.daysWithData}',
-                ),
-                if (week.busiest != null)
-                  line(
-                    Icons.trending_up_rounded,
-                    'Busiest day',
-                    '${_dayLabel(week.busiest!.key)} · '
-                        '${formatDurationLabel(week.busiest!.value)}',
-                  ),
-                if (week.lightest != null)
-                  line(
-                    Icons.trending_down_rounded,
-                    'Lightest day',
-                    '${_dayLabel(week.lightest!.key)} · '
-                        '${formatDurationLabel(week.lightest!.value)}',
-                  ),
-                line(
-                  Icons.compare_arrows_rounded,
-                  week.usualAverage == null
-                      ? 'Compared with usual'
-                      : 'Compared with the 30-day average '
-                            '(${formatDurationLabel(week.usualAverage!)} a day)',
-                  vsUsual(),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Most used apps this week',
-                  style: TextStyle(
-                    color: darkText,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (week.topApps.isEmpty)
-                  const Text(
-                    'Appears after the child\'s phone syncs (open WellScreen '
-                    'and tap Sync usage now).',
-                    style: TextStyle(color: grayText, fontSize: 13),
-                  )
-                else
-                  for (final app in week.topApps)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  app.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: darkText,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                '${formatDurationLabel(app.duration)} · '
-                                '${(app.share * 100).round()}%',
-                                style: const TextStyle(
-                                  color: grayText,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: LinearProgressIndicator(
-                              value: app.share.clamp(0.0, 1.0),
-                              minHeight: 6,
-                              color: AppColors.primary,
-                              backgroundColor: AppColors.primaryLight,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Days with no reading are not counted. WellScreen itself '
-                  'is not counted as screen time.',
-                  style: TextStyle(color: grayText, fontSize: 11),
-                ),
-              ],
-            ],
-          ),
-        ),
+      builder: (_) => WeeklySummarySheet(
+        week: week,
+        goal: goal,
+        childName: childNameOf(child, fallback: 'Your child'),
+        now: now,
       ),
     );
   }

@@ -1,11 +1,16 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
+import '../models/daily_goal.dart';
 import '../utils/child_name.dart';
+import 'daily_usage_history.dart';
+import 'weekly_summary.dart';
 
 /// Builds a PDF export of a child profile's latest report data (usage,
 /// browsing, location, alerts) and hands it to the platform share sheet so
@@ -36,7 +41,13 @@ class ReportExportService {
     final data = snapshot.data() ?? <String, dynamic>{};
     final childName = childNameOf(data, fallback: 'Child Profile');
     final generatedAt = DateTime.now();
-    final pdf = buildReport(data, generatedAt);
+    Uint8List? logo;
+    try {
+      logo = (await rootBundle.load(logoAsset)).buffer.asUint8List();
+    } catch (_) {
+      logo = null; // The report still works without the logo.
+    }
+    final pdf = buildReport(data, generatedAt, logo: logo);
 
     final directory = await getTemporaryDirectory();
     final safeChildName = childName.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
@@ -72,14 +83,21 @@ class ReportExportService {
 
   /// The PDF for one child's report data (usage, browsing, location and
   /// alerts), without saving or sharing it.
-  static pw.Document buildReport(Map<String, dynamic> data, DateTime generatedAt) {
+  static const String logoAsset = 'assets/icons/wellscreen_icon.png';
+
+  static pw.Document buildReport(
+    Map<String, dynamic> data,
+    DateTime generatedAt, {
+    Uint8List? logo,
+  }) {
     final childName = childNameOf(data, fallback: 'Child Profile');
+    final logoImage = logo == null ? null : pw.MemoryImage(logo);
     final pdf = pw.Document();
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
-        header: (context) => _buildHeader(childName, generatedAt),
+        header: (context) => _buildHeader(childName, generatedAt, logoImage),
         footer: (context) => pw.Align(
           alignment: pw.Alignment.centerRight,
           child: pw.Text(
@@ -89,6 +107,8 @@ class ReportExportService {
         ),
         build: (context) => [
           _buildUsageSection(data),
+          pw.SizedBox(height: 18),
+          _buildWeeklySection(data, generatedAt),
           pw.SizedBox(height: 18),
           _buildBrowsingSection(data),
           pw.SizedBox(height: 18),
@@ -107,7 +127,11 @@ class ReportExportService {
   // guardian already sees in-app, just in a form they can save or send.
   // -------------------------------------------------------------------
 
-  static pw.Widget _buildHeader(String childName, DateTime generatedAt) {
+  static pw.Widget _buildHeader(
+    String childName,
+    DateTime generatedAt,
+    pw.ImageProvider? logo,
+  ) {
     final formatted =
         '${generatedAt.month.toString().padLeft(2, '0')}/'
         '${generatedAt.day.toString().padLeft(2, '0')}/'
@@ -118,14 +142,35 @@ class ReportExportService {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Text(
-          'WellScreen Report',
-          style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 4),
-        pw.Text(
-          '$childName  ·  Generated $formatted',
-          style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            if (logo != null) ...[
+              pw.Image(logo, width: 40, height: 40),
+              pw.SizedBox(width: 10),
+            ],
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'WellScreen Report',
+                  style: pw.TextStyle(
+                    fontSize: 20,
+                    fontWeight: pw.FontWeight.bold,
+                    color: _primary,
+                  ),
+                ),
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  '$childName  ·  Generated $formatted',
+                  style: const pw.TextStyle(
+                    fontSize: 11,
+                    color: PdfColors.grey700,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
         pw.SizedBox(height: 10),
         pw.Divider(thickness: 1, color: PdfColors.grey400),
@@ -214,6 +259,252 @@ class ReportExportService {
         .toList();
   }
 
+  // Weekly Summary: the same numbers as the guardian's "This week" sheet
+  // (WeeklySummary), with a bar chart of the last 7 days and the top apps.
+  static const _primary = PdfColor.fromInt(0xFF3438B8);
+  static const _danger = PdfColor.fromInt(0xFFC62F4B);
+  static const _goalLine = PdfColor.fromInt(0xFF9A5B00);
+  static const _noData = PdfColor.fromInt(0xFFE3E5F2);
+  static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  /// Daily totals plus today's latest report when it is newer (as on the
+  /// guardian dashboard).
+  static Map<String, int> weeklyTotals(Map<String, dynamic> data, DateTime now) {
+    final totals = DailyUsageHistory.parse(data['dailyUsageTotals']);
+    final report = data['latestUsageReport'];
+    final updatedAt = data['usageReportUpdatedAt'];
+    if (report is Map && updatedAt is Timestamp) {
+      final at = updatedAt.toDate();
+      final live = report['totalUsageDurationMs'];
+      final todayKey = DailyUsageHistory.dayKey(now);
+      if (at.year == now.year && at.month == now.month && at.day == now.day &&
+          live is num && live > (totals[todayKey] ?? 0)) {
+        totals[todayKey] = live.toInt();
+      }
+    }
+    return totals;
+  }
+
+  static pw.Widget _buildWeeklySection(Map<String, dynamic> data, DateTime now) {
+    final goal = DailyGoal.durationFor(data);
+    final report = data['latestUsageReport'];
+    final week = WeeklySummary.from(
+      totals: weeklyTotals(data, now),
+      goal: goal,
+      now: now,
+      weeklyTopApps: report is Map ? report['weeklyTopApps'] : null,
+      weeklyAppsTotalMs: report is Map ? report['weeklyAppsTotalMs'] : null,
+    );
+    if (week.daysWithData == 0) {
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          _sectionTitle('Weekly Summary'),
+          _emptyNote('No screen time synced in the last 7 days.'),
+        ],
+      );
+    }
+
+    String day(DateTime d) => _weekdays[d.weekday - 1];
+    final percent = week.percentVsUsual;
+    final vsUsual = percent == null
+        ? 'Not enough days yet'
+        : percent == 0
+        ? 'Same as the 30-day average'
+        : '${percent.abs()}% ${percent > 0 ? 'above' : 'below'} the 30-day '
+              'average (${formatDuration(week.usualAverage!.inMilliseconds)} a day)';
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Weekly Summary (last 7 days)'),
+        _kv('Total this week', formatDuration(week.total.inMilliseconds)),
+        _kv('Daily average', formatDuration(week.dailyAverage!.inMilliseconds)),
+        _kv(
+          'Days over the goal',
+          '${week.daysOverGoal} of ${week.daysWithData} days '
+              '(goal ${formatDuration(goal.inMilliseconds)})',
+        ),
+        if (week.busiest != null)
+          _kv(
+            'Busiest day',
+            '${day(week.busiest!.key)} - '
+                '${formatDuration(week.busiest!.value.inMilliseconds)}',
+          ),
+        if (week.lightest != null)
+          _kv(
+            'Lightest day',
+            '${day(week.lightest!.key)} - '
+                '${formatDuration(week.lightest!.value.inMilliseconds)}',
+          ),
+        _kv('Compared with usual', vsUsual),
+        pw.SizedBox(height: 10),
+        _weeklyBarChart(week, goal, now),
+        pw.SizedBox(height: 12),
+        pw.Text(
+          'Most used apps this week',
+          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 6),
+        if (week.topApps.isEmpty)
+          _emptyNote('Appears after the child\'s phone syncs.')
+        else
+          for (final app in week.topApps) _appShareRow(app),
+      ],
+    );
+  }
+
+  /// Seven bars; red when over the goal, with the goal as a line.
+  static pw.Widget _weeklyBarChart(WeeklySummary week, Duration goal, DateTime now) {
+    const height = 90.0;
+    var maxMs = goal.inMilliseconds;
+    for (final d in week.days) {
+      final ms = d.value?.inMilliseconds ?? 0;
+      if (ms > maxMs) maxMs = ms;
+    }
+    if (maxMs <= 0) maxMs = 1;
+    final goalY = goal > Duration.zero ? height * goal.inMilliseconds / maxMs : null;
+
+    String label(Duration d) => d.inMinutes >= 60
+        ? '${(d.inMinutes / 60).toStringAsFixed(1)}h'
+        : '${d.inMinutes}m';
+    bool isToday(DateTime d) =>
+        d.year == now.year && d.month == now.month && d.day == now.day;
+
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+      ),
+      child: pw.Column(
+        children: [
+          pw.SizedBox(
+            height: height + 14,
+            child: pw.Stack(
+              children: [
+                if (goalY != null)
+                  pw.Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: goalY,
+                    child: pw.Container(height: 0.8, color: _goalLine),
+                  ),
+                pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    for (final d in week.days)
+                      pw.Expanded(
+                        child: pw.Column(
+                          mainAxisAlignment: pw.MainAxisAlignment.end,
+                          children: [
+                            pw.Text(
+                              d.value == null ? '' : label(d.value!),
+                              style: const pw.TextStyle(fontSize: 7),
+                            ),
+                            pw.SizedBox(height: 1),
+                            pw.Container(
+                              width: 18,
+                              height: d.value == null
+                                  ? 3
+                                  : (height * d.value!.inMilliseconds / maxMs)
+                                        .clamp(3.0, height),
+                              color: d.value == null
+                                  ? _noData
+                                  : (goal > Duration.zero && d.value! > goal
+                                        ? _danger
+                                        : _primary),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 3),
+          pw.Row(
+            children: [
+              for (final d in week.days)
+                pw.Expanded(
+                  child: pw.Text(
+                    isToday(d.key) ? 'Today' : _weekdays[d.key.weekday - 1],
+                    textAlign: pw.TextAlign.center,
+                    style: const pw.TextStyle(fontSize: 8),
+                  ),
+                ),
+            ],
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Blue: within goal   Red: over goal   Line: daily goal '
+            '(${formatDuration(goal.inMilliseconds)})',
+            style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Today's top five apps as bars, longest first.
+  static List<pw.Widget> _todayAppBars(List<Map<String, dynamic>> apps) {
+    final top = apps
+        .where((a) => a['usageDurationMs'] is num)
+        .take(5)
+        .toList();
+    if (top.isEmpty) return const [];
+    final longest = (top.first['usageDurationMs'] as num).toDouble();
+    return [
+      for (final app in top)
+        _appShareRow(
+          WeeklyApp(
+            packageName: (app['packageName'] ?? '').toString(),
+            name: (app['displayName'] ?? app['packageName'] ?? '').toString(),
+            duration: Duration(
+              milliseconds: (app['usageDurationMs'] as num).toInt(),
+            ),
+            share: longest <= 0
+                ? 0
+                : (app['usageDurationMs'] as num).toDouble() / longest,
+          ),
+          showPercent: false,
+        ),
+    ];
+  }
+
+  static pw.Widget _appShareRow(WeeklyApp app, {bool showPercent = true}) =>
+      pw.Padding(
+    padding: const pw.EdgeInsets.only(bottom: 4),
+    child: pw.Row(
+      children: [
+        pw.SizedBox(
+          width: 150,
+          child: pw.Text(app.name, style: const pw.TextStyle(fontSize: 10)),
+        ),
+        pw.Container(
+          width: 160,
+          height: 8,
+          color: _noData,
+          alignment: pw.Alignment.centerLeft,
+          child: pw.Container(
+            width: 160 * app.share.clamp(0.0, 1.0),
+            height: 8,
+            color: _primary,
+          ),
+        ),
+        pw.SizedBox(width: 8),
+        pw.Text(
+          showPercent
+              ? '${formatDuration(app.duration.inMilliseconds)} '
+                    '(${(app.share * 100).round()}%)'
+              : formatDuration(app.duration.inMilliseconds),
+          style: const pw.TextStyle(fontSize: 10),
+        ),
+      ],
+    ),
+  );
+
   static pw.Widget _buildUsageSection(Map<String, dynamic> data) {
     final report = data['latestUsageReport'];
 
@@ -274,6 +565,15 @@ class ReportExportService {
             '${(mlRiskAssessment['label'] ?? 'Unknown')}'
                 '${mlRiskAssessment['confidence'] is num ? ' (${((mlRiskAssessment['confidence'] as num) * 100).toStringAsFixed(0)}%)' : ''}',
           ),
+        if (apps.isNotEmpty) ...[
+          pw.SizedBox(height: 10),
+          pw.Text(
+            'Most used apps today',
+            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 6),
+          ..._todayAppBars(apps),
+        ],
       ],
     );
   }
@@ -412,7 +712,7 @@ class ReportExportService {
             pw.Padding(
               padding: const pw.EdgeInsets.only(top: 2, left: 8),
               child: pw.Text(
-                '• ${entry['packageName'] ?? 'unknown app'} · '
+                '- ${entry['packageName'] ?? 'unknown app'} · '
                 '${entry['outcome'] ?? 'unknown'} · '
                 '${formatTimestamp(entry['timestamp'])}',
                 style: const pw.TextStyle(fontSize: 9),
