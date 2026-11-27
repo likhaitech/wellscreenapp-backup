@@ -197,6 +197,43 @@ def test_decision_push_goes_to_child_once(monkeypatch):
     assert msg.notification.body == "Your request to use TikTok has been denied."
     assert msg.android.notification.channel_id == "wellscreen_chat"
     assert store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] == "sent"
+    notice_id = cas._decision_inbox_id("p1", "r1")
+    notice = store[f"users/child/notifications/{notice_id}"]
+    assert notice["type"] == "access_decision"
+    assert notice["readAt"] is None
+    assert notice["title"] == msg.notification.title
+    assert msg.data["notificationId"] == notice_id
+
+
+def test_decision_inbox_without_token_and_preserves_read_state(monkeypatch):
+    store = _decision_store()
+    store["users/child"] = {}
+    store["child_profiles/p1/access_requests/r1"].update(
+        status="approved_pending_activation", approvedMinutes=15)
+    fake = FakeDb(store)
+    monkeypatch.setattr(cas, "transactional", lambda fn: fn)
+    with mock.patch.object(cas.messaging, "send") as send:
+        cas._notify_decision(fake, "p1", "child", "r1")
+        notice_id = cas._decision_inbox_id("p1", "r1")
+        path = f"users/child/notifications/{notice_id}"
+        assert "15 minutes granted" in store[path]["body"]
+        store[path]["readAt"] = "already read"
+        cas._notify_decision(fake, "p1", "child", "r1")
+        send.assert_not_called()
+    assert store[path]["readAt"] == "already read"
+    assert store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] == "pending"
+
+
+def test_already_sent_decision_backfills_without_another_push(monkeypatch):
+    store = _decision_store()
+    store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] = "sent"
+    fake = FakeDb(store)
+    monkeypatch.setattr(cas, "transactional", lambda fn: fn)
+    with mock.patch.object(cas.messaging, "send") as send:
+        cas._notify_decision(fake, "p1", "child", "r1")
+        send.assert_not_called()
+    assert f"users/child/notifications/{cas._decision_inbox_id('p1', 'r1')}" in store
+
 
 
 def test_approved_decision_notification_includes_duration_and_expiry():
