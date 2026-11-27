@@ -168,7 +168,12 @@ def test_usage_event_types_accepted(monkeypatch, etype):
 
 def _decision_store():
     return {
-        "child_profiles/p1": {"parentId": "parent", "childAccountId": "child", "pairingStatus": "connected"},
+        "child_profiles/p1": {
+            "parentId": "parent",
+            "childAccountId": "child",
+            "parentDisplayName": "Alex Morgan",
+            "pairingStatus": "connected",
+        },
         "child_profiles/p1/access_requests/r1": {
             "childUid": "child", "appName": "TikTok", "status": "declined",
             "decisionNotificationState": "pending"},
@@ -187,8 +192,31 @@ def test_decision_push_goes_to_child_once(monkeypatch):
         cas._notify_decision(fake, "p1", "child", "r1")  # second call is a no-op
     assert send.call_count == 1
     msg = send.call_args.args[0]
-    assert msg.token == "tok-child-limit" and msg.notification.title == "App access declined"
+    assert msg.token == "tok-child-limit"
+    assert msg.notification.title == "Alex Morgan · App Access Request Denied"
+    assert msg.notification.body == "Your request to use TikTok has been denied."
+    assert msg.android.notification.channel_id == "wellscreen_chat"
     assert store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] == "sent"
+
+
+def test_approved_decision_notification_includes_duration_and_expiry():
+    expires_at = cas.dt.datetime(2026, 11, 28, 8, 30, tzinfo=cas.UTC)
+
+    title, body = cas._decision_notification_content(
+        {
+            "status": "active",
+            "appName": "TikTok",
+            "approvedMinutes": 30,
+            "expiresAt": expires_at,
+        },
+        "Alex Morgan",
+    )
+
+    assert title == "Alex Morgan · App Access Request Approved"
+    assert body == (
+        "Your request to use TikTok has been approved. "
+        "30 minutes granted. Access expires at 4:30 PM."
+    )
 
 
 def test_decision_push_failure_never_breaks_approval(monkeypatch):
