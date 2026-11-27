@@ -6,6 +6,7 @@ scheduled OUTSIDE the child app (e.g. Cloudflare Cron Trigger).
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -168,13 +169,21 @@ def _notify_child_stale_gps(*, profile_id: str, parent_uid: str,
     db = get_firestore_client()
     profile_ref = db.collection("child_profiles").document(profile_id)
     alert_ref = profile_ref.collection("monitoring_alerts").document(alert_id)
-    account = db.collection("users").document(child_uid).get().to_dict() or {}
+    account_ref = db.collection("users").document(child_uid)
+    account = account_ref.get().to_dict() or {}
     if not isinstance(account, dict):
         return
     token = account.get("fcmToken") or account.get("limitNotificationToken")
-    if not isinstance(token, str) or not token.strip():
-        # No delivery attempted. A later sweep can try after registration.
-        return
+    has_token = isinstance(token, str) and bool(token.strip())
+    key = hashlib.sha256(f"{profile_id}/{alert_id}".encode()).hexdigest()
+    notification_id = "gps_location_stale_" + key
+    inbox_ref = account_ref.collection("notifications").document(notification_id)
+    pht = timezone(timedelta(hours=8))
+    last_update = updated.astimezone(pht).strftime("%b %d, %Y %I:%M %p PHT")
+    title = "Location Update Needed"
+    body = ("Your location is outdated. Turn on location services and check "
+            "your internet connection. Open WellScreen to share your location. "
+            f"Last update: {last_update}.")
 
     @transactional
     def claim(tx: Any) -> bool:
@@ -186,8 +195,19 @@ def _notify_child_stale_gps(*, profile_id: str, parent_uid: str,
                 or current.get("pairingStatus") != "connected"
                 or current.get("parentId") != parent_uid
                 or current.get("childAccountId") != child_uid
-                or _utc_datetime(current.get("locationUpdatedAt")) != updated
-                or alert.get("childPushStatus") is not None):
+                or _utc_datetime(current.get("locationUpdatedAt")) != updated):
+            return False
+        inbox_snap = inbox_ref.get(transaction=tx)
+        if not inbox_snap.exists:
+            tx.set(inbox_ref, {
+                "type": "gps_location_stale", "childProfileId": profile_id,
+                "recipientUid": child_uid, "eventId": alert_id,
+                "title": title, "body": body,
+                "createdAt": alert.get("createdAt") or now,
+                "locationUpdatedAt": updated, "readAt": None,
+            })
+        # Persist independently of token availability and prior FCM attempts.
+        if not has_token or alert.get("childPushStatus") is not None:
             return False
         tx.update(alert_ref, {"childPushStatus": "claimed",
                               "childPushClaimedAt": now})
@@ -196,14 +216,6 @@ def _notify_child_stale_gps(*, profile_id: str, parent_uid: str,
     if not claim(db.transaction()):
         return
 
-    # Use a fixed timestamp rather than a relative age that becomes misleading
-    # if Android delivers the notification later. PHT matches the app's locale.
-    pht = timezone(timedelta(hours=8))
-    last_update = updated.astimezone(pht).strftime("%b %d, %Y %I:%M %p PHT")
-    title = "Location Update Needed"
-    body = ("Your location is outdated. Turn on location services and check "
-            "your internet connection. Open WellScreen to share your location. "
-            f"Last update: {last_update}.")
     status = "failed"
     message_id = ""
     try:
@@ -212,6 +224,7 @@ def _notify_child_stale_gps(*, profile_id: str, parent_uid: str,
             notification=messaging.Notification(title=title, body=body),
             data={"type": "gps_location_stale", "childProfileId": profile_id,
                   "recipientUid": child_uid, "eventId": alert_id,
+                  "notificationId": notification_id,
                   "locationUpdatedAt": updated.isoformat()},
             android=messaging.AndroidConfig(
                 priority="high", ttl=timedelta(minutes=15),

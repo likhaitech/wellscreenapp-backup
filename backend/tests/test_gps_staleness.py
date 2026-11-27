@@ -65,6 +65,15 @@ def env(monkeypatch):
 
     db = Mock()
     users = Mock()
+    inbox = {}
+    def inbox_document(notice_id):
+        ref = Mock()
+        ref.get.side_effect = lambda **kw: SimpleNamespace(
+            exists=notice_id in inbox, to_dict=lambda: dict(inbox.get(notice_id, {})))
+        ref.set.side_effect = lambda data: inbox.__setitem__(notice_id, dict(data))
+        return ref
+    users.document.return_value.collection.return_value.document.side_effect = inbox_document
+    db.transaction.return_value.set.side_effect = lambda ref, data: ref.set(data)
     users.document.return_value.get.return_value.to_dict.side_effect = (
         lambda: dict(child_account)
     )
@@ -94,6 +103,7 @@ def env(monkeypatch):
         child_account=child_account,
         child_push=child_push,
         users=users,
+        inbox=inbox,
     )
 
 
@@ -210,6 +220,10 @@ def test_child_gps_push_has_correct_recipient_and_content(env):
     assert msg.data["type"] == "gps_location_stale"
     assert msg.data["recipientUid"] == "child-1"
     assert msg.data["childProfileId"] == "profile-1"
+    notice = env.inbox[msg.data["notificationId"]]
+    assert notice["type"] == "gps_location_stale"
+    assert notice["readAt"] is None
+    assert notice["body"] == msg.notification.body
     assert next(iter(env.records.values()))["childPushStatus"] == "sent"
 
 
@@ -218,12 +232,18 @@ def test_child_missing_token_can_retry_without_resending_parent(env):
     env.child_account.clear()
     svc.sweep_missing_heartbeats()
     env.child_push.assert_not_called()
+    assert len(env.inbox) == 1
+    notice = next(iter(env.inbox.values()))
+    assert notice["readAt"] is None
+    notice["readAt"] = "already read"
     env.child_account["limitNotificationToken"] = "fallback-token"
     svc.sweep_missing_heartbeats()
     svc.sweep_missing_heartbeats()
     env.push.assert_called_once()
     env.child_push.assert_called_once()
     assert env.child_push.call_args.args[0].token == "fallback-token"
+    assert len(env.inbox) == 1
+    assert next(iter(env.inbox.values()))["readAt"] == "already read"
 
 
 def test_child_push_failure_does_not_resend_guardian_or_child(env):
@@ -236,6 +256,7 @@ def test_child_push_failure_does_not_resend_guardian_or_child(env):
     alert = next(iter(env.records.values()))
     assert alert["pushStatus"] == "sent"
     assert alert["childPushStatus"] == "failed"
+    assert len(env.inbox) == 1
 
 
 def test_unpaired_child_does_not_generate_alert(env):

@@ -292,6 +292,24 @@ class ChatNotificationsService {
       final parent = profile['parentId'] == uid;
       final child = profile['childAccountId'] == uid;
       if (!parent && !child) return;
+      if (item['type'] == 'gps_location_stale') {
+        await markRead(notificationId);
+        if (!context.mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text((item['title'] ?? 'Location Update Needed').toString()),
+            content: Text((item['body'] ?? '').toString()),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
       unawaited(markRead(notificationId));
       await Navigator.push(
         context,
@@ -327,7 +345,9 @@ class ChatNotificationsService {
         uid,
       ).where('childProfileId', isEqualTo: childProfileId).limit(200).get();
       final unread = docs.docs
-          .where((d) => d.data()['readAt'] == null)
+          .where((d) =>
+              d.data()['readAt'] == null &&
+              d.data()['type'] != 'gps_location_stale')
           .toList();
       for (var i = 0; i < unread.length; i += 400) {
         final batch = FirebaseFirestore.instance.batch();
