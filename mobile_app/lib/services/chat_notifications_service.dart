@@ -9,7 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../screens/parent_child_chat_screen.dart';
 
-/// App-wide handler for family chat and child location warning FCM.
+/// App-wide handler for family chat, child location warnings, and app restrictions.
 /// Existing app-limit and guardian monitoring handlers retain their event types.
 class ChatNotificationsService {
   ChatNotificationsService._();
@@ -19,6 +19,8 @@ class ChatNotificationsService {
       GlobalKey<NavigatorState>();
   static const _channelId = 'wellscreen_chat';
   static const _locationChannelId = 'wellscreen_location';
+  static const _restrictionChannelId = 'wellscreen_restrictions';
+  static const _restrictionType = 'app_restrictions_changed';
   final _notifications = FlutterLocalNotificationsPlugin();
   StreamSubscription<RemoteMessage>? _foreground;
   StreamSubscription<RemoteMessage>? _opened;
@@ -92,11 +94,26 @@ class ChatNotificationsService {
           ),
         );
 
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _restrictionChannelId,
+            'App Restrictions',
+            description: 'New applications blocked by a parent',
+            importance: Importance.high,
+          ),
+        );
+
     _foreground = FirebaseMessaging.onMessage.listen((message) {
       if (message.data['type'] == 'parent_child_chat') {
         unawaited(_showForeground(message));
       } else if (message.data['type'] == 'gps_location_stale') {
         unawaited(_showLocationWarning(message));
+      } else if (message.data['type'] == _restrictionType) {
+        unawaited(_showRestrictionWarning(message));
       }
     });
     _opened = FirebaseMessaging.onMessageOpenedApp.listen((message) {
@@ -175,6 +192,44 @@ class ChatNotificationsService {
       );
     } catch (error) {
       debugPrint('Could not display child location warning: $error');
+    }
+  }
+
+  Future<void> _showRestrictionWarning(RemoteMessage message) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final profileId = message.data['childProfileId'];
+    final id = message.data['notificationId'];
+    if (uid == null ||
+        message.data['recipientUid'] != uid ||
+        profileId is! String ||
+        profileId.isEmpty ||
+        id is! String ||
+        id.isEmpty) {
+      return;
+    }
+    final title = message.notification?.title ?? 'New App Restrictions';
+    final body =
+        message.notification?.body ??
+        'Your parent has blocked applications. Open WellScreen for details.';
+    try {
+      await _notifications.show(
+        id: _notificationId(id),
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _restrictionChannelId,
+            'App Restrictions',
+            channelDescription: 'New applications blocked by a parent',
+            importance: Importance.high,
+            priority: Priority.high,
+            styleInformation: BigTextStyleInformation(body),
+          ),
+        ),
+        // The inbox is authoritative. Do not route this push into family chat.
+      );
+    } catch (error) {
+      debugPrint('Could not display child app restriction warning: $error');
     }
   }
 
@@ -292,6 +347,35 @@ class ChatNotificationsService {
       final parent = profile['parentId'] == uid;
       final child = profile['childAccountId'] == uid;
       if (!parent && !child) return;
+      if (item['type'] == _restrictionType) {
+        if (!child ||
+            item['recipientUid'] != uid ||
+            FirebaseAuth.instance.currentUser?.uid != uid) {
+          return;
+        }
+        if (item['readAt'] == null) {
+          await markRead(notificationId);
+        }
+        if (!context.mounted || FirebaseAuth.instance.currentUser?.uid != uid) {
+          return;
+        }
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text((item['title'] ?? 'New App Restrictions').toString()),
+            content: SingleChildScrollView(
+              child: Text((item['body'] ?? '').toString()),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
       if (item['type'] == 'gps_location_stale') {
         await markRead(notificationId);
         if (!context.mounted) return;
@@ -347,7 +431,8 @@ class ChatNotificationsService {
       final unread = docs.docs
           .where((d) =>
               d.data()['readAt'] == null &&
-              d.data()['type'] != 'gps_location_stale')
+              d.data()['type'] != 'gps_location_stale' &&
+              d.data()['type'] != _restrictionType)
           .toList();
       for (var i = 0; i < unread.length; i += 400) {
         final batch = FirebaseFirestore.instance.batch();
