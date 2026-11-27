@@ -30,6 +30,7 @@ import 'reports_screen.dart';
 import 'rules/rules_screen.dart';
 import '../utils/child_name.dart';
 import '../utils/primary_child.dart';
+import '../utils/status_tone.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -1308,6 +1309,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     final remaining = total >= goal ? Duration.zero : goal - total;
     final statusRaw = usagePatternStatus(child);
     final flagged = usageUnhealthyAppCount(child);
+    // Red card for Unhealthy, amber for Warning (only for today's report).
+    final tone = hasReport ? cardToneOf(statusRaw) : CardTone.normal;
+    final over = total > goal ? total - goal : Duration.zero;
     final String statusLabel;
     final IconData statusIcon;
     if (hasAnyReport && !hasReport) {
@@ -1351,7 +1355,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: AppColors.heroGradient,
+        gradient: cardGradient(tone),
         borderRadius: BorderRadius.circular(AppRadius.card + 4),
       ),
       child: Column(
@@ -1410,7 +1414,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                         value: progress,
                         strokeWidth: 10,
                         strokeCap: StrokeCap.round,
-                        color: AppColors.teal,
+                        color: cardProgressColor(tone),
                         backgroundColor: Colors.white.withValues(alpha: 0.25),
                       ),
                     ),
@@ -1449,8 +1453,12 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
                     stat('Apps flagged', hasReport ? '$flagged' : '—'),
                     const SizedBox(height: 10),
                     stat(
-                      'Left before goal',
-                      hasReport ? formatDurationLabel(remaining) : '—',
+                      over > Duration.zero ? 'Over goal by' : 'Left before goal',
+                      !hasReport
+                          ? '—'
+                          : formatDurationLabel(
+                              over > Duration.zero ? over : remaining,
+                            ),
                     ),
                   ],
                 ),

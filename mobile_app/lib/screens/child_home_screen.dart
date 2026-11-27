@@ -55,6 +55,7 @@ import 'chat_notifications_screen.dart';
 import 'profile_settings_screen.dart';
 import 'qr_scan_screen.dart';
 import '../widgets/brand_app_icon.dart';
+import '../utils/status_tone.dart';
 
 /// Thrown by [_ChildHomeScreenState._getCurrentPositionOrThrow] specifically
 /// when Android's device-wide location services (GPS) are off - as opposed
@@ -3778,16 +3779,24 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     final progress = (goal?.progressPercent ?? 0).clamp(0.0, 1.0).toDouble();
     final hasLimit = state.dailyScreenTimeLimit > Duration.zero;
     final remaining = goal?.remainingDuration ?? Duration.zero;
+    // Red card for Unhealthy, amber for Warning.
+    final tone = cardToneOf(state.viewModel.statusLabel);
+    final used = goal?.usedDuration ?? Duration.zero;
+    final over = hasLimit && used > state.dailyScreenTimeLimit
+        ? used - state.dailyScreenTimeLimit
+        : Duration.zero;
     final footer = !hasLimit
         ? 'No daily goal set'
         : (remaining > Duration.zero
               ? '${_durationLabel(remaining)} left before your goal'
-              : 'You reached your daily goal');
+              : (over > Duration.zero
+                    ? '${_durationLabel(over)} over your daily goal'
+                    : 'You reached your daily goal'));
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: AppColors.heroGradient,
+        gradient: cardGradient(tone),
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
@@ -3850,7 +3859,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             child: LinearProgressIndicator(
               value: hasLimit ? progress : 0,
               minHeight: 10,
-              color: AppColors.teal,
+              color: cardProgressColor(tone),
               backgroundColor: Colors.white.withValues(alpha: 0.25),
             ),
           ),
