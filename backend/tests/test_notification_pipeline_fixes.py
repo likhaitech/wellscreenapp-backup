@@ -168,7 +168,12 @@ def test_usage_event_types_accepted(monkeypatch, etype):
 
 def _decision_store():
     return {
-        "child_profiles/p1": {"parentId": "parent", "childAccountId": "child", "pairingStatus": "connected"},
+        "child_profiles/p1": {
+            "parentId": "parent",
+            "childAccountId": "child",
+            "parentDisplayName": "Alex Morgan",
+            "pairingStatus": "connected",
+        },
         "child_profiles/p1/access_requests/r1": {
             "childUid": "child", "appName": "TikTok", "status": "declined",
             "decisionNotificationState": "pending"},
@@ -187,8 +192,68 @@ def test_decision_push_goes_to_child_once(monkeypatch):
         cas._notify_decision(fake, "p1", "child", "r1")  # second call is a no-op
     assert send.call_count == 1
     msg = send.call_args.args[0]
-    assert msg.token == "tok-child-limit" and msg.notification.title == "App access declined"
+    assert msg.token == "tok-child-limit"
+    assert msg.notification.title == "Alex Morgan · App Access Request Denied"
+    assert msg.notification.body == "Your request to use TikTok has been denied."
+    assert msg.android.notification.channel_id == "wellscreen_chat"
     assert store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] == "sent"
+    notice_id = cas._decision_inbox_id("p1", "r1")
+    notice = store[f"users/child/notifications/{notice_id}"]
+    assert notice["type"] == "access_decision"
+    assert notice["readAt"] is None
+    assert notice["title"] == msg.notification.title
+    assert msg.data["notificationId"] == notice_id
+
+
+def test_decision_inbox_without_token_and_preserves_read_state(monkeypatch):
+    store = _decision_store()
+    store["users/child"] = {}
+    store["child_profiles/p1/access_requests/r1"].update(
+        status="approved_pending_activation", approvedMinutes=15)
+    fake = FakeDb(store)
+    monkeypatch.setattr(cas, "transactional", lambda fn: fn)
+    with mock.patch.object(cas.messaging, "send") as send:
+        cas._notify_decision(fake, "p1", "child", "r1")
+        notice_id = cas._decision_inbox_id("p1", "r1")
+        path = f"users/child/notifications/{notice_id}"
+        assert "15 minutes granted" in store[path]["body"]
+        store[path]["readAt"] = "already read"
+        cas._notify_decision(fake, "p1", "child", "r1")
+        send.assert_not_called()
+    assert store[path]["readAt"] == "already read"
+    assert store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] == "pending"
+
+
+def test_already_sent_decision_backfills_without_another_push(monkeypatch):
+    store = _decision_store()
+    store["child_profiles/p1/access_requests/r1"]["decisionNotificationState"] = "sent"
+    fake = FakeDb(store)
+    monkeypatch.setattr(cas, "transactional", lambda fn: fn)
+    with mock.patch.object(cas.messaging, "send") as send:
+        cas._notify_decision(fake, "p1", "child", "r1")
+        send.assert_not_called()
+    assert f"users/child/notifications/{cas._decision_inbox_id('p1', 'r1')}" in store
+
+
+
+def test_approved_decision_notification_includes_duration_and_expiry():
+    expires_at = cas.dt.datetime(2026, 11, 28, 8, 30, tzinfo=cas.UTC)
+
+    title, body = cas._decision_notification_content(
+        {
+            "status": "active",
+            "appName": "TikTok",
+            "approvedMinutes": 30,
+            "expiresAt": expires_at,
+        },
+        "Alex Morgan",
+    )
+
+    assert title == "Alex Morgan · App Access Request Approved"
+    assert body == (
+        "Your request to use TikTok has been approved. "
+        "30 minutes granted. Access expires at 4:30 PM."
+    )
 
 
 def test_decision_push_failure_never_breaks_approval(monkeypatch):

@@ -9,8 +9,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../screens/parent_child_chat_screen.dart';
 
-/// ONE app-wide handler for chat FCM. Existing app-limit and monitoring
-/// notification handlers continue to handle their own event types.
+/// App-wide handler for family chat, child location warnings, and app restrictions.
+/// Existing app-limit and guardian monitoring handlers retain their event types.
 class ChatNotificationsService {
   ChatNotificationsService._();
   static final ChatNotificationsService instance = ChatNotificationsService._();
@@ -18,6 +18,9 @@ class ChatNotificationsService {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
   static const _channelId = 'wellscreen_chat';
+  static const _locationChannelId = 'wellscreen_location';
+  static const _restrictionChannelId = 'wellscreen_restrictions';
+  static const _restrictionType = 'app_restrictions_changed';
   final _notifications = FlutterLocalNotificationsPlugin();
   StreamSubscription<RemoteMessage>? _foreground;
   StreamSubscription<RemoteMessage>? _opened;
@@ -77,9 +80,40 @@ class ChatNotificationsService {
           ),
         );
 
+    // Match the channel used by the backend's Android FCM payload.
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _locationChannelId,
+            'Location Warnings',
+            description: 'Reminders to share an updated location',
+            importance: Importance.high,
+          ),
+        );
+
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _restrictionChannelId,
+            'App Restrictions',
+            description: 'New applications blocked by a parent',
+            importance: Importance.high,
+          ),
+        );
+
     _foreground = FirebaseMessaging.onMessage.listen((message) {
       if (message.data['type'] == 'parent_child_chat') {
         unawaited(_showForeground(message));
+      } else if (message.data['type'] == 'gps_location_stale') {
+        unawaited(_showLocationWarning(message));
+      } else if (message.data['type'] == _restrictionType) {
+        unawaited(_showRestrictionWarning(message));
       }
     });
     _opened = FirebaseMessaging.onMessageOpenedApp.listen((message) {
@@ -121,6 +155,82 @@ class ChatNotificationsService {
       value = ((value ^ ch) * 0x01000193) & 0x7FFFFFFF;
     }
     return value;
+  }
+
+  Future<void> _showLocationWarning(RemoteMessage message) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final profileId = message.data['childProfileId'];
+    final eventId = message.data['eventId'];
+    if (uid == null ||
+        message.data['recipientUid'] != uid ||
+        profileId is! String ||
+        profileId.isEmpty ||
+        eventId is! String ||
+        eventId.isEmpty) {
+      return;
+    }
+    final title = message.notification?.title ?? 'Location Update Needed';
+    final body =
+        message.notification?.body ??
+        'Your location is outdated. Open WellScreen to share your location.';
+    try {
+      await _notifications.show(
+        id: _notificationId('gps_stale_$profileId'),
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _locationChannelId,
+            'Location Warnings',
+            channelDescription: 'Reminders to share an updated location',
+            importance: Importance.high,
+            priority: Priority.high,
+            styleInformation: BigTextStyleInformation(body),
+          ),
+        ),
+        // No chat payload: tapping this warning must not open family chat.
+      );
+    } catch (error) {
+      debugPrint('Could not display child location warning: $error');
+    }
+  }
+
+  Future<void> _showRestrictionWarning(RemoteMessage message) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final profileId = message.data['childProfileId'];
+    final id = message.data['notificationId'];
+    if (uid == null ||
+        message.data['recipientUid'] != uid ||
+        profileId is! String ||
+        profileId.isEmpty ||
+        id is! String ||
+        id.isEmpty) {
+      return;
+    }
+    final title = message.notification?.title ?? 'New App Restrictions';
+    final body =
+        message.notification?.body ??
+        'Your parent has blocked applications. Open WellScreen for details.';
+    try {
+      await _notifications.show(
+        id: _notificationId(id),
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _restrictionChannelId,
+            'App Restrictions',
+            channelDescription: 'New applications blocked by a parent',
+            importance: Importance.high,
+            priority: Priority.high,
+            styleInformation: BigTextStyleInformation(body),
+          ),
+        ),
+        // The inbox is authoritative. Do not route this push into family chat.
+      );
+    } catch (error) {
+      debugPrint('Could not display child app restriction warning: $error');
+    }
   }
 
   Future<void> _showForeground(RemoteMessage message) async {
@@ -237,6 +347,53 @@ class ChatNotificationsService {
       final parent = profile['parentId'] == uid;
       final child = profile['childAccountId'] == uid;
       if (!parent && !child) return;
+      if (item['type'] == _restrictionType) {
+        if (!child ||
+            item['recipientUid'] != uid ||
+            FirebaseAuth.instance.currentUser?.uid != uid) {
+          return;
+        }
+        if (item['readAt'] == null) {
+          await markRead(notificationId);
+        }
+        if (!context.mounted || FirebaseAuth.instance.currentUser?.uid != uid) {
+          return;
+        }
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text((item['title'] ?? 'New App Restrictions').toString()),
+            content: SingleChildScrollView(
+              child: Text((item['body'] ?? '').toString()),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      if (item['type'] == 'gps_location_stale') {
+        await markRead(notificationId);
+        if (!context.mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text((item['title'] ?? 'Location Update Needed').toString()),
+            content: Text((item['body'] ?? '').toString()),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
       unawaited(markRead(notificationId));
       await Navigator.push(
         context,
@@ -272,7 +429,10 @@ class ChatNotificationsService {
         uid,
       ).where('childProfileId', isEqualTo: childProfileId).limit(200).get();
       final unread = docs.docs
-          .where((d) => d.data()['readAt'] == null)
+          .where((d) =>
+              d.data()['readAt'] == null &&
+              d.data()['type'] != 'gps_location_stale' &&
+              d.data()['type'] != _restrictionType)
           .toList();
       for (var i = 0; i < unread.length; i += 400) {
         final batch = FirebaseFirestore.instance.batch();

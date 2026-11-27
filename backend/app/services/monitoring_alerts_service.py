@@ -6,6 +6,7 @@ scheduled OUTSIDE the child app (e.g. Cloudflare Cron Trigger).
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -16,7 +17,9 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from firebase_admin import messaging
 from google.api_core.exceptions import AlreadyExists, Conflict
+from google.cloud.firestore_v1 import transactional
 
 from .system_activity_service import log_delivery_problem
 from .firebase_service import get_firestore_client
@@ -155,6 +158,92 @@ def _timeout_minutes() -> int:
     return max(60, min(1440, value))
 
 
+def _notify_child_stale_gps(*, profile_id: str, parent_uid: str,
+                            child: dict[str, Any], updated: datetime,
+                            now: datetime, alert_id: str) -> None:
+    """Claim child delivery independently of the existing guardian push."""
+    child_uid = child.get("childAccountId")
+    if not isinstance(child_uid, str) or not child_uid or child_uid == parent_uid:
+        return
+
+    db = get_firestore_client()
+    profile_ref = db.collection("child_profiles").document(profile_id)
+    alert_ref = profile_ref.collection("monitoring_alerts").document(alert_id)
+    account_ref = db.collection("users").document(child_uid)
+    account = account_ref.get().to_dict() or {}
+    if not isinstance(account, dict):
+        return
+    token = account.get("fcmToken") or account.get("limitNotificationToken")
+    has_token = isinstance(token, str) and bool(token.strip())
+    key = hashlib.sha256(f"{profile_id}/{alert_id}".encode()).hexdigest()
+    notification_id = "gps_location_stale_" + key
+    inbox_ref = account_ref.collection("notifications").document(notification_id)
+    pht = timezone(timedelta(hours=8))
+    last_update = updated.astimezone(pht).strftime("%b %d, %Y %I:%M %p PHT")
+    title = "Location Update Needed"
+    body = ("Your location is outdated. Turn on location services and check "
+            "your internet connection. Open WellScreen to share your location. "
+            f"Last update: {last_update}.")
+
+    @transactional
+    def claim(tx: Any) -> bool:
+        profile_snap = profile_ref.get(transaction=tx)
+        alert_snap = alert_ref.get(transaction=tx)
+        current = profile_snap.to_dict() or {}
+        alert = alert_snap.to_dict() or {}
+        if (not profile_snap.exists or not alert_snap.exists
+                or current.get("pairingStatus") != "connected"
+                or current.get("parentId") != parent_uid
+                or current.get("childAccountId") != child_uid
+                or _utc_datetime(current.get("locationUpdatedAt")) != updated):
+            return False
+        inbox_snap = inbox_ref.get(transaction=tx)
+        if not inbox_snap.exists:
+            tx.set(inbox_ref, {
+                "type": "gps_location_stale", "childProfileId": profile_id,
+                "recipientUid": child_uid, "eventId": alert_id,
+                "title": title, "body": body,
+                "createdAt": alert.get("createdAt") or now,
+                "locationUpdatedAt": updated, "readAt": None,
+            })
+        # Persist independently of token availability and prior FCM attempts.
+        if not has_token or alert.get("childPushStatus") is not None:
+            return False
+        tx.update(alert_ref, {"childPushStatus": "claimed",
+                              "childPushClaimedAt": now})
+        return True
+
+    if not claim(db.transaction()):
+        return
+
+    status = "failed"
+    message_id = ""
+    try:
+        message_id = messaging.send(messaging.Message(
+            token=token,
+            notification=messaging.Notification(title=title, body=body),
+            data={"type": "gps_location_stale", "childProfileId": profile_id,
+                  "recipientUid": child_uid, "eventId": alert_id,
+                  "notificationId": notification_id,
+                  "locationUpdatedAt": updated.isoformat()},
+            android=messaging.AndroidConfig(
+                priority="high", ttl=timedelta(minutes=15),
+                notification=messaging.AndroidNotification(
+                    channel_id="wellscreen_location", tag="gps_stale_" + profile_id,
+                ),
+            ),
+        ))
+        status = "sent"
+    except messaging.UnregisteredError:
+        status = "unregistered"
+    except Exception as exc:
+        log.warning("Child GPS push failed for %s: %s", profile_id, type(exc).__name__)
+    # Same best-effort at-most-once policy as guardian alerts: do not blindly
+    # retry after an attempted send, which may already have reached FCM.
+    alert_ref.update({"childPushStatus": status, "childPushMessageId": message_id,
+                      "childPushDispatchedAt": _utcnow()})
+
+
 def _report_stale_gps(*, profile_id: str, parent_uid: str,
                       child: dict[str, Any], now: datetime) -> bool:
     """Notify once for each GPS timestamp older than one hour."""
@@ -172,7 +261,7 @@ def _report_stale_gps(*, profile_id: str, parent_uid: str,
     # Repeated sweeps of the same timestamp cannot create duplicates.
     alert_id = "gps_stale_" + str(int(updated.timestamp() * 1_000_000))
 
-    return _create_and_dispatch(
+    created = _create_and_dispatch(
         profile_id=profile_id,
         parent_uid=parent_uid,
         alert_id=alert_id,
@@ -191,6 +280,14 @@ def _report_stale_gps(*, profile_id: str, parent_uid: str,
         allow_sms=False,
     )
 
+    try:
+        _notify_child_stale_gps(profile_id=profile_id, parent_uid=parent_uid,
+                                child=child, updated=updated, now=now,
+                                alert_id=alert_id)
+    except Exception as exc:
+        log.warning("Child GPS notification deferred/failed for %s: %s",
+                    profile_id, type(exc).__name__)
+    return created
 
 def _report_accessibility_off(*, snapshot: Any, parent_uid: str,
                               child: dict[str, Any], now: datetime) -> bool:

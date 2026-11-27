@@ -31,7 +31,6 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   static const Color softGreen = AppColors.successBg;
   static const Color softOrange = AppColors.warningBg;
 
-
   // Detect new successful pairings while the parent is on this screen.
   // The initial server snapshot establishes a baseline, so existing
   // connected devices do not trigger a confirmation on every visit.
@@ -40,10 +39,25 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   Map<String, bool> _previousConnectionStates = {};
   bool _hasInitialConnectionSnapshot = false;
   bool _isSyncingParentDetails = false;
+  static const _legacyPairingCodeTtl = Duration(minutes: 15);
+  Timer? _pairingExpiryTimer;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _childProfilesStream;
+  String? _childProfilesStreamUid;
 
   @override
   void initState() {
     super.initState();
+    _pairingExpiryTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        final expiry = generatedExpiry;
+        if (expiry != null && !expiry.isAfter(DateTime.now())) {
+          // Retain the expiry for filtering this legacy profile until a new
+          // code is generated, but never display or copy the expired code.
+          generatedCode = '';
+        }
+      });
+    });
     final parentUser = FirebaseAuth.instance.currentUser;
     if (parentUser == null) return;
 
@@ -233,15 +247,61 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
 
   @override
   void dispose() {
+    _pairingExpiryTimer?.cancel();
     _connectionSubscription?.cancel();
     super.dispose();
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> childProfilesStream(String uid) {
-    return FirebaseFirestore.instance
-        .collection('child_profiles')
-        .where('parentId', isEqualTo: uid)
-        .snapshots();
+    // Keep the stream stable when the countdown rebuilds the screen.
+    if (_childProfilesStream == null || _childProfilesStreamUid != uid) {
+      _childProfilesStreamUid = uid;
+      _childProfilesStream = FirebaseFirestore.instance
+          .collection('child_profiles')
+          .where('parentId', isEqualTo: uid)
+          .snapshots();
+    }
+    return _childProfilesStream!;
+  }
+
+  DateTime? _pendingPairingExpiry(
+    String childProfileId,
+    Map<String, dynamic> data,
+  ) {
+    final storedExpiry = data['pairingExpiresAt'];
+    if (storedExpiry is Timestamp) return storedExpiry.toDate();
+
+    if (childProfileId == generatedChildProfileId && generatedExpiry != null) {
+      return generatedExpiry;
+    }
+
+    // Older profiles lack an explicit expiry. Their codes used a 15-minute TTL.
+    final createdAt = data['createdAt'];
+    if (createdAt is Timestamp) {
+      return createdAt.toDate().add(_legacyPairingCodeTtl);
+    }
+    return null;
+  }
+
+  bool _showChildProfile(
+    String childProfileId,
+    Map<String, dynamic> data,
+    DateTime now,
+  ) {
+    if (data['pairingStatus'] == 'unpaired') return false;
+    if (isConnected(data) || data['pairingStatus'] != 'waiting') return true;
+
+    final expiry = _pendingPairingExpiry(childProfileId, data);
+    // Do not hide a profile when its expiry cannot be established.
+    return expiry == null || expiry.isAfter(now);
+  }
+
+  String _formatCountdown(DateTime expiry, DateTime now) {
+    final milliseconds = expiry.difference(now).inMilliseconds;
+    final seconds = milliseconds <= 0 ? 0 : (milliseconds + 999) ~/ 1000;
+    final minutesText = (seconds ~/ 60).toString().padLeft(2, '0');
+    final secondsText = (seconds % 60).toString().padLeft(2, '0');
+    return '$minutesText:$secondsText';
   }
 
   Future<void> generatePairingCode() async {
@@ -442,7 +502,12 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
   }
 
   void copyCode() {
-    if (generatedCode.isEmpty) return;
+    final expiry = generatedExpiry;
+    if (generatedCode.isEmpty ||
+        expiry == null ||
+        !expiry.isAfter(DateTime.now())) {
+      return;
+    }
 
     Clipboard.setData(ClipboardData(text: generatedCode));
     showMessage('Pairing code copied.');
@@ -504,18 +569,33 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
             );
           }
 
-          final childDocs = (snapshot.data?.docs ?? [])
-              .where((doc) => doc.data()['pairingStatus'] != 'unpaired')
+          final now = DateTime.now();
+          final allChildDocs = snapshot.data?.docs ?? [];
+          final childDocs = allChildDocs
+              .where((doc) => _showChildProfile(doc.id, doc.data(), now))
               .toList();
+          final expiry = generatedExpiry;
+          final generatedProfileClosed = allChildDocs.any(
+            (doc) =>
+                doc.id == generatedChildProfileId &&
+                (isConnected(doc.data()) ||
+                    doc.data()['pairingStatus'] == 'unpaired'),
+          );
+          final showGeneratedCode =
+              generatedCode.isNotEmpty && !generatedProfileClosed;
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
             children: [
               _generateCodeCard(),
-              if (generatedCode.isNotEmpty) const SizedBox(height: 14),
-              if (generatedCode.isNotEmpty) _generatedCodeCard(),
+              if (showGeneratedCode &&
+                  expiry != null &&
+                  expiry.isAfter(now)) ...[
+                const SizedBox(height: 14),
+                _generatedCodeCard(now, expiry),
+              ],
               const SizedBox(height: 14),
-              _childrenSection(childDocs),
+              _childrenSection(childDocs, now),
             ],
           );
         },
@@ -581,7 +661,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     );
   }
 
-  Widget _generatedCodeCard() {
+  Widget _generatedCodeCard(DateTime now, DateTime expiry) {
     return BentoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -682,8 +762,8 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            'Expires: ${formatDate(generatedExpiry)}',
-            style: const TextStyle(color: grayText, fontSize: 12),
+            'Expires in ${_formatCountdown(expiry, now)}',
+            style: const TextStyle(color: AppColors.warning, fontSize: 12),
           ),
         ],
       ),
@@ -692,6 +772,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
 
   Widget _childrenSection(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> childDocs,
+    DateTime now,
   ) {
     return BentoCard(
       padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
@@ -729,7 +810,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
           else
             for (var i = 0; i < childDocs.length; i++) ...[
               if (i > 0) const Divider(endIndent: 8),
-              _childDeviceCard(childDocs[i].id, childDocs[i].data()),
+              _childDeviceCard(childDocs[i].id, childDocs[i].data(), now),
             ],
         ],
       ),
@@ -759,10 +840,17 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
     );
   }
 
-  Widget _childDeviceCard(String childProfileId, Map<String, dynamic> data) {
+  Widget _childDeviceCard(
+    String childProfileId,
+    Map<String, dynamic> data,
+    DateTime now,
+  ) {
     final name = childNameOf(data, fallback: 'Child Device');
     final email = (data['childEmail'] ?? 'Not connected yet').toString();
     final connected = isConnected(data);
+    final pendingExpiry = connected || data['pairingStatus'] != 'waiting'
+        ? null
+        : _pendingPairingExpiry(childProfileId, data);
     final connectedAt = formatTimestamp(data['connectedAt']);
     final isRemoving = _removingProfileIds.contains(childProfileId);
 
@@ -806,6 +894,16 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: grayText, fontSize: 13),
                     ),
+                    if (pendingExpiry != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Expires in ${_formatCountdown(pendingExpiry, now)}',
+                        style: const TextStyle(
+                          color: AppColors.warning,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                     if (connected) ...[
                       const SizedBox(height: 2),
                       Text(
@@ -919,10 +1017,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
               else
                 const Text(
                   'Change',
-                  style: TextStyle(
-                    color: purple,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(color: purple, fontWeight: FontWeight.w700),
                 ),
             ],
           ),
