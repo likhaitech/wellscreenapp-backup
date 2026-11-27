@@ -57,6 +57,17 @@ class BlockedAppActivity : Activity() {
         const val MODE_SCHEDULE = "schedule"
         const val EXTRA_SCHEDULE_REASON = "schedule_reason"
         const val EXTRA_SCHEDULE_ENDS_AT = "schedule_ends_at"
+
+        /** Category of a blocked website ("adult", "gambling", ...), if known. */
+        const val EXTRA_BLOCKED_CATEGORY = "blocked_category"
+
+        /**
+         * No "Ask my parent" button for adult sites - there is no reason a
+         * child needs one opened, and a request would be an odd thing to
+         * send. The guardian can still allow a wrongly blocked site from
+         * their own app.
+         */
+        fun canAskToAllow(category: String?): Boolean = BlockScreenText.canAskToAllow(category)
     }
 
     private var isDailyTimeLimitBlock = false
@@ -106,6 +117,8 @@ class BlockedAppActivity : Activity() {
             "This app"
         }
         val blockedDomain = if (mode == null) intent.getStringExtra("blocked_domain") else null
+        val blockedCategory = intent.getStringExtra(EXTRA_BLOCKED_CATEGORY)
+        val canAsk = canAskToAllow(blockedCategory)
         blockedBrowser = intent.getStringExtra("blocked_browser")
         isWebsiteBlock = blockedDomain != null
         val blockedPackage = intent.getStringExtra("blocked_package") ?: "Restricted app"
@@ -206,16 +219,10 @@ class BlockedAppActivity : Activity() {
         }
 
         val badge = TextView(this).apply {
-            text = when {
-                isProtectedSettings -> "Protected"
-                isSignInRequired -> "Sign in needed"
-                scheduleReason == "bedtime" -> "Bedtime"
-                scheduleReason == "break" -> "Break time"
-                scheduleReason != null -> "Focus time"
-                blockedDomain != null -> "Blocked"
-                isDailyTimeLimitBlock -> "Time limit reached"
-                else -> "Restricted"
-            }
+            text = BlockScreenText.badge(
+                isProtectedSettings, isSignInRequired, scheduleReason,
+                blockedDomain, isDailyTimeLimitBlock,
+            )
             textSize = 12f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(accent)
@@ -228,15 +235,10 @@ class BlockedAppActivity : Activity() {
         }
 
         val title = TextView(this).apply {
-            text = when {
-                isProtectedSettings -> "Ask your guardian"
-                isSignInRequired -> "Sign in to WellScreen"
-                scheduleReason == "bedtime" -> "Time to rest"
-                scheduleReason == "break" -> "Take a break"
-                scheduleReason != null -> "Focus time"
-                blockedDomain != null -> "Website blocked"
-                else -> "$displayName is paused"
-            }
+            text = BlockScreenText.title(
+                isProtectedSettings, isSignInRequired, scheduleReason,
+                blockedDomain, displayName,
+            )
             textSize = 30f
             typeface = headingFace
             setTextColor(ink)
@@ -266,6 +268,8 @@ class BlockedAppActivity : Activity() {
                     "WellScreen's settings and the phone's date and time are " +
                         "protected while this phone is paired. To change them, " +
                         "ask your guardian for Emergency Access."
+                blockedDomain != null && !canAsk ->
+                    "$blockedDomain has adult content and is blocked by WellScreen."
                 blockedDomain != null ->
                     "$blockedDomain is blocked by WellScreen."
                 isDailyTimeLimitBlock ->
@@ -315,7 +319,7 @@ class BlockedAppActivity : Activity() {
         }
 
         val requestButton = TextView(this).apply {
-            text = "Request Temporary Access"
+            text = BlockScreenText.REQUEST_BUTTON
             textSize = 15f
             setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -327,11 +331,22 @@ class BlockedAppActivity : Activity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(48),
             )
-            // Requests are sent from the WellScreen chat, so open the app.
+            // Open WellScreen straight to the Emergency Access request form.
             setOnClickListener {
                 val launch = packageManager.getLaunchIntentForPackage(packageName)
+                MainActivity.requestAction(MainActivity.ACTION_EMERGENCY_REQUEST)
                 if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // CLEAR_TOP + SINGLE_TOP: reuse the running app and remove
+                    // this block screen from above it.
+                    launch.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    )
+                    launch.putExtra(
+                        MainActivity.EXTRA_ACTION,
+                        MainActivity.ACTION_EMERGENCY_REQUEST,
+                    )
                     startActivity(launch)
                 }
                 finish()
@@ -357,7 +372,7 @@ class BlockedAppActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(48),
-            ).apply { topMargin = dp(12) }
+            ).apply { topMargin = if (blockedDomain != null && !canAsk) dp(32) else dp(12) }
             setOnClickListener {
                 when {
                     blockedDomain != null -> leaveToSafePage()
@@ -429,12 +444,11 @@ class BlockedAppActivity : Activity() {
         root.addView(title)
         root.addView(message)
         // Signing in needs WellScreen itself, not a request to the guardian.
-        if (isSignInRequired) {
-            root.addView(openAppButton)
-        } else if (blockedDomain == null) {
-            root.addView(card)
-        } else {
-            root.addView(askButton)
+        when (BlockScreenText.action(isSignInRequired, blockedDomain, blockedCategory)) {
+            BlockScreenText.Action.SIGN_IN -> root.addView(openAppButton)
+            BlockScreenText.Action.REQUEST_TEMPORARY_ACCESS -> root.addView(card)
+            BlockScreenText.Action.ASK_PARENT -> root.addView(askButton)
+            BlockScreenText.Action.NONE -> Unit
         }
         root.addView(backButton)
         setContentView(root)

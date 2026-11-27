@@ -30,6 +30,10 @@ object AdultKeywordMatcher {
         // sites. Left out on purpose: "iyot" (inside "kiyota..."), "chupa"
         // (Chupa Chups), "bold", "pinay" (just means Filipina).
         "kantot", "jakol", "tsupa", "libog", "tamod", "iyutan", "pinayflix", "sulasok",
+        // PH adult site names seen in testing (kayatan.org, kayatan.vip...)
+        // and "scandal" sites. Bare "scandal", "pinay" and "sarap" are
+        // ordinary words (news, Filipina, food) and stay out.
+        "kayatan", "pinayscandal", "pinoyscandal", "scandalpinay",
     )
 
     /** Ordinary words that contain a keyword ("milford" contains "milf"). */

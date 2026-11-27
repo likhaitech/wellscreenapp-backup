@@ -3,15 +3,19 @@ import 'package:flutter/material.dart';
 
 import '../services/admin_users_api_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart';
 import '../widgets/wellscreen_ui.dart';
 
-enum _UserFilter { all, guardians, children, admins, deactivated }
+enum AdminUserFilter { all, guardians, children, admins, deactivated }
 
 /// Admin "Manage Users" module (manuscript use case "Manage Users"):
 /// retrieve the user list, view a user's details, update a user record,
 /// deactivate / reactivate an account, and delete an account.
 class AdminUsersScreen extends StatefulWidget {
-  const AdminUsersScreen({super.key});
+  const AdminUsersScreen({super.key, this.embedded = false});
+
+  /// True inside the admin home's tabs: no app bar of its own.
+  final bool embedded;
 
   @override
   State<AdminUsersScreen> createState() => _AdminUsersScreenState();
@@ -28,7 +32,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   List<AdminManagedUser> _users = <AdminManagedUser>[];
   bool _loading = true;
   String? _loadError;
-  _UserFilter _filter = _UserFilter.all;
+  AdminUserFilter _filter = AdminUserFilter.all;
   String _query = '';
 
   String? get _currentUid => FirebaseAuth.instance.currentUser?.uid;
@@ -71,30 +75,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  List<AdminManagedUser> get _visibleUsers {
-    final query = _query.trim().toLowerCase();
-    return _users.where((user) {
-      switch (_filter) {
-        case _UserFilter.all:
-          break;
-        case _UserFilter.guardians:
-          if (user.role != 'parent') return false;
-          break;
-        case _UserFilter.children:
-          if (user.role != 'child') return false;
-          break;
-        case _UserFilter.admins:
-          if (user.role != 'admin') return false;
-          break;
-        case _UserFilter.deactivated:
-          if (!user.disabled) return false;
-          break;
-      }
-      if (query.isEmpty) return true;
-      return user.email.toLowerCase().contains(query) ||
-          user.displayName.toLowerCase().contains(query);
-    }).toList();
-  }
+  List<AdminManagedUser> get _visibleUsers =>
+      filterAdminUsers(_users, _query, _filter);
 
   String _roleLabel(String role) {
     switch (role) {
@@ -227,7 +209,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           email: emailChanged ? newEmail : null,
         ),
       );
-      _toast('User details updated.');
+      _toast(adminUserUpdatedMessage);
     } catch (error) {
       _toast(_api.errorMessage(error));
     }
@@ -263,8 +245,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     final newPassword = passwordController.text;
     passwordController.dispose();
     if (confirmed != true) return;
-    if (newPassword.length < 6) {
-      _toast('Password must be at least 6 characters.');
+    final passwordError = adminPasswordError(newPassword);
+    if (passwordError != null) {
+      _toast(passwordError);
       return;
     }
     try {
@@ -305,176 +288,246 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 
+  /// Full "User details" page (design screen 3). Actions close the page
+  /// and run the same confirm dialogs as before.
   void _openDetails(AdminManagedUser user) {
     final isSelf = user.uid == _currentUid;
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final title = user.displayName.isEmpty ? user.email : user.displayName;
+    final (roleFg, roleBg) = _roleColors(user.role);
+
+    void run(BuildContext pageContext, Future<void> Function() action) {
+      Navigator.pop(pageContext);
+      action();
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: const WellScreenAppBar.subPage(title: 'User details'),
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            children: [
+              BentoCard(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    _avatar(user, size: 68, fontSize: 24),
+                    const SizedBox(height: 10),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.heading,
+                        color: darkText,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        AppBadge(
+                          label: _roleLabel(user.role),
+                          color: roleFg,
+                          background: roleBg,
+                        ),
+                        AppBadge(
+                          label: user.disabled ? 'Deactivated' : 'Active',
+                          color: user.disabled
+                              ? AppColors.danger
+                              : AppColors.success,
+                          background: user.disabled
+                              ? AppColors.dangerBg
+                              : AppColors.successBg,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              BentoCard(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: [
+                    _detailRow('Email', user.email),
+                    _detailRow(
+                      'Email verified',
+                      user.emailVerified ? 'Yes' : 'No',
+                    ),
+                    if (user.paired != null)
+                      _detailRow(
+                        'Pairing',
+                        user.paired! ? 'Paired' : 'Not paired',
+                      ),
+                    _detailRow('Created', _formatDate(user.createdAt)),
+                    _detailRow('Last sign-in', _formatDate(user.lastSignInAt)),
+                    _detailRow('User ID', user.uid, last: true, mono: true),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
                 children: [
-                  Text(
-                    user.displayName.isEmpty ? user.email : user.displayName,
-                    style: const TextStyle(
-                      color: darkText,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(user.email, style: const TextStyle(color: grayText)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      AppBadge(
-                        label: _roleLabel(user.role),
-                        color: purple,
-                        background: AppColors.primaryLight,
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(50),
+                        shape: const StadiumBorder(),
                       ),
-                      AppBadge(
-                        label: user.disabled ? 'Deactivated' : 'Active',
-                        color: user.disabled
-                            ? AppColors.danger
-                            : AppColors.success,
-                        background: user.disabled
-                            ? AppColors.dangerBg
-                            : AppColors.successBg,
+                      onPressed: () => run(pageContext, () => _editUser(user)),
+                      child: const Text('Edit details'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.tonal(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryLight,
+                        foregroundColor: AppColors.primary,
+                        minimumSize: const Size.fromHeight(50),
+                        shape: const StadiumBorder(),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _detailRow('User ID', user.uid),
-                  _detailRow('Created', _formatDate(user.createdAt)),
-                  _detailRow('Last sign-in', _formatDate(user.lastSignInAt)),
-                  const SizedBox(height: 12),
-                  _sheetAction(
-                    icon: Icons.edit_rounded,
-                    label: 'Edit details',
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _editUser(user);
-                    },
-                  ),
-                  _sheetAction(
-                    icon: Icons.password_rounded,
-                    label: 'Set new password',
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _resetPassword(user);
-                    },
-                  ),
-                  if (!isSelf)
-                    _sheetAction(
-                      icon: user.disabled
-                          ? Icons.check_circle_outline_rounded
-                          : Icons.block_rounded,
-                      label: user.disabled
-                          ? 'Reactivate account'
-                          : 'Deactivate account',
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _toggleDisabled(user);
-                      },
+                      onPressed: () =>
+                          run(pageContext, () => _resetPassword(user)),
+                      child: const Text('New password'),
                     ),
-                  if (!isSelf)
-                    _sheetAction(
-                      icon: Icons.delete_outline_rounded,
-                      label: 'Delete account',
-                      color: AppColors.danger,
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _deleteUser(user);
-                      },
-                    ),
-                  if (isSelf)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Text(
-                        'This is your own admin account, so it cannot be '
-                        'deactivated or deleted here.',
-                        style: TextStyle(color: grayText),
-                      ),
-                    ),
+                  ),
                 ],
               ),
-            ),
+              const SizedBox(height: 14),
+              BentoCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Account access',
+                      style: TextStyle(
+                        color: AppColors.danger,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isSelf
+                          ? 'This is your own admin account, so it cannot be '
+                              'deactivated or deleted here.'
+                          : 'Deactivating signs the user out and blocks '
+                              'sign-in. You can reactivate later. Deleting '
+                              'removes the account for good.',
+                      style: const TextStyle(
+                        color: grayText,
+                        fontSize: 12,
+                        height: 1.45,
+                      ),
+                    ),
+                    if (!isSelf) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.tonal(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: user.disabled
+                                    ? AppColors.successBg
+                                    : AppColors.dangerBg,
+                                foregroundColor: user.disabled
+                                    ? AppColors.success
+                                    : AppColors.danger,
+                                minimumSize: const Size.fromHeight(46),
+                                shape: const StadiumBorder(),
+                              ),
+                              onPressed: () => run(
+                                pageContext,
+                                () => _toggleDisabled(user),
+                              ),
+                              child: Text(
+                                user.disabled ? 'Reactivate' : 'Deactivate',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.danger,
+                                minimumSize: const Size.fromHeight(46),
+                                shape: const StadiumBorder(),
+                              ),
+                              onPressed: () =>
+                                  run(pageContext, () => _deleteUser(user)),
+                              child: const Text('Delete account'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+  Widget _detailRow(
+    String label,
+    String value, {
+    bool last = false,
+    bool mono = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      decoration: BoxDecoration(
+        border: last
+            ? null
+            : const Border(bottom: BorderSide(color: AppColors.surfaceMuted)),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: grayText,
-                fontWeight: FontWeight.w700,
+          Text(label, style: const TextStyle(color: grayText, fontSize: 13)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SelectableText(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: darkText,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                fontFamily: mono ? 'monospace' : null,
               ),
             ),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(color: darkText)),
           ),
         ],
       ),
     );
   }
 
-  Widget _sheetAction({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    Color color = darkText,
-  }) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: color),
-      title: Text(
-        label,
-        style: TextStyle(color: color, fontWeight: FontWeight.w800),
-      ),
-      onTap: onTap,
-    );
-  }
-
-  Widget _searchField() {
-    return TextField(
-      controller: _searchController,
-      onChanged: (value) => setState(() => _query = value),
-      decoration: InputDecoration(
-        hintText: 'Search by name or email',
-        prefixIcon: const Icon(Icons.search_rounded),
-        prefixIconColor: grayText,
-        filled: true,
-        fillColor: AppColors.surface,
-        contentPadding: const EdgeInsets.symmetric(vertical: 14),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+  Widget _avatar(AdminManagedUser user, {double size = 40, double fontSize = 14}) {
+    final (fg, bg) = user.disabled
+        ? (AppColors.textSecondary, AppColors.surfaceMuted)
+        : _roleColors(user.role);
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      child: Text(
+        _initials(user.displayName.isEmpty ? user.email : user.displayName),
+        style: TextStyle(
+          fontFamily: AppFonts.heading,
+          color: fg,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
@@ -507,33 +560,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     return InkWell(
       onTap: () => _openDetails(user),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           border: first
               ? null
-              : const Border(top: BorderSide(color: AppColors.border)),
+              : const Border(top: BorderSide(color: AppColors.surfaceMuted)),
         ),
         child: Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: AppColors.primaryLight,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                _initials(user.displayName.isEmpty
-                    ? user.email
-                    : user.displayName),
-                style: const TextStyle(
-                  fontFamily: AppFonts.heading,
-                  color: purple,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
+            _avatar(user),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -543,10 +578,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: darkText,
+                    style: TextStyle(
+                      color: user.disabled ? grayText : darkText,
                       fontSize: 14,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                   if (user.displayName.isNotEmpty) ...[
@@ -562,45 +597,64 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                AppBadge(
-                  label: _roleLabel(user.role),
-                  color: roleFg,
-                  background: roleBg,
-                ),
-                if (user.disabled) ...[
-                  const SizedBox(height: 4),
-                  const AppBadge(
+            user.disabled
+                ? const AppBadge(
                     label: 'Deactivated',
                     color: AppColors.danger,
                     background: AppColors.dangerBg,
+                  )
+                : AppBadge(
+                    label: _roleLabel(user.role),
+                    color: roleFg,
+                    background: roleBg,
                   ),
-                ],
-              ],
-            ),
           ],
         ),
       ),
     );
   }
 
+  int _count(AdminUserFilter filter) {
+    switch (filter) {
+      case AdminUserFilter.all:
+        return _users.length;
+      case AdminUserFilter.guardians:
+        return _users.where((u) => u.role == 'parent').length;
+      case AdminUserFilter.children:
+        return _users.where((u) => u.role == 'child').length;
+      case AdminUserFilter.admins:
+        return _users.where((u) => u.role == 'admin').length;
+      case AdminUserFilter.deactivated:
+        return _users.where((u) => u.disabled).length;
+    }
+  }
+
+  static const Map<AdminUserFilter, String> _filterLabels = {
+    AdminUserFilter.all: 'All',
+    AdminUserFilter.guardians: 'Guardians',
+    AdminUserFilter.children: 'Children',
+    AdminUserFilter.admins: 'Admins',
+    AdminUserFilter.deactivated: 'Deactivated',
+  };
+
   @override
   Widget build(BuildContext context) {
     final visible = _visibleUsers;
+    final bottom = widget.embedded ? kAdminDockClearance : 24.0;
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: WellScreenAppBar.subPage(
-        title: 'Manage users',
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
+      appBar: widget.embedded
+          ? null
+          : WellScreenAppBar.subPage(
+              title: 'Manage users',
+              actions: [
+                IconButton(
+                  tooltip: 'Refresh',
+                  onPressed: _loading ? null : _load,
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primary),
@@ -616,64 +670,97 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 ),
               ),
             )
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: _searchField(),
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  widget.embedded ? 4 : 12,
+                  16,
+                  bottom,
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: WellScreenPillTabs(
-                    labels: [
-                      'All (${_users.length})',
-                      'Guardians',
-                      'Children',
-                      'Admins',
-                      'Deactivated',
+                children: [
+                  if (widget.embedded) ...[
+                    AdminPageTitle(
+                      'Users',
+                      trailing: Text(
+                        '${_users.length} account${_users.length == 1 ? '' : 's'}',
+                        style: const TextStyle(color: grayText, fontSize: 13),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  AdminSearchField(
+                    hint: 'Search by name or email',
+                    controller: _searchController,
+                    onChanged: (value) => setState(() => _query = value),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final filter in AdminUserFilter.values)
+                        AdminFilterChip(
+                          label: '${_filterLabels[filter]} ${_count(filter)}',
+                          selected: _filter == filter,
+                          onTap: () => setState(() => _filter = filter),
+                        ),
                     ],
-                    selected: _filter.index,
-                    onChanged: (i) =>
-                        setState(() => _filter = _UserFilter.values[i]),
                   ),
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: _load,
-                    child: visible.isEmpty
-                        ? ListView(
-                            padding: const EdgeInsets.all(20),
-                            children: const [
-                              AppEmptyState(
-                                icon: Icons.people_outline_rounded,
-                                title: 'No users found',
-                                message:
-                                    'Try a different search or filter.',
-                              ),
-                            ],
-                          )
-                        : ListView(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                            children: [
-                              BentoCard(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 4,
-                                ),
-                                child: Column(
-                                  children: [
-                                    for (var i = 0; i < visible.length; i++)
-                                      _userCard(visible[i], first: i == 0),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-              ],
+                  const SizedBox(height: 14),
+                  if (visible.isEmpty)
+                    const AppEmptyState(
+                      icon: Icons.people_outline_rounded,
+                      title: 'No users found',
+                      message: 'Try a different search or filter.',
+                    )
+                  else
+                    BentoCard(
+                      padding: EdgeInsets.zero,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < visible.length; i++)
+                            _userCard(visible[i], first: i == 0),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
     );
   }
 }
+
+/// Users shown for the chosen filter chip and search text (email or name).
+List<AdminManagedUser> filterAdminUsers(
+  List<AdminManagedUser> users,
+  String query,
+  AdminUserFilter filter,
+) {
+  final q = query.trim().toLowerCase();
+  return users.where((user) {
+    switch (filter) {
+      case AdminUserFilter.all:
+        break;
+      case AdminUserFilter.guardians:
+        if (user.role != 'parent') return false;
+      case AdminUserFilter.children:
+        if (user.role != 'child') return false;
+      case AdminUserFilter.admins:
+        if (user.role != 'admin') return false;
+      case AdminUserFilter.deactivated:
+        if (!user.disabled) return false;
+    }
+    if (q.isEmpty) return true;
+    return user.email.toLowerCase().contains(q) ||
+        user.displayName.toLowerCase().contains(q);
+  }).toList();
+}
+
+/// Why an administrator's new password for a user is refused, or null.
+String? adminPasswordError(String password) =>
+    password.length < 6 ? 'Password must be at least 6 characters.' : null;
+
+const String adminUserUpdatedMessage = 'User details updated.';

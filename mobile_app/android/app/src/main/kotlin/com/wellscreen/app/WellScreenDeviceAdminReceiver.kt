@@ -197,8 +197,8 @@ class WellScreenDeviceAdminReceiver : DeviceAdminReceiver() {
     ): Boolean = postAlert(
         prefs, user, profileId, timestamp,
         alertType = "device_admin_disabled",
-        title = "WellScreen uninstall protection disabled",
-        body = "Device Admin protection has been disabled on your child's device.",
+        title = ProtectionAlertText.DEVICE_ADMIN_TITLE,
+        body = ProtectionAlertText.DEVICE_ADMIN_BODY,
     )
 
     /** POST /alerts/notify for this paired child. True when the push was sent. */

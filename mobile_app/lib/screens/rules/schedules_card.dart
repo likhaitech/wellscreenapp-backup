@@ -84,10 +84,11 @@ class _SchedulesCardState extends State<SchedulesCard> {
     final next = start
         ? _rules.copyWith(bedtimeStartMinutes: minutes)
         : _rules.copyWith(bedtimeEndMinutes: minutes);
-    if (next.bedtimeStartMinutes == next.bedtimeEndMinutes) {
+    final error = next.bedtimeError;
+    if (error != null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Start and end time must be different.')),
+        SnackBar(content: Text(error)),
       );
       return;
     }

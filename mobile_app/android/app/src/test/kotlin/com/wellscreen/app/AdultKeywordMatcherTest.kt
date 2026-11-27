@@ -86,11 +86,11 @@ class AdultKeywordMatcherTest {
 
     @Test
     fun blocksFilipinoAdultNames() {
-        for (d in listOf("pinayflix.me", "sulasok.tv", "kantotan.net", "jakol-pinoy.com", "libogpinay.xyz")) {
+        for (d in listOf("pinayflix.me", "sulasok.tv", "kantotan.net", "jakol-pinoy.com", "libogpinay.xyz", "kayatan.vip", "pinayscandal.net")) {
             assertTrue(d, AdultKeywordMatcher.matches(d))
         }
         // Ordinary names that only look close stay open.
-        for (d in listOf("chupachups.com", "kiyotaka.jp", "pinaymama.com", "boldpinoy-news.com")) {
+        for (d in listOf("chupachups.com", "kiyotaka.jp", "pinaymama.com", "boldpinoy-news.com", "sarapnotes.com", "scandalnews.com")) {
             assertFalse(d, AdultKeywordMatcher.matches(d))
         }
     }

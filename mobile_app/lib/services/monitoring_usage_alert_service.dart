@@ -87,16 +87,26 @@ class MonitoringUsageAlertService {
     return counts;
   }
 
-  Future<void> reportUsage({
-    required String childProfileId,
+  /// The usage alerts the guardian should get for today's usage: daily
+  /// goal reached, two hours past it, late-night use, long single-app
+  /// sessions and repeated blocked attempts. Each has a stable ID, so the
+  /// same alert is sent once per day.
+  static List<Map<String, Object>> buildEvents({
     required UsageReport report,
     required List<AppUsageSummary> appSummaries,
     List<Map<String, dynamic>> restrictionLog = const [],
-  }) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || childProfileId.isEmpty) return;
+    DateTime? now,
+  }) {
+    final at = now ?? DateTime.now();
+    return _buildEvents(report, appSummaries, restrictionLog, at);
+  }
 
-    final now = DateTime.now();
+  static List<Map<String, Object>> _buildEvents(
+    UsageReport report,
+    List<AppUsageSummary> appSummaries,
+    List<Map<String, dynamic>> restrictionLog,
+    DateTime now,
+  ) {
     final day = _dayStamp(now);
     final timestampMs = now.millisecondsSinceEpoch;
 
@@ -201,6 +211,24 @@ class MonitoringUsageAlertService {
         report.recommendationMessage,
       );
     }
+
+    return events;
+  }
+
+  Future<void> reportUsage({
+    required String childProfileId,
+    required UsageReport report,
+    required List<AppUsageSummary> appSummaries,
+    List<Map<String, dynamic>> restrictionLog = const [],
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || childProfileId.isEmpty) return;
+
+    final events = buildEvents(
+      report: report,
+      appSummaries: appSummaries,
+      restrictionLog: restrictionLog,
+    );
 
     if (events.isEmpty) return;
     try {

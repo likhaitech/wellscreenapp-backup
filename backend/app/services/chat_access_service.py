@@ -120,9 +120,9 @@ def submit_access_request(
     if (
         not isinstance(requested_minutes, int)
         or isinstance(requested_minutes, bool)
-        or not 5 <= requested_minutes <= 120
+        or not 1 <= requested_minutes <= 120
     ):
-        raise ChatAccessError("Requested time must be 5–120 minutes")
+        raise ChatAccessError("Requested time must be 1–120 minutes")
 
     db = get_firestore_client()
     profile_ref = db.collection("child_profiles").document(profile_id)

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alert_notification_client.dart';
+import 'grant_countdown_notifier.dart';
 
 /// Child-requests-temporary-bypass Emergency Access workflow.
 ///
@@ -28,6 +29,45 @@ class EmergencyAccessService {
 
   static const Duration defaultGrantDuration = Duration(minutes: 30);
 
+  static const Duration requestCooldown = Duration(minutes: 5);
+  static const int dailyRequestLimit = 5;
+
+  /// Requests already sent today, from the stored emergencyAccess map.
+  static int todaysRequestCount(Map<String, dynamic> emergencyAccess, DateTime now) {
+    final previous = emergencyAccess['requestedAt'];
+    final last = previous is Timestamp ? previous.toDate().toLocal() : null;
+    final isSameDay = last != null &&
+        last.year == now.year &&
+        last.month == now.month &&
+        last.day == now.day;
+    final stored = emergencyAccess['dailyRequestCount'];
+    return isSameDay ? (stored is int && stored > 0 ? stored : 1) : 0;
+  }
+
+  /// Why a new request is refused (daily limit, wait time, clock moved
+  /// back), or null when it can be sent.
+  static String? rejectionFor(Map<String, dynamic> emergencyAccess, DateTime now) {
+    if (todaysRequestCount(emergencyAccess, now) >= dailyRequestLimit) {
+      return 'Daily emergency access limit reached. '
+          'You can request again tomorrow.';
+    }
+    final previous = emergencyAccess['requestedAt'];
+    final last = previous is Timestamp ? previous.toDate().toLocal() : null;
+    if (last != null) {
+      if (now.isBefore(last)) return 'Please check your device date and time.';
+      final elapsed = now.difference(last);
+      if (elapsed < requestCooldown) {
+        final minutesRemaining =
+            ((requestCooldown - elapsed).inMilliseconds /
+                    Duration.millisecondsPerMinute)
+                .ceil();
+        return 'Please wait $minutesRemaining minute(s) '
+            'before sending another emergency access request.';
+      }
+    }
+    return null;
+  }
+
   /// Child side: submits a request and best-effort notifies the parent.
   /// The Firestore write is what actually creates the pending request -
   /// the push notification is a convenience on top, same tradeoff
@@ -36,10 +76,8 @@ class EmergencyAccessService {
   required String childProfileId,
   required String parentId,
   String reason = '',
+  int? requestedMinutes,
 }) async {
-  const requestCooldown = Duration(minutes: 5);
-  const dailyRequestLimit = 5;
-
   if (childProfileId.isEmpty) {
     throw StateError('Not paired with a parent yet.');
   }
@@ -66,52 +104,15 @@ class EmergencyAccessService {
           : <String, dynamic>{};
 
       final now = DateTime.now();
-
-      final previousTimestamp = emergencyAccess['requestedAt'];
-
-      final lastRequestedAt = previousTimestamp is Timestamp
-          ? previousTimestamp.toDate().toLocal()
-          : null;
-
-      final storedCount = emergencyAccess['dailyRequestCount'];
-
-      final isSameDay = lastRequestedAt != null &&
-          lastRequestedAt.year == now.year &&
-          lastRequestedAt.month == now.month &&
-          lastRequestedAt.day == now.day;
-
-      final dailyCount = isSameDay
-          ? (storedCount is int && storedCount > 0
-              ? storedCount
-              : 1)
-          : 0;
-
-      // Enforce the daily request limit.
-      if (dailyCount >= dailyRequestLimit) {
-        return 'Daily emergency access limit reached. '
-            'You can request again tomorrow.';
-      }
-
-      // Enforce the cooldown between requests.
-      if (lastRequestedAt != null) {
-        if (now.isBefore(lastRequestedAt)) {
-          return 'Please check your device date and time.';
-        }
-
-        final elapsed = now.difference(lastRequestedAt);
-
-        if (elapsed < requestCooldown) {
-          final remaining = requestCooldown - elapsed;
-
-          final minutesRemaining =
-              (remaining.inMilliseconds /
-                      Duration.millisecondsPerMinute)
-                  .ceil();
-
-          return 'Please wait $minutesRemaining minute(s) '
-              'before sending another emergency access request.';
-        }
-      }
+      final rejection = EmergencyAccessService.rejectionFor(
+        emergencyAccess,
+        now,
+      );
+      if (rejection != null) return rejection;
+      final dailyCount = EmergencyAccessService.todaysRequestCount(
+        emergencyAccess,
+        now,
+      );
 
       // Store the accepted request and updated counter together.
       transaction.set(
@@ -120,6 +121,8 @@ class EmergencyAccessService {
           'emergencyAccess': {
             'status': 'requested',
             'reason': trimmedReason,
+            // How long the child asked for; the guardian still chooses.
+            'requestedMinutes': requestedMinutes,
             'requestedAt': FieldValue.serverTimestamp(),
             'respondedAt': null,
             'grantedUntil': null,
@@ -203,6 +206,13 @@ class EmergencyAccessService {
 
           final grantedUntil = status['grantedUntil'];
           final durationMinutes = status['durationMinutes'];
+          if (status['status'] == 'approved' && grantedUntil is Timestamp) {
+            await GrantCountdownNotifier.instance.show(
+              id: GrantCountdownNotifier.emergencyId,
+              title: 'Emergency Access - apps unlocked',
+              until: grantedUntil.toDate(),
+            );
+          }
           await syncGrantedUntilLocally(
             grantedUntil is Timestamp ? grantedUntil.toDate() : null,
             durationMinutes: durationMinutes is num

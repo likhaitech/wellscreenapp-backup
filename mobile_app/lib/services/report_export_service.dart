@@ -36,32 +36,7 @@ class ReportExportService {
     final data = snapshot.data() ?? <String, dynamic>{};
     final childName = childNameOf(data, fallback: 'Child Profile');
     final generatedAt = DateTime.now();
-
-    final pdf = pw.Document();
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        header: (context) => _buildHeader(childName, generatedAt),
-        footer: (context) => pw.Align(
-          alignment: pw.Alignment.centerRight,
-          child: pw.Text(
-            'Page ${context.pageNumber} of ${context.pagesCount}',
-            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
-          ),
-        ),
-        build: (context) => [
-          _buildUsageSection(data),
-          pw.SizedBox(height: 18),
-          _buildBrowsingSection(data),
-          pw.SizedBox(height: 18),
-          _buildLocationSection(data),
-          pw.SizedBox(height: 18),
-          _buildAlertsSection(data),
-        ],
-      ),
-    );
+    final pdf = buildReport(data, generatedAt);
 
     final directory = await getTemporaryDirectory();
     final safeChildName = childName.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
@@ -93,6 +68,37 @@ class ReportExportService {
     }
 
     return file.path;
+  }
+
+  /// The PDF for one child's report data (usage, browsing, location and
+  /// alerts), without saving or sharing it.
+  static pw.Document buildReport(Map<String, dynamic> data, DateTime generatedAt) {
+    final childName = childNameOf(data, fallback: 'Child Profile');
+    final pdf = pw.Document();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        header: (context) => _buildHeader(childName, generatedAt),
+        footer: (context) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Page ${context.pageNumber} of ${context.pagesCount}',
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+          ),
+        ),
+        build: (context) => [
+          _buildUsageSection(data),
+          pw.SizedBox(height: 18),
+          _buildBrowsingSection(data),
+          pw.SizedBox(height: 18),
+          _buildLocationSection(data),
+          pw.SizedBox(height: 18),
+          _buildAlertsSection(data),
+        ],
+      ),
+    );
+    return pdf;
   }
 
   // -------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../widgets/logout_flow.dart';
 import '../widgets/wellscreen_ui.dart';
 
 import '../theme/app_theme.dart';
@@ -8,6 +9,7 @@ import '../services/privacy_text.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/app_rules_service.dart';
 import '../services/password_policy.dart';
+import '../services/profile_validation.dart';
 import '../services/app_time_limit_service.dart';
 import '../services/app_time_limit_notification_service.dart';
 import 'login_screen.dart';
@@ -66,8 +68,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final photoUrl = profilePhotoUrlController.text.trim();
     final extraDetail = extraDetailController.text.trim();
 
-    if (fullName.isEmpty) {
-      showMessage('Full name is required.');
+    final nameError = ProfileValidation.nameError(fullName);
+    if (nameError != null) {
+      showMessage(nameError);
       return;
     }
 
@@ -134,7 +137,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       showMessage(
         identitySyncFailed
             ? 'Profile saved. Open Devices and tap Sync Parent Details.'
-            : 'Profile details updated successfully.',
+            : ProfileValidation.profileSaved,
       );
     } catch (e) {
       showMessage('Failed to update profile: $e');
@@ -166,23 +169,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final newPassword = newPasswordController.text;
     final confirmPassword = confirmPasswordController.text;
 
-    if (currentPassword.isEmpty) {
-      showMessage('Enter your current password.');
-      return;
-    }
-
-    if (!PasswordPolicy.isStrong(newPassword)) {
+    final problem = ProfileValidation.passwordChangeError(
+      current: currentPassword,
+      newPassword: newPassword,
+      confirm: confirmPassword,
+    );
+    if (problem == ProfileValidation.weakPassword) {
       await showPasswordRequirementsDialog(context, newPassword);
       return;
     }
-
-    if (newPassword != confirmPassword) {
-      showMessage('New password and confirmation do not match.');
-      return;
-    }
-
-    if (newPassword == currentPassword) {
-      showMessage('New password must be different from the current one.');
+    if (problem != null) {
+      showMessage(problem);
       return;
     }
 
@@ -204,17 +201,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       if (!mounted) return;
 
       Navigator.pop(context);
-      showMessage('Password changed successfully.');
+      showMessage(ProfileValidation.passwordChanged);
     } on FirebaseAuthException catch (e) {
-      final message = switch (e.code) {
-        'wrong-password' ||
-        'invalid-credential' => 'Current password is incorrect.',
-        'weak-password' => 'New password is too weak.',
-        'requires-recent-login' =>
-          'Please log out and log back in, then try again.',
-        'too-many-requests' => 'Too many attempts. Please try again later.',
-        _ => 'Failed to change password: ${e.message ?? e.code}',
-      };
+      final message =
+          ProfileValidation.passwordChangeFailure(e.code, e.message);
       showMessage(message);
     } catch (e) {
       showMessage('Failed to change password: $e');
@@ -360,6 +350,15 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
   }
 
+  /// Asks "Log out?" first, like the child and admin apps.
+  Future<void> _confirmLogout() async {
+    final confirmed = await confirmLogoutDialog(
+      context,
+      confirmColor: AppColors.danger,
+    );
+    if (confirmed) await logout();
+  }
+
   Future<void> logout() async {
     // Revoke the child's registered push token before leaving this account.
     await AppTimeLimitNotificationService.instance.stopForSignOut();
@@ -370,15 +369,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     if (!await AppRulesService.isMonitoredChildDevice()) {
       await AppTimeLimitService().clearCachedLimits();
     }
-    await FirebaseAuth.instance.signOut();
-
     if (!mounted) return;
-
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+    await signOutToLogin(context);
   }
 
   /// What WellScreen does and does not collect, matching the code: usage
@@ -804,7 +796,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     backgroundColor: softRed,
                     title: 'Sign Out',
                     subtitle: 'Sign out from this WellScreen account.',
-                    onTap: logout,
+                    onTap: _confirmLogout,
                   ),
                 ],
               ),

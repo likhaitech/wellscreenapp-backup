@@ -2,24 +2,28 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../widgets/admin_ui.dart';
 import '../widgets/wellscreen_ui.dart';
 
 /// System-wide audit log for admins - every action recorded server-side
 /// (grant_admin.py, backend services, etc.) into the `system_logs`
-/// collection. Laid out like the design D "System logs" mockup: search,
-/// pill tabs (All / Activity / Errors / Sync) and one card of rows, each
-/// with a coloured kind pill. Raw details stay collapsed until tapped.
+/// collection. Laid out like the "WellScreen Admin UI" design: search,
+/// filter pills (All / Activity / Warning / Error / Sync), entries grouped
+/// by day with a coloured dot. Raw details stay collapsed until tapped.
 class AdminLogsScreen extends StatefulWidget {
-  const AdminLogsScreen({super.key});
+  const AdminLogsScreen({super.key, this.embedded = false});
+
+  /// True inside the admin home's tabs: no app bar of its own.
+  final bool embedded;
 
   @override
   State<AdminLogsScreen> createState() => _AdminLogsScreenState();
 }
 
-enum _LevelFilter { all, activity, errors, sync }
+enum AdminLogFilter { all, activity, warnings, errors, sync }
 
 class _AdminLogsScreenState extends State<AdminLogsScreen> {
-  _LevelFilter _filter = _LevelFilter.all;
+  AdminLogFilter _filter = AdminLogFilter.all;
   String _search = '';
 
   // Keyed by Firestore document id (stable and unique) rather than list
@@ -34,106 +38,18 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
         .limit(100);
   }
 
-  String _formatTimestamp(dynamic value) {
-    if (value is! Timestamp) {
-      return 'No timestamp';
-    }
+  String _level(Map<String, dynamic> data) => adminLogLevel(data);
 
-    final date = value.toDate().toLocal();
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
-    final minute = date.minute.toString().padLeft(2, '0');
-    final second = date.second.toString().padLeft(2, '0');
-    final ampm = date.hour < 12 ? 'AM' : 'PM';
-
-    return '${months[date.month - 1]} ${date.day} · '
-        '$hour:$minute:$second $ampm';
-  }
-
-  String _formatDetails(dynamic details) {
-    if (details == null) {
-      return '';
-    }
-
-    if (details is Map) {
-      return details.entries
-          .map((entry) => '${entry.key}: ${entry.value}')
-          .join('\n');
-    }
-
-    return details.toString();
-  }
-
-  bool _isSync(Map<String, dynamic> data) {
-    final action = (data['action'] ?? '').toString().toLowerCase();
-    return action.contains('sync') ||
-        action.contains('sweep') ||
-        action.contains('dispatch') ||
-        action.contains('notification') ||
-        action.contains('monitoring');
-  }
-
-  bool _matches(Map<String, dynamic> data) {
-    final level = (data['level'] ?? 'info').toString();
-    final isError = _needsAttention(level);
-
-    switch (_filter) {
-      case _LevelFilter.errors:
-        if (!isError) return false;
-        break;
-      case _LevelFilter.sync:
-        if (!_isSync(data)) return false;
-        break;
-      case _LevelFilter.activity:
-        if (isError || _isSync(data)) return false;
-        break;
-      case _LevelFilter.all:
-        break;
-    }
-
-    final q = _search.trim().toLowerCase();
-    if (q.isEmpty) return true;
-
-    final haystack = [
-      data['action'],
-      data['message'],
-      data['actor_uid'],
-      data['level'],
-      _formatDetails(data['details']),
-    ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
-
-    return haystack.contains(q);
-  }
-
-  bool _needsAttention(String level) {
-    final normalized = level.toLowerCase();
-    return normalized == 'error' || normalized == 'warning';
-  }
-
-  /// Pill label + colours for a log row, as in the mockup:
-  /// Error (red), Warning (amber), Sync (teal), Activity (indigo).
-  (String, Color, Color) _kind(Map<String, dynamic> data) {
-    final level = (data['level'] ?? 'info').toString().toLowerCase();
-    if (level == 'error') {
-      return ('Error', AppColors.danger, AppColors.dangerBg);
-    }
-    if (level == 'warning') {
-      return ('Warning', AppColors.warning, AppColors.warningBg);
-    }
-    if (_isSync(data)) {
-      return ('Sync', AppColors.success, AppColors.successBg);
-    }
-    return ('Activity', AppColors.primary, AppColors.primaryLight);
-  }
+  bool _matches(Map<String, dynamic> data) =>
+      adminLogMatches(data, _filter, _search);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: const WellScreenAppBar.subPage(title: 'System logs'),
+      appBar: widget.embedded
+          ? null
+          : const WellScreenAppBar.subPage(title: 'System logs'),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _logsQuery.snapshots(),
         builder: (context, snapshot) {
@@ -156,22 +72,21 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
           }
 
           final documents = snapshot.data?.docs ?? [];
-
-          if (documents.isEmpty) {
-            return const AppEmptyState(
-              icon: Icons.description_outlined,
-              title: 'System logs',
-              message: 'No system logs recorded yet.',
-            );
-          }
-
-          final attentionCount = documents.where((doc) {
-            final level = (doc.data()['level'] ?? 'info').toString();
-            return _needsAttention(level);
-          }).length;
-
+          final warnings =
+              documents.where((d) => _level(d.data()) == 'warning').length;
+          final errors =
+              documents.where((d) => _level(d.data()) == 'error').length;
           final visibleDocs =
               documents.where((doc) => _matches(doc.data())).toList();
+
+          // Day groups, newest first (the query is already ordered).
+          final groups =
+              <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+          for (final doc in visibleDocs) {
+            groups
+                .putIfAbsent(adminLogDay(doc.data()['timestamp']), () => [])
+                .add(doc);
+          }
 
           return RefreshIndicator(
             onRefresh: () async {
@@ -179,23 +94,49 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
             },
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                widget.embedded ? 4 : 12,
+                16,
+                widget.embedded ? kAdminDockClearance : 24,
+              ),
               children: [
-                _searchField(),
-                const SizedBox(height: 12),
-                WellScreenPillTabs(
-                  labels: [
-                    'All',
-                    'Activity',
-                    'Errors ($attentionCount)',
-                    'Sync',
-                  ],
-                  selected: _filter.index,
-                  onChanged: (i) =>
-                      setState(() => _filter = _LevelFilter.values[i]),
+                if (widget.embedded) ...[
+                  const AdminPageTitle('System logs'),
+                  const SizedBox(height: 14),
+                ],
+                AdminSearchField(
+                  hint: 'Search logs',
+                  onChanged: (v) => setState(() => _search = v),
                 ),
                 const SizedBox(height: 12),
-                if (visibleDocs.isEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _chip('All', AdminLogFilter.all),
+                    _chip('Activity', AdminLogFilter.activity),
+                    _chip(
+                      warnings > 0 ? 'Warning $warnings' : 'Warning',
+                      AdminLogFilter.warnings,
+                      color: AppColors.warning,
+                    ),
+                    _chip(
+                      errors > 0 ? 'Error $errors' : 'Error',
+                      AdminLogFilter.errors,
+                      color: AppColors.danger,
+                    ),
+                    _chip('Sync', AdminLogFilter.sync),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                if (documents.isEmpty)
+                  const AppEmptyState(
+                    icon: Icons.description_outlined,
+                    title: 'System logs',
+                    message: 'No system logs recorded yet.',
+                  )
+                else if (visibleDocs.isEmpty)
                   const AppEmptyState(
                     icon: Icons.check_circle_rounded,
                     title: 'No matching logs',
@@ -203,18 +144,20 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                         'most recent 100 log entries.',
                   )
                 else
-                  BentoCard(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
+                  for (final entry in groups.entries) ...[
+                    const SizedBox(height: 12),
+                    AdminSectionTitle(entry.key),
+                    const SizedBox(height: 8),
+                    BentoCard(
+                      padding: EdgeInsets.zero,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < entry.value.length; i++)
+                            _logRow(entry.value[i], first: i == 0),
+                        ],
+                      ),
                     ),
-                    child: Column(
-                      children: [
-                        for (var i = 0; i < visibleDocs.length; i++)
-                          _logRow(visibleDocs[i], first: i == 0),
-                      ],
-                    ),
-                  ),
+                  ],
               ],
             ),
           );
@@ -223,25 +166,12 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
     );
   }
 
-  Widget _searchField() {
-    return TextField(
-      onChanged: (v) => setState(() => _search = v),
-      decoration: InputDecoration(
-        hintText: 'Search logs',
-        prefixIcon: const Icon(Icons.search_rounded),
-        prefixIconColor: AppColors.textSecondary,
-        filled: true,
-        fillColor: AppColors.surface,
-        contentPadding: const EdgeInsets.symmetric(vertical: 14),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-        ),
-      ),
+  Widget _chip(String label, AdminLogFilter filter, {Color? color}) {
+    return AdminFilterChip(
+      label: label,
+      selected: _filter == filter,
+      color: color,
+      onTap: () => setState(() => _filter = filter),
     );
   }
 
@@ -251,12 +181,12 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
   }) {
     final data = document.data();
 
-    final action = (data['action'] ?? 'Unknown action').toString();
+    final title = adminActionTitle(data['action']);
     final message = (data['message'] ?? '').toString();
     final actorUid = data['actor_uid']?.toString();
-    final timestamp = _formatTimestamp(data['timestamp']);
-    final details = _formatDetails(data['details']);
-    final (label, color, background) = _kind(data);
+    final time = adminLogTime(data['timestamp']);
+    final details = adminLogDetails(data['details']);
+    final (kind, color, _) = adminLogKind(data);
     final expanded = _expandedDocIds.contains(document.id);
     final hasMore =
         details.isNotEmpty || (actorUid != null && actorUid.isNotEmpty);
@@ -272,44 +202,58 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
               })
           : null,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         decoration: BoxDecoration(
           border: first
               ? null
-              : const Border(top: BorderSide(color: AppColors.border)),
+              : const Border(top: BorderSide(color: AppColors.surfaceMuted)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 74,
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: AppBadge(
-                  label: label,
-                  color: color,
-                  background: background,
-                ),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    message.isNotEmpty ? '$action: $message' : action,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 13,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        time,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontFeatures: kTabularFigures,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
-                    timestamp,
+                    message.isNotEmpty ? '$kind · $message' : kind,
                     style: const TextStyle(
                       color: AppColors.textSecondary,
-                      fontSize: 11,
+                      fontSize: 12,
                     ),
                   ),
                   if (expanded) ...[
@@ -338,7 +282,8 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                 ],
               ),
             ),
-            if (hasMore)
+            if (hasMore) ...[
+              const SizedBox(width: 4),
               Icon(
                 expanded
                     ? Icons.expand_less_rounded
@@ -346,9 +291,56 @@ class _AdminLogsScreenState extends State<AdminLogsScreen> {
                 color: AppColors.textSecondary,
                 size: 18,
               ),
+            ],
           ],
         ),
       ),
     );
   }
+}
+
+String adminLogDetails(dynamic details) {
+  if (details == null) return '';
+  if (details is Map) {
+    return details.entries
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join('\n');
+  }
+  return details.toString();
+}
+
+String adminLogLevel(Map<String, dynamic> data) =>
+    (data['level'] ?? 'info').toString().toLowerCase();
+
+/// True when a log entry passes the chosen filter chip and search text.
+bool adminLogMatches(
+  Map<String, dynamic> data,
+  AdminLogFilter filter,
+  String search,
+) {
+  final level = adminLogLevel(data);
+  final problem = level == 'error' || level == 'warning';
+  switch (filter) {
+    case AdminLogFilter.errors:
+      if (level != 'error') return false;
+    case AdminLogFilter.warnings:
+      if (level != 'warning') return false;
+    case AdminLogFilter.sync:
+      if (!adminLogIsSync(data)) return false;
+    case AdminLogFilter.activity:
+      if (problem || adminLogIsSync(data)) return false;
+    case AdminLogFilter.all:
+      break;
+  }
+  final q = search.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  final haystack = [
+    data['action'],
+    adminActionTitle(data['action']),
+    data['message'],
+    data['actor_uid'],
+    data['level'],
+    adminLogDetails(data['details']),
+  ].map((e) => (e ?? '').toString().toLowerCase()).join(' ');
+  return haystack.contains(q);
 }

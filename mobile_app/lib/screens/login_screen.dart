@@ -1,16 +1,24 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/login_backend.dart';
+import '../services/login_error_message.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_ui.dart';
-import 'admin_settings_screen.dart';
+import 'admin_home_screen.dart';
 import 'child_home_screen.dart';
 import 'parent_dashboard_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.backend, this.openHome});
+
+  /// Where sign-in happens. Defaults to Firebase; tests pass a double.
+  final LoginBackend? backend;
+
+  /// Opens the home screen for 'admin', 'parent' or 'child'. Defaults to
+  /// the Admin, Guardian Dashboard and child home screens.
+  final void Function(BuildContext context, String role)? openHome;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -45,61 +53,34 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => isLoading = true);
 
     try {
-      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final backend = widget.backend ?? FirebaseLoginBackend();
+      final uid = await backend.signIn(email, password);
 
-      final user = credential.user;
-
-      if (user == null) {
+      if (uid == null) {
         throw Exception('Login failed. Please try again.');
       }
 
-      // Refresh Firebase ID token so the latest custom claims are loaded.
-      final tokenResult = await user.getIdTokenResult(true);
-      final claims = tokenResult.claims ?? <String, dynamic>{};
-
-      final isAdmin = claims['admin'] == true || claims['role'] == 'admin';
-
-      if (!mounted) return;
-
-      // Admin accounts go directly to the Admin System Settings screen.
-      if (isAdmin) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const AdminSettingsScreen()),
-        );
-
+      // Admin accounts go directly to the admin app.
+      if (await backend.isAdmin()) {
+        if (!mounted) return;
+        _openHome('admin');
         return;
       }
 
       // Normal parent / child accounts use their Firestore role.
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      final data = userDoc.data() ?? <String, dynamic>{};
-      final role = (data['role'] ?? '').toString().toLowerCase();
+      final role = await backend.role(uid);
 
       if (!mounted) return;
 
       if (role == 'parent') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const ParentDashboardScreen()),
-        );
+        _openHome('parent');
       } else if (role == 'child' || role == 'student') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const ChildHomeScreen()),
-        );
+        _openHome('child');
       } else {
         showMessage('Account role not found. Please contact the developer.');
       }
     } on FirebaseAuthException catch (e) {
-      showMessage(authErrorMessage(e.code));
+      showMessage(loginErrorMessage(e.code));
     } catch (e) {
       showMessage(e.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -120,7 +101,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => isLoading = true);
 
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      await (widget.backend ?? FirebaseLoginBackend())
+          .sendPasswordReset(email);
       showMessage(
         'If an account exists for $email, a password reset link has been '
         'sent. Check your inbox and spam folder.',
@@ -140,32 +122,20 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  String authErrorMessage(String code) {
-    if (code == 'user-not-found') {
-      return 'No account found with this email.';
+  void _openHome(String role) {
+    if (widget.openHome != null) {
+      widget.openHome!(context, role);
+      return;
     }
-
-    if (code == 'wrong-password') {
-      return 'Incorrect password.';
-    }
-
-    if (code == 'invalid-email') {
-      return 'Invalid email address.';
-    }
-
-    if (code == 'invalid-credential') {
-      return 'Invalid email or password.';
-    }
-
-    if (code == 'user-disabled') {
-      return 'This account has been disabled.';
-    }
-
-    if (code == 'network-request-failed') {
-      return 'Network error. Please check your internet connection.';
-    }
-
-    return 'Login failed. Please try again.';
+    final Widget home = switch (role) {
+      'admin' => const AdminHomeScreen(),
+      'parent' => const ParentDashboardScreen(),
+      _ => const ChildHomeScreen(),
+    };
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => home),
+    );
   }
 
   void showMessage(String message) {

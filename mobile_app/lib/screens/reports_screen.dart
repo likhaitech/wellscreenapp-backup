@@ -1648,8 +1648,11 @@ class _BrowsingActivityCardState extends State<_BrowsingActivityCard> {
     final rule = domain == null ? null : _rules?.ruleFor(domain);
     final source = entry['detectionSource'];
     final (sourceLabel, sourceColor) = switch (source) {
-      'ml' => ('AI-detected', AppColors.sourceMl),
+      'ml' || 'ai' => ('AI-detected', AppColors.sourceMl),
       'keyword' => ('keyword match', AppColors.sourceKeyword),
+      'page' => ('page words', AppColors.sourceKeyword),
+      'hint' => ('possible risk', AppColors.sourceKeyword),
+      'parent_rule' => ('blocked by you', AppColors.sourceLookup),
       _ => ('exact match', AppColors.sourceLookup),
     };
 

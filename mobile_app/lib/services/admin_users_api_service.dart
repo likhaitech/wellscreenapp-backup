@@ -14,6 +14,8 @@ class AdminManagedUser {
     required this.disabled,
     this.createdAt,
     this.lastSignInAt,
+    this.emailVerified = false,
+    this.paired,
   });
 
   final String uid;
@@ -25,6 +27,11 @@ class AdminManagedUser {
   final bool disabled;
   final DateTime? createdAt;
   final DateTime? lastSignInAt;
+  final bool emailVerified;
+
+  /// Guardian or child account linked to the other side. Null for admins
+  /// or when the pairing could not be read.
+  final bool? paired;
 
   AdminManagedUser copyWith({
     String? email,
@@ -39,8 +46,39 @@ class AdminManagedUser {
       disabled: disabled ?? this.disabled,
       createdAt: createdAt,
       lastSignInAt: lastSignInAt,
+      emailVerified: emailVerified,
+      paired: paired,
     );
   }
+}
+
+/// Account-level pairing from the users documents: a child account is
+/// paired when it is connected to a guardian; a guardian is paired when
+/// any child account points to them. Only these fields are read.
+Map<String, bool> adminPairingFromUserDocs(
+  Map<String, Map<String, dynamic>> docs,
+) {
+  bool hasText(Object? v) => v is String && v.trim().isNotEmpty;
+  final guardiansWithChild = <String>{};
+  final result = <String, bool>{};
+  docs.forEach((uid, data) {
+    final role = (data['role'] ?? '').toString().toLowerCase();
+    if (role == 'child' || role == 'student') {
+      final parent = data['pairedParentId'];
+      final paired =
+          data['pairingStatus'] == 'connected' || hasText(parent);
+      result[uid] = paired;
+      if (hasText(parent)) guardiansWithChild.add((parent as String).trim());
+    }
+  });
+  docs.forEach((uid, data) {
+    final role = (data['role'] ?? '').toString().toLowerCase();
+    if (role == 'parent') {
+      result[uid] = guardiansWithChild.contains(uid) ||
+          data['pairingStatus'] == 'connected';
+    }
+  });
+  return result;
 }
 
 /// Talks to the backend's /admin/users routes (Retrieve, Update, Deactivate,
@@ -109,22 +147,16 @@ class AdminUsersApiService {
     return null;
   }
 
-  Future<Map<String, String>> _firestoreRoles() async {
+  /// Firestore users documents (role and pairing fields), for display only.
+  Future<Map<String, Map<String, dynamic>>> _firestoreUsers() async {
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('users')
           .get();
-      final roles = <String, String>{};
-      for (final doc in snapshot.docs) {
-        final role = (doc.data()['role'] ?? '').toString().toLowerCase();
-        if (role.isNotEmpty) {
-          roles[doc.id] = role;
-        }
-      }
-      return roles;
+      return {for (final doc in snapshot.docs) doc.id: doc.data()};
     } catch (_) {
       // Display only - fall back to the backend role if this read fails.
-      return <String, String>{};
+      return <String, Map<String, dynamic>>{};
     }
   }
 
@@ -135,7 +167,8 @@ class AdminUsersApiService {
     final rawUsers = (data is Map && data['users'] is List)
         ? data['users'] as List
         : <dynamic>[];
-    final firestoreRoles = await _firestoreRoles();
+    final firestoreUsers = await _firestoreUsers();
+    final pairing = adminPairingFromUserDocs(firestoreUsers);
 
     final users = <AdminManagedUser>[];
     for (final item in rawUsers) {
@@ -145,7 +178,9 @@ class AdminUsersApiService {
       final backendRole = (map['role'] ?? 'user').toString().toLowerCase();
       var role = backendRole;
       if (backendRole != 'admin') {
-        role = firestoreRoles[uid] ?? backendRole;
+        final stored =
+            (firestoreUsers[uid]?['role'] ?? '').toString().toLowerCase();
+        role = stored.isNotEmpty ? stored : backendRole;
         if (role == 'student') role = 'child';
       }
       users.add(
@@ -157,6 +192,8 @@ class AdminUsersApiService {
           disabled: map['disabled'] == true,
           createdAt: _fromMillis(map['created_at']),
           lastSignInAt: _fromMillis(map['last_sign_in_at']),
+          emailVerified: map['email_verified'] == true,
+          paired: role == 'admin' ? null : pairing[uid],
         ),
       );
     }

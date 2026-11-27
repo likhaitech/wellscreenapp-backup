@@ -5,11 +5,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/daily_goal.dart';
+import '../services/child_location_text.dart';
+import '../services/guardian_dashboard_text.dart';
 import '../services/chat_unread_service.dart';
 import '../services/daily_usage_history.dart';
 import '../services/emergency_access_service.dart';
 import '../services/parent_alert_badge_service.dart';
 import '../widgets/app_usage_icon.dart';
+import '../services/guardian_activity_service.dart';
 import '../services/parent_phone_sync_service.dart';
 import '../services/push_notification_service.dart';
 import '../theme/app_theme.dart';
@@ -26,6 +29,7 @@ import 'profile_settings_screen.dart';
 import 'reports_screen.dart';
 import 'rules/rules_screen.dart';
 import '../utils/child_name.dart';
+import '../utils/primary_child.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -34,8 +38,8 @@ class ParentDashboardScreen extends StatefulWidget {
   State<ParentDashboardScreen> createState() => _ParentDashboardScreenState();
 }
 
-class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+class _ParentDashboardScreenState extends State<ParentDashboardScreen>
+    with WidgetsBindingObserver {
   // Aliased onto the shared AppColors palette (theme/app_theme.dart) rather
   // than the ad hoc literals this screen used to declare on its own - same
   // names so the body below didn't need a line-by-line rewrite, but now
@@ -83,6 +87,9 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     // Keep each child's copy of the verified guardian number current, so
     // the child's phone can send backup SMS alerts.
     ParentPhoneSyncService.syncToChildProfiles();
+    // Counts this guardian as active today on the admin dashboard.
+    WidgetsBinding.instance.addObserver(this);
+    GuardianActivityService.instance.markActive();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ChatNotificationsService.instance.markDashboardReady();
     });
@@ -93,7 +100,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      GuardianActivityService.instance.markActive();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _presenceRefreshTimer?.cancel();
     super.dispose();
   }
@@ -105,46 +120,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         .snapshots();
   }
 
-  bool isChildConnected(Map<String, dynamic> data) {
-    final pairingStatus = (data['pairingStatus'] ?? '').toString();
-    final childEmail = (data['childEmail'] ?? '').toString();
-    final childAccountId = (data['childAccountId'] ?? '').toString();
+  bool isChildConnected(Map<String, dynamic> data) =>
+      childLooksConnected(data);
 
-    return pairingStatus == 'connected' ||
-        childEmail.isNotEmpty ||
-        childAccountId.isNotEmpty;
-  }
+  String formatDate(dynamic value) => formatDashboardDate(value);
 
-  String formatDate(dynamic value) {
-    if (value is Timestamp) {
-      final date = value.toDate();
-      final month = date.month.toString().padLeft(2, '0');
-      final day = date.day.toString().padLeft(2, '0');
-      final year = date.year.toString();
-      final hour = date.hour.toString().padLeft(2, '0');
-      final minute = date.minute.toString().padLeft(2, '0');
-
-      return '$month/$day/$year $hour:$minute';
-    }
-
-    return 'Not available';
-  }
-
-  Map<String, dynamic>? latestLocation(Map<String, dynamic>? data) {
-    if (data == null) return null;
-
-    final latestLocation = data['latestLocation'];
-
-    if (latestLocation is Map<String, dynamic>) {
-      return latestLocation;
-    }
-
-    if (latestLocation is Map) {
-      return Map<String, dynamic>.from(latestLocation);
-    }
-
-    return null;
-  }
+  Map<String, dynamic>? latestLocation(Map<String, dynamic>? data) =>
+      latestLocationOf(data);
 
   bool hasSharedLocation(Map<String, dynamic>? data) {
     final location = latestLocation(data);
@@ -176,37 +158,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     return 0;
   }
 
-  String locationText(Map<String, dynamic>? data) {
-    final location = latestLocation(data);
+  String locationText(Map<String, dynamic>? data) => locationTextOf(data);
 
-    if (location == null) return 'No shared GPS yet';
-
-    final label = location['label'];
-    final latitude = location['latitude'];
-    final longitude = location['longitude'];
-
-    if (label != null && label.toString().isNotEmpty) {
-      return label.toString();
-    }
-
-    if (latitude is num && longitude is num) {
-      return '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}';
-    }
-
-    return 'No shared GPS yet';
-  }
-
-  String locationUpdatedText(Map<String, dynamic>? data) {
-    if (data == null) return 'Waiting for update';
-
-    final updatedAt = data['locationUpdatedAt'];
-
-    if (updatedAt is Timestamp) {
-      return formatDate(updatedAt);
-    }
-
-    return 'Waiting for update';
-  }
+  String locationUpdatedText(Map<String, dynamic>? data) =>
+      locationUpdatedTextOf(data);
 
   Map<String, dynamic>? latestUsageReport(Map<String, dynamic>? data) {
     if (data == null) return null;
@@ -441,13 +396,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   QueryDocumentSnapshot<Map<String, dynamic>>? getPrimaryChildDoc(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> childDocs,
   ) {
-    if (childDocs.isEmpty) return null;
-
-    for (final doc in childDocs) {
-      if (isChildConnected(doc.data())) return doc;
-    }
-
-    return childDocs.first;
+    // Most recently active connected child, not simply the first one -
+    // see primary_child.dart.
+    final index = pickPrimaryChildIndex(
+      childDocs.map((doc) => doc.data()).toList(),
+      isChildConnected,
+    );
+    return index < 0 ? null : childDocs[index];
   }
 
   @override
@@ -473,8 +428,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     }
 
     return Scaffold(
-      key: _scaffoldKey,
-      drawer: _menuDrawer(),
       backgroundColor: pageBg,
       appBar: _topBar(),
       body: SafeArea(
@@ -582,7 +535,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final photoUrl = FirebaseAuth.instance.currentUser?.photoURL;
 
     return WellScreenAppBar.primary(
-      onMenu: () => _scaffoldKey.currentState?.openDrawer(),
       onAvatar: () => handleBottomNavTap(4),
       avatar: photoUrl == null || photoUrl.isEmpty
           ? null
@@ -617,86 +569,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _menuDrawer() {
-    void closeAnd(VoidCallback action) {
-      Navigator.pop(context);
-      action();
-    }
-
-    return Drawer(
-      backgroundColor: pageBg,
-      child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(4, 8, 4, 16),
-              child: Text(
-                'Menu',
-                style: TextStyle(
-                  color: darkText,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            BentoCard(
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  _menuTile(
-                    Icons.chat_bubble_outline_rounded,
-                    'Chat',
-                    () => closeAnd(openFamilyChat),
-                  ),
-                  const Divider(indent: 56),
-                  _menuTile(
-                    Icons.notifications_none_rounded,
-                    'Notifications',
-                    () => closeAnd(() {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ParentNotificationsScreen(),
-                        ),
-                      );
-                    }),
-                  ),
-                  const Divider(indent: 56),
-                  _menuTile(
-                    Icons.tune_rounded,
-                    'App Rules',
-                    () => closeAnd(openRulesScreen),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _menuTile(IconData icon, String label, VoidCallback? onTap) {
-    return ListTile(
-      enabled: onTap != null,
-      onTap: onTap,
-      leading: Icon(icon, color: darkText, size: 22),
-      title: Text(
-        label,
-        style: const TextStyle(
-          color: darkText,
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-      trailing: const Icon(
-        Icons.chevron_right_rounded,
-        color: AppColors.textDisabled,
-      ),
     );
   }
 
@@ -787,6 +659,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final reason = emergencyAccess is Map
         ? (emergencyAccess['reason'] ?? '').toString()
         : '';
+    final asked = emergencyAccess is Map
+        ? emergencyAccess['requestedMinutes']
+        : null;
+    final askedMinutes = asked is num ? asked.toInt() : null;
     final childName = childNameOf(child, fallback: 'Your child');
 
     return BentoCard(
@@ -816,6 +692,17 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         fontSize: 15,
                       ),
                     ),
+                    if (askedMinutes != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        askedForLabel(askedMinutes),
+                        style: const TextStyle(
+                          color: darkText,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     if (reason.isNotEmpty) ...[
                       const SizedBox(height: 3),
                       Text(
@@ -833,13 +720,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             children: [
               Expanded(
                 child: AppPillButton(
-                  label: 'Approve (30 min)',
+                  label: 'Approve...',
                   compact: true,
                   onPressed: _isRespondingToEmergencyAccess
                       ? null
-                      : () => _respondToEmergencyAccess(
+                      : () => _approveEmergencyAccess(
                           childProfileId,
-                          approve: true,
+                          askedMinutes: askedMinutes,
                         ),
                 ),
               ),
@@ -864,9 +751,127 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     );
   }
 
+  /// The guardian picks how long Emergency Access lasts.
+  Future<void> _approveEmergencyAccess(
+    String childProfileId, {
+    int? askedMinutes,
+  }) async {
+    final options = emergencyMinuteChoices(askedMinutes);
+    // Starts on what the child asked for; the guardian can change it.
+    var minutes =
+        askedMinutes != null && options.contains(askedMinutes) ? askedMinutes : 15;
+    final customMinutes = TextEditingController();
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheet) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              18,
+              20,
+              20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'How long?',
+                  style: TextStyle(
+                    color: darkText,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Blocked apps, focus mode, bedtime and time limits are '
+                  'lifted for this time. Adult, gambling, drug and other '
+                  'harmful websites stay blocked.',
+                  style: TextStyle(color: grayText, fontSize: 13, height: 1.35),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final option in options)
+                      ChoiceChip(
+                        label: Text(
+                          option < 60
+                              ? '$option min'
+                              : (option % 60 == 0
+                                    ? '${option ~/ 60} hr'
+                                    : '${option ~/ 60} hr ${option % 60} min'),
+                        ),
+                        selected: minutes == option,
+                        onSelected: (_) => setSheet(() {
+                          minutes = option;
+                          customMinutes.clear();
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: 180,
+                  child: TextField(
+                    controller: customMinutes,
+                    keyboardType: TextInputType.number,
+                    maxLength: 3,
+                    decoration: const InputDecoration(
+                      hintText: 'Or type minutes',
+                      suffixText: 'min',
+                      isDense: true,
+                      counterText: '',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (text) {
+                      final typed = int.tryParse(text.trim());
+                      if (typed != null && isValidEmergencyMinutes(typed)) {
+                        setSheet(() => minutes = typed);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Any time from 1 to 120 minutes.',
+                  style: TextStyle(color: grayText, fontSize: 12),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: AppPillButton(
+                    label: 'Approve $minutes min',
+                    onPressed: () => Navigator.pop(sheetContext, minutes),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await _respondToEmergencyAccess(
+      childProfileId,
+      approve: true,
+      duration: Duration(minutes: chosen),
+    );
+  }
+
   Future<void> _respondToEmergencyAccess(
     String childProfileId, {
     required bool approve,
+    Duration duration = EmergencyAccessService.defaultGrantDuration,
   }) async {
     setState(() => _isRespondingToEmergencyAccess = true);
 
@@ -874,6 +879,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       await _emergencyAccessService.respondToRequest(
         childProfileId: childProfileId,
         approve: approve,
+        duration: duration,
       );
     } catch (e) {
       if (mounted) {
@@ -923,7 +929,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   Widget _deviceProfileCard(Map<String, dynamic>? child) {
     final childName = childNameOf(child, fallback: 'Child Profile');
-    final childEmail = (child?['childEmail'] ?? 'Pair a child account first')
+    final childEmail = (child?['childEmail'] ?? pairChildFirst)
         .toString();
     final connected = child != null && isChildConnected(child);
 
@@ -962,15 +968,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
               spacing: 8,
               runSpacing: 6,
               children: [
-                child['accessibilityEnabled'] == false
-                    ? const StatusPill(label: 'Blocking off', tone: StatusTone.danger)
-                    : const StatusPill(label: 'Protection on', tone: StatusTone.success),
-                if (child['usageAccessEnabled'] == false)
-                  const StatusPill(label: 'Usage Access off', tone: StatusTone.danger),
-                if (child['smsPermissionGranted'] == false)
-                  const StatusPill(label: 'SMS backup off', tone: StatusTone.warning),
-                if (child['locationEnabled'] == false)
-                  const StatusPill(label: 'Location off', tone: StatusTone.warning),
+                for (final label in protectionStatusLabels(child))
+                  StatusPill(
+                    label: label,
+                    tone: switch (label) {
+                      'Protection on' => StatusTone.success,
+                      'SMS backup off' => StatusTone.warning,
+                      _ => StatusTone.danger,
+                    },
+                  ),
               ],
             ),
           ],
@@ -1015,14 +1021,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     final status = online ? 'Online' : 'Offline';
     final base = when.isEmpty ? status : '$status • $when';
     return '$base$smsNote';
-  }
-
-  /// Warning shown next to the location (G2, G3), or null.
-  String? _locationWarning(Map<String, dynamic>? child) {
-    final location = latestLocation(child);
-    if (location?['isMocked'] == true) return 'may be faked (fake GPS app)';
-    if (child?['locationEnabled'] == false) return 'turned off on child phone';
-    return null;
   }
 
   /// "2m ago" style label for the device card and the location footer.
@@ -1405,32 +1403,20 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   Widget _locationFooter(Map<String, dynamic>? child) {
     final hasLocation = hasSharedLocation(child);
     final location = locationText(child);
-    final warning = _locationWarning(child);
     final locationLine = hasLocation
         ? 'Location • $location'
         : 'Location • waiting for GPS update';
 
     return Row(
       children: [
-        Icon(
-          warning == null
-              ? Icons.location_on_outlined
-              : Icons.location_off_outlined,
-          color: warning == null ? grayText : AppColors.danger,
-          size: 20,
-        ),
+        const Icon(Icons.location_on_outlined, color: grayText, size: 20),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            warning == null
-                ? locationLine
-                : '$locationLine\n⚠ Location $warning',
+            locationLine,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: warning == null ? darkText : AppColors.danger,
-              fontSize: 13,
-            ),
+            style: const TextStyle(color: darkText, fontSize: 13),
           ),
         ),
         TextButton(

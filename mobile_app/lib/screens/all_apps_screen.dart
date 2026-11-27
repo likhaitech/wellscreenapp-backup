@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/app_time_limit.dart';
 import '../services/app_time_limit_service.dart';
+import '../services/visible_apps.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_usage_icon.dart';
 import '../widgets/wellscreen_ui.dart';
@@ -110,11 +111,7 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                 : _appsFromReport(reportMap);
             final recordedAt = _reportDate(reportMap, snapshot.data?.data());
             final now = DateTime.now();
-            final isStale =
-                recordedAt != null &&
-                (recordedAt.year != now.year ||
-                    recordedAt.month != now.month ||
-                    recordedAt.day != now.day);
+            final isStale = isUsageReportStale(recordedAt, now);
             final reportedMs =
                 _nonnegativeInt(reportMap?['allAppsTotalUsageDurationMs']) ??
                 _nonnegativeInt(reportMap?['totalUsageDurationMs']);
@@ -165,8 +162,8 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                     child: _messageState(
                       Icons.event_busy_rounded,
                       'No usage report for today',
-                      'The most recent report is from ${_formatDate(recordedAt)}. '
-                          'Ask the child device to sync usage today.',
+                      'The most recent report is from ${_formatDate(recordedAt!)}. '
+                      '$syncUsageTodayMessage',
                     ),
                   )
                 else ...[
@@ -617,12 +614,13 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                 ],
               ),
               const SizedBox(height: 18),
-              Text('Usage today: ${_durationLabel(app.usageMs)}'),
-              if (app.openCount != null) Text('Times opened: ${app.openCount}'),
-              if (app.averageDailyMs != null)
-                Text('Average per day: ${_durationLabel(app.averageDailyMs!)}'),
-              if (app.lastUsed != null)
-                Text('Last used: ${_clockTime(app.lastUsed!)}'),
+              for (final line in appUsageDetailLines(
+                usageMs: app.usageMs,
+                openCount: app.openCount,
+                averageDailyMs: app.averageDailyMs,
+                lastUsed: app.lastUsed,
+              ))
+                Text(line),
               const SizedBox(height: 10),
               Text(
                 'Package: ${app.packageName}',
@@ -641,7 +639,7 @@ class _AllAppsScreenState extends State<AllAppsScreen> {
                   ),
                   onPressed: () => Navigator.of(sheetContext).pop(true),
                   icon: const Icon(Icons.timer_outlined),
-                  label: const Text('Set Time Limit'),
+                  label: const Text(setTimeLimitLabel),
                 ),
               ),
             ],
@@ -773,6 +771,23 @@ DateTime? _reportDate(
   if (updated is Timestamp) return updated.toDate();
   return null;
 }
+
+/// The usage lines on an app's details sheet in All Apps.
+List<String> appUsageDetailLines({
+  required int usageMs,
+  int? openCount,
+  int? averageDailyMs,
+  DateTime? lastUsed,
+}) => [
+  'Usage today: ${_durationLabel(usageMs)}',
+  if (openCount != null) 'Times opened: $openCount',
+  if (averageDailyMs != null)
+    'Average per day: ${_durationLabel(averageDailyMs)}',
+  if (lastUsed != null) 'Last used: ${_clockTime(lastUsed)}',
+];
+
+/// The button on an app's details sheet that opens the time limit editor.
+const String setTimeLimitLabel = 'Set Time Limit';
 
 String _durationLabel(int milliseconds) {
   final seconds = Duration(milliseconds: milliseconds).inSeconds;

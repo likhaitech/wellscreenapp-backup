@@ -91,6 +91,26 @@ void main() {
     test('an empty map produces an empty summary list', () {
       expect(service.summarizeUsage({}), isEmpty);
     });
+
+    test('passes the last-used time through (needed for late-night alerts)',
+        () {
+      final lateNight = DateTime(2026, 11, 25, 23, 20);
+      final result = service.summarizeAllUsage(
+        {'com.example.game': 60000, 'com.example.notes': 30000},
+        lastUsed: {'com.example.game': lateNight},
+      );
+
+      expect(
+        result.firstWhere((s) => s.packageName == 'com.example.game')
+            .lastTimeUsed,
+        lateNight,
+      );
+      expect(
+        result.firstWhere((s) => s.packageName == 'com.example.notes')
+            .lastTimeUsed,
+        isNull,
+      );
+    });
   });
 
   group('UsageTrackingService.countMaxAppOpens', () {

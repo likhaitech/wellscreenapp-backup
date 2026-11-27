@@ -3,13 +3,22 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../services/password_policy.dart';
+import '../services/registration_backend.dart';
+import '../services/register_error_message.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wellscreen_ui.dart';
 import 'child_home_screen.dart';
 import 'parent_dashboard_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  const RegisterScreen({super.key, this.backend, this.openHome});
+
+  /// Where accounts are created. Defaults to Firebase; tests pass a double.
+  final RegistrationBackend? backend;
+
+  /// Opens the home screen for the new account's role ('parent' or
+  /// 'child'). Defaults to the Guardian Dashboard / child home screen.
+  final void Function(BuildContext context, String role)? openHome;
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -50,18 +59,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => isLoading = true);
 
     try {
-      final credential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: email, password: password);
+      final backend = widget.backend ?? FirebaseRegistrationBackend();
+      final uid = await backend.createAccount(email, password);
 
-      final user = credential.user;
-
-      if (user == null) {
+      if (uid == null) {
         showMessage('Registration failed. Please try again.');
         return;
       }
 
       final userData = <String, dynamic>{
-        'uid': user.uid,
+        'uid': uid,
         'fullName': fullName,
         'email': email,
         'role': selectedRole,
@@ -82,12 +89,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
 
       try {
-        await user.updateDisplayName(fullName);
-
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .set(userData);
+        await backend.setDisplayName(fullName);
+        await backend.saveProfile(uid, userData);
       } catch (setupError) {
         // createUserWithEmailAndPassword() above already created (and
         // signed in) the Auth account. If either write below it fails
@@ -99,7 +102,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         // auto-creates a missing profile doc. Delete the Auth account so
         // the user can cleanly retry from scratch instead of getting stuck.
         try {
-          await user.delete();
+          await backend.deleteAccount();
         } catch (_) {
           // Best-effort cleanup - surface the original error either way.
         }
@@ -112,7 +115,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // Best-effort - a failure here never undoes the registration.
       var verificationSent = false;
       try {
-        await user.sendEmailVerification();
+        await backend.sendVerificationEmail();
         verificationSent = true;
       } catch (_) {
         // The account works without it; the user can still reset password
@@ -130,7 +133,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             : 'Account created.',
       );
 
-      if (selectedRole == 'parent') {
+      if (widget.openHome != null) {
+        widget.openHome!(context, selectedRole);
+      } else if (selectedRole == 'parent') {
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (_) => const ParentDashboardScreen()),
@@ -144,7 +149,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       }
     } on FirebaseAuthException catch (e) {
-      showMessage(e.message ?? 'Registration failed.');
+      showMessage(registerErrorMessage(e));
     } catch (e) {
       showMessage('Registration error: $e');
     } finally {
@@ -375,8 +380,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
               onPressed: registerUser,
             ),
             const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            // Wraps onto two lines on narrow screens or with a large
+            // system font size instead of overflowing.
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 const Text(
                   'Already have an account?',

@@ -20,6 +20,7 @@ import org.json.JSONArray
 // of reading actual logcat output. Filter with: adb logcat -s WellScreenCapture
 private const val CAPTURE_LOG_TAG = "WellScreenCapture"
 
+
 class WellScreenAccessibilityService : AccessibilityService() {
 
     private var lastBlockedPackage: String? = null
@@ -571,6 +572,12 @@ class WellScreenAccessibilityService : AccessibilityService() {
                 "${texts.sumOf { it.length }} chars -> ${result.level} " +
                 "${result.category ?: "-"} score ${result.score}"
         )
+        if (result.level != PageTextClassifier.Level.NONE && result.category != null) {
+            BrowsingLogger.tagVisit(
+                this, domain, result.category,
+                if (result.level == PageTextClassifier.Level.HINT) "hint" else "page",
+            )
+        }
         return when (result.level) {
             PageTextClassifier.Level.BLOCK -> {
                 val reason = SiteBlocker.BlockReason("page", result.category)
@@ -580,6 +587,8 @@ class WellScreenAccessibilityService : AccessibilityService() {
             }
             PageTextClassifier.Level.HINT ->
                 onSiteHint(browserPackage, domain, "page", result.category)
+            // Labelled in the report (tagVisit above), nothing else.
+            PageTextClassifier.Level.LABEL,
             PageTextClassifier.Level.NONE -> false
         }
     }
@@ -650,6 +659,11 @@ class WellScreenAccessibilityService : AccessibilityService() {
             now - lastWebBlockTime < 2500 &&
             BlockedAppActivity.isShowing
         if (recent) return
+        // One visit fires several browser events in a fraction of a second
+        // (6 blocks in 0.3 s were seen in testing). Count it as ONE attempt
+        // in the report and the "N attempts today" alert, not six.
+        val sameAttempt =
+            BlockAttempt.isSameAttempt(lastBlockedDomain, lastWebBlockTime, domain, now)
         lastBlockedDomain = domain
         lastWebBlockTime = now
 
@@ -660,6 +674,8 @@ class WellScreenAccessibilityService : AccessibilityService() {
         // Send the browser to a safe page first, so reopening it does not land
         // on the blocked site again (that caused an endless block loop).
         SafePageRedirect.leaveBlockedPage(this, browserPackage)
+        // The safe page is our redirect, not a visit - keep it out of the report.
+        lastCapturedDomain[browserPackage] = SafePageRedirect.SAFE_PAGE_DOMAIN
 
         try {
             val intent = Intent(this, BlockedAppActivity::class.java)
@@ -667,11 +683,18 @@ class WellScreenAccessibilityService : AccessibilityService() {
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             intent.putExtra("blocked_domain", domain)
             intent.putExtra("blocked_browser", browserPackage)
+            intent.putExtra(BlockedAppActivity.EXTRA_BLOCKED_CATEGORY, reason.category)
             startActivity(intent)
-            RestrictionLogger.recordOutcome(
-                this, domain, "blocked", now, reason.source, reason.category,
-            )
-            RepeatedAttemptAlert.onBlocked(this, domain, reason.source)
+            if (!sameAttempt) {
+                RestrictionLogger.recordOutcome(
+                    this, domain, "blocked", now, reason.source, reason.category,
+                )
+                // Show the blocked site in the Browsing report, labelled.
+                BrowsingLogger.recordBlocked(
+                    this, browserPackage, domain, reason.category, reason.source,
+                )
+                RepeatedAttemptAlert.onBlocked(this, domain, reason.source)
+            }
         } catch (_: Exception) {
             RestrictionLogger.recordOutcome(this, domain, "failed_exception", now)
         }

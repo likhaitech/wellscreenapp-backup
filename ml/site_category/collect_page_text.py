@@ -278,10 +278,25 @@ def main() -> None:
     ap.add_argument("--no-chrome", action="store_true", help="plain HTTP only (no JavaScript)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--scale", type=float, default=1.0, help="0.1 = quick 10%% trial run")
+    ap.add_argument("--only", default="",
+                    help="comma-separated sites to read instead of the groups, e.g. "
+                         "--only teenfilipina.com,kifpy.com (saved as group 'check')")
     args = ap.parse_args()
 
     chrome = None if args.no_chrome else find_chrome()
     print("Reading pages with", f"headless Chrome ({chrome})" if chrome else "plain HTTP")
+
+    if args.only:
+        sites = [s.strip().lower() for s in args.only.split(",") if s.strip()]
+        out_path = args.out
+        if out_path.endswith("wellscreen_page_text.jsonl"):
+            out_path = out_path.replace("wellscreen_page_text.jsonl", "wellscreen_page_check.jsonl")
+        with open(out_path, "w", encoding="utf-8") as out:
+            got = collect("check", sites, len(sites), chrome, args.workers, out,
+                          max_tries=len(sites))
+        print(f"\nReadable: {got} of {len(sites)}. Saved: {out_path}")
+        print("Only page TEXT was saved. Tell Claude it is done.")
+        return
 
     rng = random.Random(SEED)
     gambling = read_list("gambling_domains.txt")
