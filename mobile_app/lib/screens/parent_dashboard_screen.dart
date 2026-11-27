@@ -59,6 +59,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
   // report to open. Real Firestore doc id, not a fabricated field.
   String? _primaryChildId;
 
+  // The child the guardian picked in the Connected Devices popup. Null
+  // means the automatic choice (most recently active child). Kept only
+  // while the app is open.
+  String? _selectedChildId;
+
   final PushNotificationService _pushNotificationService =
       PushNotificationService();
   final EmergencyAccessService _emergencyAccessService =
@@ -396,12 +401,17 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
   QueryDocumentSnapshot<Map<String, dynamic>>? getPrimaryChildDoc(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> childDocs,
   ) {
-    // Most recently active connected child, not simply the first one -
-    // see primary_child.dart.
-    final index = pickPrimaryChildIndex(
-      childDocs.map((doc) => doc.data()).toList(),
-      isChildConnected,
+    final records = childDocs.map((doc) => doc.data()).toList();
+    // The child the guardian picked in the popup, while still paired.
+    final picked = selectedChildIndex(
+      childDocs.map((doc) => doc.id).toList(),
+      records,
+      _selectedChildId,
     );
+    if (picked >= 0) return childDocs[picked];
+    // Otherwise the most recently active connected child, not simply the
+    // first one - see primary_child.dart.
+    final index = pickPrimaryChildIndex(records, isChildConnected);
     return index < 0 ? null : childDocs[index];
   }
 
@@ -478,7 +488,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
               children: [
                 _greetingHeader(),
                 const SizedBox(height: 12),
-                _deviceProfileCard(primaryChild),
+                _deviceProfileCard(primaryChild, childDocs),
                 if (_isMonitoringSecurityAlertActive(primaryChild)) ...[
                   const SizedBox(height: 14),
                   _monitoringSecurityAlertCard(primaryChild!),
@@ -927,7 +937,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     );
   }
 
-  Widget _deviceProfileCard(Map<String, dynamic>? child) {
+  Widget _deviceProfileCard(
+    Map<String, dynamic>? child,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> childDocs,
+  ) {
     final childName = childNameOf(child, fallback: 'Child Profile');
     final childEmail = (child?['childEmail'] ?? pairChildFirst)
         .toString();
@@ -935,6 +948,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
 
     return BentoCard(
       padding: const EdgeInsets.all(14),
+      // Tapping the child opens the list of paired child devices.
+      onTap: connected ? () => _showConnectedDevices(childDocs) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -982,6 +997,153 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
           ],
         ],
       ),
+    );
+  }
+
+  /// Popup listing every child phone paired to this guardian account: just
+  /// the child's name and Online/Offline. Tapping a child switches the
+  /// whole dashboard (and Reports, All Apps, Live Location, Chat) to them.
+  Future<void> _showConnectedDevices(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> childDocs,
+  ) {
+    final records = childDocs.map((doc) => doc.data()).toList();
+    final order = connectedDeviceIndexes(records);
+
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.card),
+        ),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.devices_rounded, color: AppColors.primary),
+                SizedBox(width: 10),
+                Text(
+                  connectedDevicesTitle,
+                  style: TextStyle(
+                    fontFamily: AppFonts.heading,
+                    color: darkText,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 4),
+            Text(
+              switchChildHint,
+              style: TextStyle(color: grayText, fontSize: 13),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: order.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text(
+                    noConnectedDevices,
+                    style: TextStyle(color: grayText, fontSize: 14),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: order.length,
+                  itemBuilder: (_, i) {
+                    final doc = childDocs[order[i]];
+                    return _connectedDeviceRow(
+                      doc.data(),
+                      isShown: doc.id == _primaryChildId,
+                      onTap: () {
+                        Navigator.of(dialogContext).pop();
+                        if (doc.id != _primaryChildId) {
+                          setState(() => _selectedChildId = doc.id);
+                        }
+                      },
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _connectedDeviceRow(
+    Map<String, dynamic> child, {
+    required bool isShown,
+    required VoidCallback onTap,
+  }) {
+    final name = childNameOf(child, fallback: 'Child device');
+    final online = _childRecentlyOnline(child);
+    final seen = child['lastSeenAt'];
+    final when = seen is Timestamp ? _relativeTime(seen.toDate()) : '';
+    final String status;
+    final Color color;
+    if (online == null) {
+      status = 'Awaiting device check-in';
+      color = AppColors.warning;
+    } else if (online) {
+      status = 'Online';
+      color = AppColors.success;
+    } else {
+      status = when.isEmpty ? 'Offline' : 'Offline • $when';
+      color = AppColors.danger;
+    }
+
+    return ListTile(
+      onTap: onTap,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      tileColor: isShown ? AppColors.primaryLight : null,
+      leading: _profileAvatar(true, name),
+      title: Text(
+        name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: darkText,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      subtitle: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              status,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+      trailing: isShown
+          ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
+          : const Icon(Icons.chevron_right_rounded, color: grayText),
     );
   }
 
@@ -1080,15 +1242,28 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          childName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: darkText,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-          ),
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                childName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: darkText,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            // Shows the card opens the Connected Devices switcher.
+            if (connected)
+              const Icon(
+                Icons.expand_more_rounded,
+                color: grayText,
+                size: 20,
+              ),
+          ],
         ),
         const SizedBox(height: 3),
         Row(
