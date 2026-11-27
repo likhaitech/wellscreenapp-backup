@@ -12,6 +12,9 @@ typedef UsageEventRecord = ({
 });
 
 class UsageTrackingService {
+  /// WellScreen's own package (android applicationId).
+  static const String ownPackage = 'com.wellscreen.app';
+
   UsageTrackingService({
     UsageReportService? usageReportService,
     LocalUsageReportCacheService? localUsageReportCacheService,
@@ -90,6 +93,10 @@ class UsageTrackingService {
     final summaries = <AppUsageSummary>[];
     for (final entry in usage.entries) {
       if (entry.value <= 0) continue;
+      // WellScreen's own screens are not counted as screen time, the same
+      // as the background report (ScreenTimeReportJobService.kt), so the
+      // child and the guardian see the same total.
+      if (entry.key == ownPackage) continue;
       summaries.add(
         AppUsageSummary(
           packageName: entry.key,
@@ -156,7 +163,9 @@ class UsageTrackingService {
   }
 
   Future<UsageReport> getTodayUsageReport() async {
-    final summaries = await getTodayUsage();
+    // All apps, not only the top ten, so the total matches the background
+    // report the guardian sees.
+    final summaries = await getAllTodayUsage();
     final report = _usageReportService.generateFromSummaries(summaries);
     await _localUsageReportCacheService.saveTodayReport(report);
     return report;
