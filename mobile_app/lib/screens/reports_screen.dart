@@ -1066,7 +1066,7 @@ class ReportsScreen extends StatelessWidget {
         title: 'SMS Backup Alerts',
         message: 'No SMS alerts sent yet. These are sent automatically when a '
             'restricted app is blocked on the child device (if SMS '
-            'permission is granted and a parent phone number is set).',
+            'permission is granted and a guardian phone number is set).',
       );
     }
 

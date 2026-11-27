@@ -1,7 +1,4 @@
-"""INT-015 - Emergency Access Module -> Rule Management and Restriction Module.
-Child requests app time through Chat; the guardian approves and the app opens for that time.
-Run (from backend): python -m pytest tests/integration_cases/test_int_015.py -s -q -p no:anyio
-"""
+
 import datetime as dt
 
 from app.services import chat_access_service as chat
@@ -15,23 +12,23 @@ def test_int_015(system):
 
     def body() -> str:
         profile_id = pair_child(system)
-        # Rule Management: the guardian blocked TikTok (app_rules/{guardian}).
+
         db.docs[f"app_rules/{GUARDIAN}"] = {"rules": [
             {"packageName": TIKTOK, "appName": "TikTok", "restrictEnabled": True}]}
 
-        # Emergency Access (Chat): the child asks for 15 minutes.
+
         sent = chat.submit_access_request(child_uid=CHILD, profile_id=profile_id,
                                           request_id="req-0001", package_name=TIKTOK,
                                           requested_minutes=15)
         assert sent == {"requestId": "req-0001", "status": "pending"}
 
-        # The guardian approves 15 minutes in Chat.
+
         decided = chat.respond_to_request(parent_uid=GUARDIAN, profile_id=profile_id,
                                           request_id="req-0001", approve=True,
                                           approved_minutes=15)
         assert decided["status"] == "approved_pending_activation"
 
-        # Rule Management on the child phone: the grant becomes active.
+
         active = chat.activate_grant(child_uid=CHILD, profile_id=profile_id, package_name=TIKTOK)
         grant = db.docs[f"child_profiles/{profile_id}/temporary_access_grants/{TIKTOK}"]
         minutes = (active["expiresAt"] - grant["activatedAt"]) / dt.timedelta(minutes=1)

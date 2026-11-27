@@ -15,7 +15,7 @@ class GrantCountdownNotifier {
   static const String _channelId = 'wellscreen_time_left';
   static const String _channelName = 'Time left';
   static const String _channelDescription =
-      'Countdown for extra time your parent approved';
+      'Countdown for extra time your guardian approved';
 
   /// Notification id for Emergency Access; app grants use their own ids.
   static const int emergencyId = 74001;

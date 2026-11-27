@@ -1,5 +1,3 @@
-// CASE-028 - Profile Management
-// Run: flutter test test/cases/daily_goal_case_028_test.dart -r expanded
 
 import 'package:app/models/daily_goal.dart';
 import 'package:flutter_test/flutter_test.dart';

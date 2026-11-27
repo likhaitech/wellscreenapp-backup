@@ -32,7 +32,7 @@ class ChatForegroundNotificationService {
           notificationDetails: const NotificationDetails(
             android: AndroidNotificationDetails(
               'wellscreen_chat', 'WellScreen Chat',
-              channelDescription: 'Parent and child messages and access requests',
+              channelDescription: 'Guardian and child messages and access requests',
               importance: Importance.high, priority: Priority.high,
             ),
           ),

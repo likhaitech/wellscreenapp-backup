@@ -686,7 +686,7 @@ class _ParentNotificationsScreenState
                   'Cannot load security history. '
                   'Check the monitoring_alerts '
                   'Firestore read rule and the '
-                  'signed-in parent account.',
+                  'signed-in guardian account.',
                   style: TextStyle(
                     color: AppColors.badge,
                   ),

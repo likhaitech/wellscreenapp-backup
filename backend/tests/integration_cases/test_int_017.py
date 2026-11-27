@@ -1,7 +1,4 @@
-"""INT-017 - System Administration Module -> Authentication Module.
-Administrator deactivates a user; that user can no longer log in.
-Run (from backend): python -m pytest tests/integration_cases/test_int_017.py -s -q -p no:anyio
-"""
+
 from pathlib import Path
 
 import pytest
@@ -33,15 +30,12 @@ def test_int_017(admin_env, monkeypatch):
     signed_in = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token-of-maria")
 
     def body() -> str:
-        # Before: Maria can sign in and her session is accepted.
         assert fake.can_sign_in("maria@example.com", "Start#123")
         assert user_auth_service.require_user(signed_in)["uid"] == "parent-1"
 
-        # Module 1 - System Administration: the admin deactivates her.
         updated = admin.update_user("parent-1", disabled=True)
         assert updated["disabled"] is True
 
-        # Module 2 - Authentication: new logins and her open session are refused.
         assert not fake.can_sign_in("maria@example.com", "Start#123")
         with pytest.raises(HTTPException) as refused:
             user_auth_service.require_user(signed_in)

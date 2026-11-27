@@ -84,8 +84,8 @@ void main() {
 
     test('child text says the same, in plain words', () {
       expect(PrivacyText.childPageCheck, contains('never saved or sent'));
-      expect(PrivacyText.childPageCheck, contains('including your parent'));
-      expect(PrivacyText.childPageCheck, contains('ask your parent'));
+      expect(PrivacyText.childPageCheck, contains('including your guardian'));
+      expect(PrivacyText.childPageCheck, contains('ask your guardian'));
       expect(PrivacyText.childWebsites, contains('not full addresses'));
     });
 

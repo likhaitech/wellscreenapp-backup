@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'case_report.dart';
 import 'register_steps.dart';
 
-/// The ✓ / ✗ icon shown next to a rule in the dialog.
+
 IconData _iconFor(WidgetTester tester, String label) {
   final row = find.ancestor(of: find.text(label), matching: find.byType(Row));
   final icon = find.descendant(of: row.first, matching: find.byType(Icon));

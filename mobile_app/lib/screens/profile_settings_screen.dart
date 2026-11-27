@@ -110,7 +110,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         try {
           final email = (user.email ?? '').trim();
           if (email.isEmpty) {
-            throw StateError('Parent email address is missing.');
+            throw StateError('Guardian email address is missing.');
           }
           final children = await firestore
               .collection('child_profiles')
@@ -126,7 +126,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
             }
           }
         } catch (error) {
-          debugPrint('Parent profile saved, identity sync failed: $error');
+          debugPrint('Guardian profile saved, identity sync failed: $error');
           identitySyncFailed = true;
         }
       }
@@ -136,7 +136,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       Navigator.pop(context);
       showMessage(
         identitySyncFailed
-            ? 'Profile saved. Open Devices and tap Sync Parent Details.'
+            ? 'Profile saved. Open Devices and tap Sync details.'
             : ProfileValidation.profileSaved,
       );
     } catch (e) {

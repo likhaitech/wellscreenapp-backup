@@ -22,8 +22,7 @@ void main() {
     expected: 'The current or last known location of the child device is '
         'shown to the guardian.',
     body: (tester) async {
-      // Module 1 - Location Tracking: the child taps "Share GPS now"; the
-      // profile gets the place and the time.
+
       final sharedAt = DateTime(2026, 11, 22, 16, 40);
       final profile = <String, dynamic>{
         'latestLocation': {
@@ -34,7 +33,7 @@ void main() {
         'locationUpdatedAt': Timestamp.fromDate(sharedAt),
       };
 
-      // Module 2 - Dashboard / Live Location: what the guardian sees.
+
       expect(locationTextOf(profile), 'Lahug, Cebu City');
       final updated = locationUpdatedTextOf(profile);
       expect(updated, '11/22/2026 16:40');

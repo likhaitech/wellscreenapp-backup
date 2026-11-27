@@ -10,11 +10,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-// INT-014 - Emergency Access Module -> Rule Management and Restriction Module.
-// The guardian approves the child's request; the phone lifts blocked apps for
-// the approved minutes while harmful sites stay blocked.
-// Run (from mobile_app\android):
-//   .\gradlew.bat :app:testDebugUnitTest --tests "com.wellscreen.app.integration.Int014Test"
+
 class Int014Test {
     @Test
     fun int014() = testCase(
@@ -28,7 +24,7 @@ class Int014Test {
         val rules = SiteBlocker.WebsiteRules(emptySet(), emptySet())
         val dataset = mapOf("pornhub.com" to "adult")
 
-        // Before approval: the blocked app's website is blocked.
+
         val before = SiteBlocker.decide("tiktok.com", rules, dataset, { false },
             appDomains = setOf("tiktok.com"), limitDomains = emptySet())
         assertEquals("blocked_app", before?.category)

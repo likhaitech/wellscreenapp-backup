@@ -79,7 +79,7 @@ class EmergencyAccessService {
   int? requestedMinutes,
 }) async {
   if (childProfileId.isEmpty) {
-    throw StateError('Not paired with a parent yet.');
+    throw StateError('Not paired with a guardian yet.');
   }
 
   final trimmedReason = reason.trim();

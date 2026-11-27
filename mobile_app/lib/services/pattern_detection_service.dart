@@ -201,7 +201,7 @@ class PatternDetectionService {
         }
 
         if (unhealthyAppCount >= 3) {
-          return 'Multiple social media or gaming apps show high usage. Parent guidance is recommended.';
+          return 'Multiple social media or gaming apps show high usage. Guardian guidance is recommended.';
         }
 
         return 'Total screen time is too high. Consider using focus mode or temporary app blocking.';

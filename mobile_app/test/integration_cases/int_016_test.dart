@@ -31,8 +31,10 @@ void main() {
         'connection returns, and the guardian dashboard is updated.',
     body: (tester) async {
       SharedPreferences.setMockInitialValues({});
+      // Real async (not the widget-test fake clock): the mock storage and the
+      // simulated connectivity stream complete on real event-loop turns.
+      return (await tester.runAsync(() async {
 
-      // Module 1 - Offline Logging: 40 min of Roblox with no internet.
       final report = UsageReportService().generateFromSummaries(
         UsageTrackingService().summarizeUsage({'com.roblox.client': 2400000}),
       );
@@ -42,7 +44,6 @@ void main() {
           isOnline: false, lastOutcome: null, autoSyncMinutes: 5);
       expect(offline, 'Offline - will sync when reconnected');
 
-      // The phone reconnects: back online is detected, which starts the upload.
       final changes = StreamController<List<ConnectivityResult>>();
       final service = SyncStatusService(
         checkConnectivity: () async => [ConnectivityResult.none],
@@ -52,9 +53,9 @@ void main() {
       final sub = service.onlineStatusChanges.listen(seen.add);
       changes.add([ConnectivityResult.none]);
       changes.add([ConnectivityResult.wifi]);
-      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
       await sub.cancel();
-      await changes.close();
+      unawaited(changes.close());
       expect(seen, [false, true]);
 
       // Module 2 - Dashboard: the saved report is uploaded and shown.
@@ -72,6 +73,7 @@ void main() {
       return '${shown.inMinutes} min of usage was kept on the phone while '
           'offline ("$offline"); after reconnecting it was synced ("$status") '
           'and the guardian dashboard shows ${shown.inMinutes} min';
+      }))!;
     },
   );
 }

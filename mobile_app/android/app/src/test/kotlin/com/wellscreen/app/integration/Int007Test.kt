@@ -10,11 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-// INT-007 - Rule Management and Restriction Module -> Usage Monitoring Module.
-// The rules the guardian saved are applied on the child phone, and the
-// restriction screen appears when a restricted app is opened.
-// Run (from mobile_app\android):
-//   .\gradlew.bat :app:testDebugUnitTest --tests "com.wellscreen.app.integration.Int007Test"
+
 class Int007Test {
     @Test
     fun int007() = testCase(

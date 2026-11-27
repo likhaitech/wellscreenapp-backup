@@ -1,14 +1,10 @@
-"""INT-008 - Rule Management and Restriction Module -> Alerts and Communication Module.
-Child tries a harmful website; access is restricted, logged and the guardian is alerted.
-Run (from backend): python -m pytest tests/integration_cases/test_int_008.py -s -q -p no:anyio
-"""
+
 from app.services import monitoring_alerts_service as alerts
 
 from ..cases.case_report import run_case
 from .int_fixture import CHILD, GUARDIAN, NOW_MS, guardian_alerts, pair_child, system  # noqa: F401
 
-# What the child phone records after SiteBlocker blocks a harmful site
-# (CriticalEventJournal.kt: type, subject = domain, label = domain).
+
 BLOCKED_SITE = {"type": "restricted_content_attempt", "eventId": "a1b2c3d4-blocked-site-0001",
                 "timestampMs": NOW_MS, "subject": "pornhub.com", "label": "pornhub.com"}
 

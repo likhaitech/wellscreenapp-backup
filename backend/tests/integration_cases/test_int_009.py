@@ -1,13 +1,10 @@
-"""INT-009 - Rule Management and Restriction Module -> Alerts and Communication Module.
-Child opens a review-level site (age group 7-12); the guardian gets "Review this website".
-Run (from backend): python -m pytest tests/integration_cases/test_int_009.py -s -q -p no:anyio
-"""
+
 from app.services import monitoring_alerts_service as alerts
 
 from ..cases.case_report import run_case
 from .int_fixture import CHILD, GUARDIAN, NOW_MS, guardian_alerts, pair_child, system  # noqa: F401
 
-# What SiteReview.kt sends for a review-level site (not blocked for 7-12).
+
 REVIEW = {"type": "site_review_needed", "eventId": "review-casino-example-0001",
           "timestampMs": NOW_MS, "subject": "casino-example.com", "label": "casino-example.com"}
 
@@ -20,8 +17,7 @@ def test_int_009(system):
         saved = guardian_alerts(system, profile_id)
         assert len(saved) == 1 and saved[0]["title"] == "Review this website"
         assert "It was not blocked" in saved[0]["body"]
-        # The site travels in details.subject - what the guardian's Allow
-        # button saves as a website rule (lib/services/site_review_alert.dart).
+
         assert saved[0]["details"]["subject"] == "casino-example.com"
         assert saved[0]["smsStatus"] == "not_requested"  # decided in the app, never by SMS
         assert system.pushes[0]["parent_uid"] == GUARDIAN

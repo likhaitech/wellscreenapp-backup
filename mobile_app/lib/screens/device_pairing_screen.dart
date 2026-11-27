@@ -81,7 +81,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
       if (profileName.isNotEmpty) name = profileName;
       if (email.isEmpty && profileEmail.isNotEmpty) email = profileEmail;
     } catch (error) {
-      debugPrint('Could not read parent display details: $error');
+      debugPrint('Could not read guardian display details: $error');
     }
 
     return {
@@ -104,7 +104,7 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
       if ((details['parentDisplayName'] ?? '').trim().isEmpty ||
           (details['parentEmail'] ?? '').trim().isEmpty) {
         throw StateError(
-          'Set your full name and email in the parent account profile first.',
+          'Set your full name and email in the guardian account profile first.',
         );
       }
       final profiles = await FirebaseFirestore.instance
@@ -123,13 +123,13 @@ class _DevicePairingScreenState extends State<DevicePairingScreen> {
       }
       if (showFeedback && mounted) {
         showMessage(
-          'Parent details synced. $updated child profile(s) updated.',
+          'Guardian details synced. $updated child profile(s) updated.',
         );
       }
     } catch (error) {
-      debugPrint('Could not sync linked parent identity: $error');
+      debugPrint('Could not sync linked guardian identity: $error');
       if (showFeedback && mounted) {
-        showMessage('Parent details sync failed: $error');
+        showMessage('Guardian details sync failed: $error');
       }
     } finally {
       _isSyncingParentDetails = false;

@@ -72,7 +72,7 @@ class ChatNotificationsService {
           const AndroidNotificationChannel(
             _channelId,
             'Family Chat',
-            description: 'Parent and child messages and access decisions',
+            description: 'Guardian and child messages and access decisions',
             importance: Importance.high,
           ),
         );
@@ -147,7 +147,7 @@ class ChatNotificationsService {
         android: AndroidNotificationDetails(
           _channelId,
           'Family Chat',
-          channelDescription: 'Parent and child messages and requests',
+          channelDescription: 'Guardian and child messages and requests',
           importance: Importance.high,
           priority: Priority.high,
           number: unread,

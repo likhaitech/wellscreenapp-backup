@@ -87,7 +87,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
             right: 0,
             bottom: 40,
             child: Text(
-              'Point the camera at the QR code shown on the parent\'s screen.',
+              'Point the camera at the QR code shown on the guardian\'s screen.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.9),

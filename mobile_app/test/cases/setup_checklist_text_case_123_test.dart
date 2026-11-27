@@ -12,10 +12,10 @@ void main() {
     file: 'test/cases/setup_checklist_text_case_123_test.dart',
     codeTested: 'lib/screens/child_home_screen.dart',
     description: 'Child taps Share GPS now.',
-    expected: '“Current GPS location shared to parent dashboard.” is displayed.',
+    expected: '“Current GPS location shared to guardian dashboard.” is displayed.',
     body: (tester) async {
       expect(SetupChecklistText.gpsShared,
-          'Current GPS location shared to parent dashboard.');
+          'Current GPS location shared to guardian dashboard.');
       return 'After Share GPS now saves the location the child sees '
           '"${SetupChecklistText.gpsShared}"';
     },

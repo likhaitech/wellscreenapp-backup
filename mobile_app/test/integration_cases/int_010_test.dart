@@ -33,16 +33,12 @@ void main() {
     body: (tester) async {
       SharedPreferences.setMockInitialValues({});
 
-      // Module 1 - Rule Management: ages 7-12 (2h), the guardian edits it
-      // to 2h 30m.
       final profile = <String, dynamic>{DailyGoal.ageGroupField: '7_12'};
       expect(DailyGoal.minutesFor(profile), 120);
       profile[DailyGoal.minutesField] = DailyGoal.clampMinutes(150);
       final goal = DailyGoal.durationFor(profile);
       expect(goal, const Duration(minutes: 150));
 
-      // Module 2 - Usage Monitoring on the child phone: the new goal is saved
-      // and used by the home screen and the alerts.
       await DailyScreenTimeLimitService().saveDailyLimit(goal);
       expect(DailyGoal.activeGoal, const Duration(minutes: 150));
       final home = ScreenTimeGoalService().evaluate(

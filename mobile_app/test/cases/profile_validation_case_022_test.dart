@@ -1,6 +1,3 @@
-// CASE-022 - Profile Management
-// Run: flutter test test/cases/profile_validation_case_022_test.dart -r expanded
-
 import 'package:app/services/profile_validation.dart';
 import 'package:flutter_test/flutter_test.dart';
 

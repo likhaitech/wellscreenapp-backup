@@ -5,7 +5,7 @@ class ChildStatusText {
 
   static const String offline = 'Offline - will sync when reconnected';
   static const String requestSent =
-      'Request sent - your parent has been notified.';
+      'Request sent - your guardian has been notified.';
   static const String urgentApproved = 'Urgent Access Approved';
 
   /// The line under the Sync Usage button.
@@ -60,7 +60,7 @@ class ChildStatusText {
       switch (status) {
         'requested' => (
           title: 'Request Sent',
-          subtitle: 'Waiting for your parent to respond',
+          subtitle: 'Waiting for your guardian to respond',
         ),
         'denied' => (
           title: 'Need Urgent Access?',
@@ -68,7 +68,7 @@ class ChildStatusText {
         ),
         _ => (
           title: 'Need Urgent Access?',
-          subtitle: 'Request temporary time from parent',
+          subtitle: 'Request temporary time from your guardian',
         ),
       };
 }

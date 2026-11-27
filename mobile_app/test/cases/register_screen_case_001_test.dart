@@ -13,8 +13,7 @@ import 'case_report.dart';
 
 const _message = 'Please complete all required fields.';
 
-/// Opens the real Register screen, fills only the given fields, taps
-/// "Create account" and returns the message the screen shows.
+
 Future<String> _submit(
   WidgetTester tester, {
   String name = '',

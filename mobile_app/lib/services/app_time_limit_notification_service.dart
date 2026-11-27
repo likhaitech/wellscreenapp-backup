@@ -136,7 +136,7 @@ class AppTimeLimitNotificationService {
     final title = message.notification?.title ?? 'New App Time Limit';
     final body =
         message.notification?.body ??
-        'Your parent set a daily limit of $label for $appName.';
+        'Your guardian set a daily limit of $label for $appName.';
 
     try {
       await _channel.invokeMethod<bool>('showAssignedLimit', {

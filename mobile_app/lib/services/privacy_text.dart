@@ -26,17 +26,17 @@ class PrivacyText {
   static const String childPageCheck =
       'To keep you safe from gambling and adult sites, WellScreen checks the '
       'words on a web page right here on your phone. Those words are never '
-      'saved or sent to anyone, including your parent. A site\'s name may '
+      'saved or sent to anyone, including your guardian. A site\'s name may '
       'also be checked with a family safety filter (Cloudflare). School and '
       'health sites are never blocked automatically, and you can ask your '
-      'parent to allow a blocked site.';
+      'guardian to allow a blocked site.';
 
   /// Optional whole-phone filter the guardian can switch on in Android
   /// settings (shown on the child's Safety tab).
   static const String familyDnsHost = 'family.cloudflare-dns.com';
 
   static const String familyDnsSteps =
-      'Your parent can also turn on Cloudflare\'s free family filter for '
+      'Your guardian can also turn on Cloudflare\'s free family filter for '
       'the whole phone: Settings > Network & internet > Private DNS > '
       'Private DNS provider hostname, then enter $familyDnsHost. It blocks '
       'adult and harmful sites in every app, not only browsers. It does not '

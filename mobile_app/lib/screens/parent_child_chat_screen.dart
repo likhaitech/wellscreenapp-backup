@@ -245,7 +245,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'App access request sent. Your parent will be notified.',
+            'App access request sent. Your guardian will be notified.',
           ),
         ),
       );
@@ -782,7 +782,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
       setState(() => _showRequestComposer = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Emergency Access request sent to your parent.'),
+          content: Text('Emergency Access request sent to your guardian.'),
         ),
       );
     } on StateError catch (error) {
@@ -795,7 +795,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
   }
 
   Widget _emergencySection(String parentId) {
-    const reasons = <String>['Schoolwork', 'Call Parent', 'Urgent'];
+    const reasons = <String>['Schoolwork', 'Call Guardian', 'Urgent'];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1109,7 +1109,7 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
             Text(
               denied
                   ? 'Firebase denied access to the chat collection. '
-                        'Your paired parent/child Firestore chat rules must be '
+                        'Your paired guardian/child Firestore chat rules must be '
                         'published before messages and requests can load.'
                   : details,
               textAlign: TextAlign.center,
@@ -1352,11 +1352,11 @@ class _ParentChildChatScreenState extends State<ParentChildChatScreen> {
                   (data['parentDisplayName'] ??
                           data['parentName'] ??
                           data['parentEmail'] ??
-                          'Parent')
+                          'Guardian')
                       .toString()
                       .trim();
             }
-            if (name.isEmpty) name = widget.isParent ? 'Child' : 'Parent';
+            if (name.isEmpty) name = widget.isParent ? 'Child' : 'Guardian';
             return Row(
               children: [
                 CircleAvatar(

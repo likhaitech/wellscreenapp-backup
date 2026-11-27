@@ -1,10 +1,3 @@
-// INT-005 - Usage Monitoring Module -> Rule-Based Pattern Detection and Risk Level Module
-// Send recorded screen time and app usage.
-// Code being tested: lib/services/usage_tracking_service.dart,
-// lib/services/pattern_detection_service.dart,
-// lib/services/ml_risk_classifier_service.dart
-//
-// Run: flutter test test/integration_cases/int_005_test.dart -r expanded
 
 import 'package:app/models/daily_goal.dart';
 import 'package:app/models/usage_report.dart';
@@ -15,8 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../cases/case_report.dart';
 
-/// The same seven inputs the child home screen gives the AI assistant
-/// (child_home_screen.dart), with screen time taken from the usage report.
+
 Map<String, num> features(UsageReport report, List<int> rest) => {
       'total_screen_time_minutes': report.totalUsageDuration.inMinutes,
       'daily_limit_minutes': rest[0],

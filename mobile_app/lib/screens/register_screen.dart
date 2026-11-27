@@ -13,11 +13,8 @@ import 'parent_dashboard_screen.dart';
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, this.backend, this.openHome});
 
-  /// Where accounts are created. Defaults to Firebase; tests pass a double.
-  final RegistrationBackend? backend;
 
-  /// Opens the home screen for the new account's role ('parent' or
-  /// 'child'). Defaults to the Guardian Dashboard / child home screen.
+  final RegistrationBackend? backend;
   final void Function(BuildContext context, String role)? openHome;
 
   @override

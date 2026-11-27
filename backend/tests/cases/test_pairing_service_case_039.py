@@ -1,6 +1,4 @@
-"""CASE-039 - Device Pairing and Permission Setup.
-Run (from backend): python -m pytest tests/cases/test_pairing_service_case_039.py -s -q
-"""
+
 import datetime as dt  # noqa: F401  (used by some cases)
 
 from app.services import pairing_service as pairing

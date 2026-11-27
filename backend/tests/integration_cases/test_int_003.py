@@ -1,7 +1,4 @@
-"""INT-003 - Device Pairing and Permission Setup Module -> Usage Monitoring Module.
-Pair the child device; it appears under the guardian and its usage reports are accepted.
-Run (from backend): python -m pytest tests/integration_cases/test_int_003.py -s -q -p no:anyio
-"""
+
 import pytest
 
 from app.services import monitoring_alerts_service as alerts
@@ -23,17 +20,17 @@ def test_int_003(system):
         made = pairing.generate_pairing_code(parent_uid=GUARDIAN, child_name="Ana")
         profile_id = made["childProfileId"]
 
-        # Before pairing, the server does not take usage from this phone.
+
         with pytest.raises(PermissionError):
             alerts.accept_child_events(child_uid=CHILD, profile_id=profile_id,
                                        events=[USAGE_EVENT])
 
-        # Module 1 - Device Pairing: the child types the 6-digit code.
+
         assert pairing.redeem_pairing_code(child_uid=CHILD, code=made["code"])["status"] == "connected"
         assert db.docs[f"child_profiles/{profile_id}"]["parentId"] == GUARDIAN
         assert db.docs[f"users/{CHILD}"]["pairedParentId"] == GUARDIAN
 
-        # Module 2 - Usage Monitoring: the paired phone's usage report is accepted.
+
         reply = alerts.accept_child_events(child_uid=CHILD, profile_id=profile_id,
                                            events=[USAGE_EVENT])
         assert reply["acceptedEventIds"] == ["usage2h_20261122"]

@@ -34,7 +34,7 @@ void main() {
     body: (tester) async {
       DailyGoal.activeGoal = const Duration(hours: 2);
 
-      // Module 2 - Pattern detection on the day's usage (late-night use).
+
       final apps = [
         app('YouTube', const Duration(minutes: 40),
             lastUsed: DateTime(2026, 11, 22, 23, 15)),

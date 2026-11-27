@@ -1550,7 +1550,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
       if (synced) {
         if (!silent) {
-          showMessage('Today\'s usage report synced to the parent dashboard.');
+          showMessage('Today\'s usage report synced to the guardian dashboard.');
         }
         // Refresh this screen in the background; the sync itself is done.
         unawaited(_loadUsageDashboard());
@@ -1657,7 +1657,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     final childProfileId = (_cachedUserData?['pairedChildProfileId'] ?? '')
         .toString();
     if (childProfileId.isEmpty) {
-      showMessage('Pair with a parent to start chatting.');
+      showMessage('Pair with a guardian to start chatting.');
       return;
     }
     Navigator.push(
@@ -1700,7 +1700,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     if (linkedParentId.isEmpty ||
         linkedProfileId.isEmpty ||
         signedInChildId == null) {
-      showMessage('This device has no linked parent account.');
+      showMessage('This device has no linked guardian account.');
       return;
     }
 
@@ -1752,25 +1752,25 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   ? AppColors.successBg
                   : AppColors.dangerBg;
               final heading = verified
-                  ? 'Parent Account\nConnected'
+                  ? 'Guardian Account\nConnected'
                   : loading
-                  ? 'Checking Parent\nAccount'
+                  ? 'Checking Guardian\nAccount'
                   : !paired && !loadFailed
-                  ? 'Parent Account\nNot Connected'
-                  : 'Parent Account\nNot Verified';
+                  ? 'Guardian Account\nNot Connected'
+                  : 'Guardian Account\nNot Verified';
               final helpText = loading
-                  ? 'Checking the linked parent account...'
+                  ? 'Checking the linked guardian account...'
                   : loadFailed
                   ? 'Could not verify account details. Check your internet '
                         'connection and try again.'
                   : !paired
-                  ? 'This parent link is missing or no longer valid. '
+                  ? 'This guardian link is missing or no longer valid. '
                         'Please pair this device again.'
                   : !identityReady
-                  ? 'The device is paired, but the parent name and '
-                        'email have not synced. Ask your parent to open '
-                        'Devices and tap Sync Parent Details.'
-                  : 'Parent account details verified for this pairing.';
+                  ? 'The device is paired, but the guardian name and '
+                        'email have not synced. Ask your guardian to open '
+                        'Devices and tap Sync details.'
+                  : 'Guardian account details verified for this pairing.';
 
               return Dialog(
                 backgroundColor: Colors.white,
@@ -1817,7 +1817,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                           ),
                           const SizedBox(height: 16),
                           const Text(
-                            'This device is linked to the following parent account:',
+                            'This device is linked to the following guardian account:',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: grayText,
@@ -1858,7 +1858,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                                       Text(
                                         parentName.isNotEmpty
                                             ? parentName
-                                            : 'Parent name not available',
+                                            : 'Guardian name not available',
                                         style: const TextStyle(
                                           color: darkText,
                                           fontWeight: FontWeight.w900,
@@ -2221,7 +2221,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
       children: [
         const SizedBox(height: 4),
         const Text(
-          'Pair with parent',
+          'Pair with your guardian',
           style: TextStyle(
             fontFamily: AppFonts.heading,
             color: _ink,
@@ -2240,7 +2240,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         ),
         const SizedBox(height: 10),
         const Text(
-          'Ask your parent for the 6-digit code on their WellScreen app.',
+          'Ask your guardian for the 6-digit code on their WellScreen app.',
           textAlign: TextAlign.center,
           style: TextStyle(color: _slate, fontSize: 14, height: 1.4),
         ),
@@ -2342,7 +2342,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         ),
         const SizedBox(height: 14),
         const Text(
-          'Pairing lets your parent see your screen time, rules and '
+          'Pairing lets your guardian see your screen time, rules and '
           'location. You can read exactly what they see in Settings.',
           textAlign: TextAlign.center,
           style: TextStyle(color: _slate, fontSize: 12, height: 1.4),
@@ -2494,7 +2494,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         icon: Icons.sync_problem_rounded,
         title: 'Rules Sync Waiting',
         message:
-            'The parent account is connected, but the rule source is not ready yet.',
+            'The guardian account is connected, but the rule source is not ready yet.',
       );
     }
 
@@ -2524,7 +2524,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 SizedBox(width: 14),
                 Expanded(
                   child: Text(
-                    'Loading parent app rules...',
+                    'Loading guardian app rules...',
                     style: TextStyle(
                       color: grayText,
                       fontWeight: FontWeight.w800,
@@ -2569,7 +2569,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             icon: Icons.rule_folder_rounded,
             title: 'No Active App Rules',
             message:
-                'When the parent selects Monitor or Restrict in View Rules, the apps will appear here.',
+                'When the guardian selects Monitor or Restrict in View Rules, the apps will appear here.',
           );
         }
 
@@ -2598,7 +2598,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Parent App Rules',
+                          'Guardian App Rules',
                           style: TextStyle(
                             color: darkText,
                             fontSize: 19,
@@ -2607,7 +2607,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                         ),
                         SizedBox(height: 3),
                         Text(
-                          'Synced from parent dashboard',
+                          'Synced from guardian dashboard',
                           style: TextStyle(
                             color: grayText,
                             fontWeight: FontWeight.w700,
@@ -3411,7 +3411,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            connected ? 'Protection is on' : 'Waiting for your parent',
+            connected ? 'Protection is on' : 'Waiting for your guardian',
             style: const TextStyle(color: _slate, fontSize: 13),
           ),
           const SizedBox(height: 2),
@@ -3436,7 +3436,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
         .toString();
     final subtitle = connected
         ? '${_isOnline ? 'Online' : 'Offline'} \u2022 ${_lastSyncLabel()}'
-        : 'Waiting for parent pairing';
+        : 'Waiting for guardian pairing';
 
     return _whiteCard(
       padding: const EdgeInsets.all(14),
@@ -3591,11 +3591,11 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   ),
                   const SizedBox(height: 4),
                   const Text(
-                    'This phone is paired with a parent account.',
+                    'This phone is paired with a guardian account.',
                     style: TextStyle(color: _slate, fontSize: 13),
                   ),
                   const SizedBox(height: 14),
-                  heading('What your parent can see'),
+                  heading('What your guardian can see'),
                   point(
                     Icons.timelapse_rounded,
                     _brandIndigo,
@@ -3604,7 +3604,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   point(
                     Icons.rule_rounded,
                     _brandIndigo,
-                    'App rules set by your parent: monitored, blocked, or '
+                    'App rules set by your guardian: monitored, blocked, or '
                     'time-limited apps.',
                   ),
                   point(
@@ -3635,7 +3635,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                     _amber,
                     'Disabling WellScreen permissions, turning off '
                     'monitoring, or uninstalling WellScreen will interrupt '
-                    'screen-time tracking and usage reports. Your parent may '
+                    'screen-time tracking and usage reports. Your guardian may '
                     'be notified if this device stops reporting. Android '
                     'controls the uninstall process.',
                   ),
@@ -3690,7 +3690,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                 ),
                 SizedBox(height: 2),
                 Text(
-                  'Connect this phone to a parent account.',
+                  'Connect this phone to a guardian account.',
                   style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
                 ),
               ],
@@ -3969,7 +3969,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                   return _rulesInfoPill(
                     icon: Icons.sync_rounded,
                     color: _slate,
-                    text: 'Loading parent app rules...',
+                    text: 'Loading guardian app rules...',
                   );
                 }
 
@@ -4418,7 +4418,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (parentId.isEmpty || childProfileId.isEmpty) {
-        showMessage('Pair with a parent to request access.');
+        showMessage('Pair with a guardian to request access.');
         return;
       }
       if (currentIndex != 0) setState(() => currentIndex = 0);
@@ -4427,7 +4427,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
   }
 
   void _showEmergencyRequestSheet(String childProfileId, String parentId) {
-    const presets = <String>['Schoolwork', 'Call Parent', 'Urgent'];
+    const presets = <String>['Schoolwork', 'Call Guardian', 'Urgent'];
     const minuteOptions = <int>[5, 10, 15, 30, 60];
     String? selectedPreset;
     var requestedMinutes = 15;
@@ -4468,7 +4468,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       const SizedBox(height: 4),
                       const Text(
                         'Need a blocked app for something urgent? Ask your '
-                        'parent to unlock apps for a while. Harmful websites '
+                        'guardian to unlock apps for a while. Harmful websites '
                         'stay blocked.',
                         style: TextStyle(
                           color: _slate,
@@ -4605,7 +4605,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
                       const SizedBox(height: 6),
                       Text(
                         'Asking for $requestedMinutes min (1-120). '
-                        'Your parent decides the final time.',
+                        'Your guardian decides the final time.',
                         style: const TextStyle(color: _slate, fontSize: 12),
                       ),
                       const SizedBox(height: 14),
@@ -5256,7 +5256,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
 
     String smsSubtitle;
     if (!connected) {
-      smsSubtitle = 'Available after this phone is paired with a parent.';
+      smsSubtitle = 'Available after this phone is paired with a guardian.';
     } else if (!_smsPermissionGranted) {
       smsSubtitle = SetupChecklistText.smsPermissionOff;
     } else if (hasPhoneNumber) {
@@ -5265,7 +5265,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           '${_maskPhoneNumber(_cachedParentPhoneNumber!)}.';
     } else {
       smsSubtitle =
-          'Permission granted, but your parent hasn\'t added a phone number '
+          'Permission granted, but your guardian hasn\'t added a phone number '
           'yet in their Profile Settings.';
     }
     if (connected && _smsAlertLog.isNotEmpty) {
@@ -5317,8 +5317,8 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
             icon: Icons.link_rounded,
             title: 'Device pairing',
             subtitle: connected
-                ? 'Connected to a parent account. Tap to view details.'
-                : 'Not paired yet. Enter the code from the parent account.',
+                ? 'Connected to a guardian account. Tap to view details.'
+                : 'Not paired yet. Enter the code from the guardian account.',
             done: connected,
             actionLabel: connected ? null : 'Pair',
             onAction: connected
@@ -5586,17 +5586,17 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           icon: Icons.phone_outlined,
           color: AppColors.violet,
           tint: AppColors.violetBg,
-          title: 'Parent\'s phone number',
+          title: 'Guardian\'s phone number',
           subtitle: hasPhoneNumber
               ? 'SMS backup alerts go to '
                     '${_maskPhoneNumber(_cachedParentPhoneNumber!)}'
-              : 'Not added yet. Your parent sets this in their Profile '
+              : 'Not added yet. Your guardian sets this in their Profile '
                     'Settings.',
         ),
         _settingsTile(
           icon: Icons.notifications_none_rounded,
           title: 'Notifications',
-          subtitle: 'Messages and alerts from your parent',
+          subtitle: 'Messages and alerts from your guardian',
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const ChatNotificationsScreen()),
@@ -5619,7 +5619,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen>
           color: _emerald,
           tint: _emeraldTint,
           title: 'Privacy & monitoring notice',
-          subtitle: 'What your parent can see, and what WellScreen never reads',
+          subtitle: 'What your guardian can see, and what WellScreen never reads',
           onTap: _showMonitoringSheet,
         ),
         _settingsTile(

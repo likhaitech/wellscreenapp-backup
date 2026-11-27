@@ -12,10 +12,10 @@ void main() {
     file: 'test/cases/child_status_text_case_138_test.dart',
     codeTested: 'lib/screens/child_home_screen.dart',
     description: 'Child opens the home screen after sending a request.',
-    expected: 'The request shows “Waiting for your parent to respond”.',
+    expected: 'The request shows “Waiting for your guardian to respond”.',
     body: (tester) async {
       final card = ChildStatusText.emergencyCard('requested');
-      expect(card.subtitle, 'Waiting for your parent to respond');
+      expect(card.subtitle, 'Waiting for your guardian to respond');
       return 'Card: "${card.title}" - "${card.subtitle}"';
     },
   );

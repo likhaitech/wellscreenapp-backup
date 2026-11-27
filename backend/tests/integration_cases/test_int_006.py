@@ -1,7 +1,4 @@
-"""INT-006 - Rule-Based Pattern Detection and Risk Level Module -> Alerts and Communication Module.
-A detected usage concern (late-night use) reaches the guardian as an alert.
-Run (from backend): python -m pytest tests/integration_cases/test_int_006.py -s -q -p no:anyio
-"""
+
 from app.services import monitoring_alerts_service as alerts
 
 from ..cases.case_report import run_case

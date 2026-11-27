@@ -1,5 +1,3 @@
-// CASE-029 - Profile Management
-// Run: flutter test test/cases/phone_auth_error_case_029_test.dart -r expanded
 
 import 'package:app/services/phone_auth_error.dart';
 import 'package:flutter_test/flutter_test.dart';

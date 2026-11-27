@@ -1,7 +1,4 @@
-"""INT-004 - Device Pairing and Permission Setup Module -> Alerts and Communication Module.
-Child turns off uninstall protection; the guardian is alerted.
-Run (from backend): python -m pytest tests/integration_cases/test_int_004.py -s -q -p no:anyio
-"""
+
 from app.models.alert import AlertNotifyRequest
 from app.routes import alerts as alerts_route
 
@@ -15,12 +12,9 @@ def test_int_004(system, monkeypatch):
                         lambda **kw: sent.append(kw) or {"status": "sent", "message_id": "push-1"})
 
     def body() -> str:
-        # Module 1 - Device Pairing and Permission Setup: paired phone with
-        # uninstall protection (Device Administrator) on.
+
         profile_id = pair_child(system)
 
-        # The child turns it off; WellScreenDeviceAdminReceiver.kt posts this
-        # to POST /alerts/notify (alertType "device_admin_disabled").
         payload = AlertNotifyRequest(
             parent_uid=GUARDIAN, alert_type="device_admin_disabled",
             title="WellScreen uninstall protection disabled",
@@ -29,8 +23,6 @@ def test_int_004(system, monkeypatch):
         )
         reply = alerts_route.notify(payload, current_user={"uid": CHILD})
 
-        # Module 2 - Alerts and Communication: push to the guardian + an
-        # entry in the guardian's Notifications.
         assert reply.status == "sent"
         assert sent[0]["parent_uid"] == GUARDIAN
         saved = guardian_alerts(system, profile_id)

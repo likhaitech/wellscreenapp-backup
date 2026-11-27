@@ -1,7 +1,4 @@
-"""INT-018 - System Administration Module -> Usage Monitoring Module.
-A paired child device checks in; the admin's Active users graph counts it for that day.
-Run (from backend): python -m pytest tests/integration_cases/test_int_018.py -s -q -p no:anyio
-"""
+
 import datetime as dt
 
 from app.services import system_activity_service as activity
@@ -17,16 +14,13 @@ def test_int_018(system):
         profile_id = pair_child(system)
         today = activity.manila_day(NOW)
 
-        # Before any check-in today the graph shows 0 child devices.
         activity.refresh_daily_activity(now=NOW, db=db)
         before = activity.admin_overview(days=7, now=NOW, db=db)["daily"][-1]
         assert before["date"] == today and before["activeChildren"] == 0
 
-        # Usage Monitoring: the child phone checks in (heartbeat writes lastSeenAt).
         db.docs[f"child_profiles/{profile_id}"]["lastSeenAt"] = NOW - dt.timedelta(minutes=3)
 
-        # System Administration: the 5-minute monitoring job recounts; the
-        # dashboard graph reads the daily totals.
+
         counted = activity.refresh_daily_activity(now=NOW, db=db)
         assert counted["activeChildren"] == 1
         after = activity.admin_overview(days=7, now=NOW, db=db)["daily"][-1]

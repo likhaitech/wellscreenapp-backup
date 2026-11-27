@@ -12,9 +12,9 @@ void main() {
     file: 'test/cases/setup_checklist_text_case_046_test.dart',
     codeTested: 'lib/screens/device_pairing_screen.dart',
     description: 'Child and guardian open the pairing status after pairing.',
-    expected: 'Child sees “Paired with your parent”; guardian sees the child under Paired Devices.',
+    expected: 'Child sees “Paired with your guardian”; guardian sees the child under Paired Devices.',
     body: (tester) async {
-      expect(SetupChecklistText.pairedWithParent, 'Paired with your parent');
+      expect(SetupChecklistText.pairedWithParent, 'Paired with your guardian');
       return 'After pairing the child card reads '
           '"${SetupChecklistText.pairedWithParent}" (guardian\'s Paired '
           'Devices list on the emulator figure)';
