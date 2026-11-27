@@ -116,6 +116,10 @@ internal object AppTimeLimitNotifier {
         }
     }
 
+    /** Break timer notices on the child's phone (ScheduleEnforcer). */
+    fun showBreakNotice(context: Context, key: String, title: String, body: String): Boolean =
+        post(context, key, title, body)
+
     private fun post(context: Context, key: String, title: String, body: String): Boolean {
         if (!canNotify(context)) return false
         return try {

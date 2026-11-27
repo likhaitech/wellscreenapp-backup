@@ -20,6 +20,7 @@ internal object ScheduleEnforcer {
     private const val KEY = "flutter.wellscreen_schedules_json"
     private const val BREAKS_STORE = "wellscreen_breaks"
     private const val SESSION_GAP_MS = 60_000L
+    private const val WARN_BEFORE_MS = 60_000L
     private const val SESSION_CHECK_EVERY_MS = 5_000L
 
     data class Schedule(
@@ -174,11 +175,68 @@ internal object ScheduleEnforcer {
             lastSessionCheck[packageName] = now
         }
         val events = AppTimeLimitEnforcer.foregroundEvents(context, packageName, now) ?: return null
+        maybeWarnBeforeBreak(context, packageName, events, now, schedule)
         if (!needsBreak(events, now, schedule)) return null
 
         val newUntil = now + breakMs
         store.edit().putLong(packageName, newUntil).apply()
         GrantClock.isActive(context, "break_$packageName", newUntil, breakMs)
+        AppTimeLimitNotifier.showBreakNotice(
+            context,
+            "break_$packageName",
+            "Break time",
+            "${appLabel(context, packageName)} is paused for " +
+                "${durationText(schedule.breakMinutes)}. Try something else for a bit.",
+        )
         return Block("break", newUntil)
+    }
+
+    /** True when the break is at most a minute away in this session. */
+    fun breakIsNear(events: List<Pair<Int, Long>>, now: Long, schedule: Schedule): Boolean {
+        if (!schedule.breaksEnabled) return false
+        val start = sessionStart(events, SESSION_GAP_MS) ?: return false
+        val left = schedule.breakAfterMinutes * 60_000L - (now - start)
+        return left in 1..WARN_BEFORE_MS
+    }
+
+    /** One "Break in 1 min" notice per non-stop session of an app. */
+    private fun maybeWarnBeforeBreak(
+        context: Context,
+        packageName: String,
+        events: List<Pair<Int, Long>>,
+        now: Long,
+        schedule: Schedule,
+    ) {
+        if (!breakIsNear(events, now, schedule)) return
+        val start = sessionStart(events, SESSION_GAP_MS) ?: return
+        val store = context.getSharedPreferences(BREAKS_STORE, Context.MODE_PRIVATE)
+        val key = "warned_$packageName"
+        if (store.getLong(key, 0L) == start) return
+        store.edit().putLong(key, start).apply()
+        AppTimeLimitNotifier.showBreakNotice(
+            context,
+            "break_$packageName",
+            "Break in 1 minute",
+            "${appLabel(context, packageName)} will pause for " +
+                "${durationText(schedule.breakMinutes)} in about a minute.",
+        )
+    }
+
+    /** "5 min", "1 h", "1 h 30 min". */
+    fun durationText(minutes: Int): String {
+        val h = minutes / 60
+        val m = minutes % 60
+        return when {
+            h == 0 -> "$m min"
+            m == 0 -> "$h h"
+            else -> "$h h $m min"
+        }
+    }
+
+    private fun appLabel(context: Context, packageName: String): String = try {
+        val pm = context.packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+    } catch (_: Exception) {
+        "This app"
     }
 }

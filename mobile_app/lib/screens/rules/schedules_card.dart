@@ -222,23 +222,123 @@ class _SchedulesCardState extends State<SchedulesCard> {
     );
   }
 
-  /// "60 min" pill that opens a menu of the allowed values.
-  Widget _minutesPill({
+  /// A break timer setting shown like the bedtime boxes: a small label and
+  /// the minutes. Tapping it opens the choices from the manuscript
+  /// (Chapter IV, Schedules card).
+  Widget _minutesBox({
+    required String label,
     required int value,
     required List<int> choices,
     required bool enabled,
     required ValueChanged<int> onChanged,
   }) {
-    return PopupMenuButton<int>(
-      enabled: enabled,
-      tooltip: 'Change',
-      initialValue: value,
-      onSelected: onChanged,
-      itemBuilder: (_) => [
-        for (final m in choices)
-          PopupMenuItem(value: m, child: Text('$m min')),
-      ],
-      child: IgnorePointer(child: _chip('$value min', true, () {})),
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: enabled
+            ? () async {
+                final picked = await _pickMinutes(
+                  title: label,
+                  value: value,
+                  choices: choices,
+                );
+                if (picked != null && picked != value) onChanged(picked);
+              }
+            : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$value min',
+                      style: const TextStyle(
+                        fontFamily: AppFonts.heading,
+                        color: AppColors.textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.expand_more_rounded,
+                size: 20,
+                color: AppColors.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Bottom sheet with the allowed choices. Tapping one picks it.
+  Future<int?> _pickMinutes({
+    required String title,
+    required int value,
+    required List<int> choices,
+  }) {
+    return showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: AppFonts.heading,
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  for (var i = 0; i < choices.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    Expanded(
+                      child: _chip(
+                        '${choices[i]} min',
+                        choices[i] == value,
+                        () => Navigator.pop(sheetContext, choices[i]),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -408,16 +508,10 @@ class _SchedulesCardState extends State<SchedulesCard> {
                 ),
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              Row(
                 children: [
-                  const Text(
-                    'After',
-                    style: TextStyle(color: AppColors.textPrimary),
-                  ),
-                  _minutesPill(
+                  _minutesBox(
+                    label: 'Break after',
                     value: _rules.breakAfterMinutes,
                     choices: ScheduleRules.breakAfterChoices,
                     enabled: canEdit,
@@ -428,11 +522,9 @@ class _SchedulesCardState extends State<SchedulesCard> {
                       'Break timer saved.',
                     ),
                   ),
-                  const Text(
-                    'pause for',
-                    style: TextStyle(color: AppColors.textPrimary),
-                  ),
-                  _minutesPill(
+                  const SizedBox(width: 10),
+                  _minutesBox(
+                    label: 'Pause for',
                     value: _rules.breakLengthMinutes,
                     choices: ScheduleRules.breakLengthChoices,
                     enabled: canEdit,
@@ -444,6 +536,11 @@ class _SchedulesCardState extends State<SchedulesCard> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              _hint(
+                'After ${_rules.breakAfterMinutes} min of non-stop use of '
+                'one app, it pauses for ${_rules.breakLengthMinutes} min.',
               ),
             ],
           ),

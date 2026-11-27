@@ -443,6 +443,22 @@ class BlockedAppActivity : Activity() {
         root.addView(badge)
         root.addView(title)
         root.addView(message)
+        if (scheduleReason != null) {
+            scheduleEndsAtMs = intent.getLongExtra(EXTRA_SCHEDULE_ENDS_AT, 0L)
+            isBreakBlock = scheduleReason == "break"
+            countdownView = TextView(this).apply {
+                textSize = 28f
+                typeface = headingFace
+                setTextColor(ink)
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(14) }
+            }
+            root.addView(countdownView)
+            updateCountdown()
+        }
         // Signing in needs WellScreen itself, not a request to the guardian.
         when (BlockScreenText.action(isSignInRequired, blockedDomain, blockedCategory)) {
             BlockScreenText.Action.SIGN_IN -> root.addView(openAppButton)
@@ -454,10 +470,46 @@ class BlockedAppActivity : Activity() {
         setContentView(root)
     }
 
+    // Live countdown for bedtime, focus and break screens.
+    private var countdownView: TextView? = null
+    private var scheduleEndsAtMs = 0L
+    private var isBreakBlock = false
+    private val countdownTick = object : Runnable {
+        override fun run() {
+            updateCountdown()
+            if (countdownView != null && scheduleEndsAtMs > System.currentTimeMillis()) {
+                mainHandler.postDelayed(this, 1_000L)
+            }
+        }
+    }
+
+    private fun updateCountdown() {
+        val view = countdownView ?: return
+        val left = scheduleEndsAtMs - System.currentTimeMillis()
+        view.text = if (left > 0) {
+            val total = (left + 999) / 1_000
+            val h = total / 3600
+            val m = (total % 3600) / 60
+            val sec = total % 60
+            val clock = if (h > 0) {
+                String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, sec)
+            } else {
+                String.format(java.util.Locale.US, "%02d:%02d", m, sec)
+            }
+            if (isBreakBlock) "Back in $clock" else "Ends in $clock"
+        } else {
+            if (isBreakBlock) "Break over" else "Time's up"
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         isShowing = true
         pauseOtherAudio()
+        if (countdownView != null) {
+            mainHandler.removeCallbacks(countdownTick)
+            mainHandler.post(countdownTick)
+        }
         if (isDailyTimeLimitBlock) {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .registerOnSharedPreferenceChangeListener(cacheChangeListener)
@@ -470,6 +522,7 @@ class BlockedAppActivity : Activity() {
     override fun onStop() {
         isShowing = false
         mainHandler.removeCallbacks(recheckRunnable)
+        mainHandler.removeCallbacks(countdownTick)
         if (listeningToPrefs) {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .unregisterOnSharedPreferenceChangeListener(cacheChangeListener)
@@ -480,6 +533,7 @@ class BlockedAppActivity : Activity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(recheckRunnable)
+        mainHandler.removeCallbacks(countdownTick)
         statusExecutor.shutdownNow()
         releaseAudioFocus()
         super.onDestroy()
