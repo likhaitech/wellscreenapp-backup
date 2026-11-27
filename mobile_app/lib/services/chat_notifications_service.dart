@@ -9,8 +9,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../screens/parent_child_chat_screen.dart';
 
-/// ONE app-wide handler for chat FCM. Existing app-limit and monitoring
-/// notification handlers continue to handle their own event types.
+/// App-wide handler for family chat and child location warning FCM.
+/// Existing app-limit and guardian monitoring handlers retain their event types.
 class ChatNotificationsService {
   ChatNotificationsService._();
   static final ChatNotificationsService instance = ChatNotificationsService._();
@@ -18,6 +18,7 @@ class ChatNotificationsService {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
   static const _channelId = 'wellscreen_chat';
+  static const _locationChannelId = 'wellscreen_location';
   final _notifications = FlutterLocalNotificationsPlugin();
   StreamSubscription<RemoteMessage>? _foreground;
   StreamSubscription<RemoteMessage>? _opened;
@@ -77,9 +78,25 @@ class ChatNotificationsService {
           ),
         );
 
+    // Match the channel used by the backend's Android FCM payload.
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            _locationChannelId,
+            'Location Warnings',
+            description: 'Reminders to share an updated location',
+            importance: Importance.high,
+          ),
+        );
+
     _foreground = FirebaseMessaging.onMessage.listen((message) {
       if (message.data['type'] == 'parent_child_chat') {
         unawaited(_showForeground(message));
+      } else if (message.data['type'] == 'gps_location_stale') {
+        unawaited(_showLocationWarning(message));
       }
     });
     _opened = FirebaseMessaging.onMessageOpenedApp.listen((message) {
@@ -121,6 +138,44 @@ class ChatNotificationsService {
       value = ((value ^ ch) * 0x01000193) & 0x7FFFFFFF;
     }
     return value;
+  }
+
+  Future<void> _showLocationWarning(RemoteMessage message) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final profileId = message.data['childProfileId'];
+    final eventId = message.data['eventId'];
+    if (uid == null ||
+        message.data['recipientUid'] != uid ||
+        profileId is! String ||
+        profileId.isEmpty ||
+        eventId is! String ||
+        eventId.isEmpty) {
+      return;
+    }
+    final title = message.notification?.title ?? 'Location Update Needed';
+    final body =
+        message.notification?.body ??
+        'Your location is outdated. Open WellScreen to share your location.';
+    try {
+      await _notifications.show(
+        id: _notificationId('gps_stale_$profileId'),
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _locationChannelId,
+            'Location Warnings',
+            channelDescription: 'Reminders to share an updated location',
+            importance: Importance.high,
+            priority: Priority.high,
+            styleInformation: BigTextStyleInformation(body),
+          ),
+        ),
+        // No chat payload: tapping this warning must not open family chat.
+      );
+    } catch (error) {
+      debugPrint('Could not display child location warning: $error');
+    }
   }
 
   Future<void> _showForeground(RemoteMessage message) async {
