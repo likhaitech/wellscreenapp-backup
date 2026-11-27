@@ -132,6 +132,7 @@ def generate_pairing_code(
                 "parentId": parent_uid,
                 "name": child_name,
                 "pairingStatus": "waiting",
+                "pairingExpiresAt": expires_at,
                 "createdAt": firestore.SERVER_TIMESTAMP,
                 "updatedAt": firestore.SERVER_TIMESTAMP,
             }
