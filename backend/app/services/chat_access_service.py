@@ -18,7 +18,8 @@ from .firebase_service import get_auth_module, get_firestore_client
 
 UTC = dt.timezone.utc
 LOGGER = logging.getLogger(__name__)
-PARENT_ALERT_CHANNEL = "wellscreen_alerts"  # created by the parent app's PushNotificationService
+PARENT_ALERT_CHANNEL = "wellscreen_alerts"
+CHILD_CHAT_CHANNEL = "wellscreen_chat"  # Child device notification channel
 MAX_APPROVED_MINUTES = 180
 APP_REQUEST_COOLDOWN = dt.timedelta(minutes=5)
 APP_REQUEST_DAILY_LIMIT = 10
@@ -322,21 +323,136 @@ def _claim_field(db: Any, ref: Any, field: str) -> bool:
     return claim_one(db.transaction())
 
 
-def _notify_decision(db: Any, profile_id: str, child_uid: str, request_id: str) -> None:
-    ref = db.collection("child_profiles").document(profile_id).collection(
-        "access_requests").document(request_id)
-    if not _claim_field(db, ref, "decisionNotificationState"):
+
+def _resolve_parent_display_name(
+    db: Any,
+    profile_id: str,
+    profile_data: dict[str, Any] | None = None,
+) -> str:
+    """Resolve the parent's public display name for a child-facing notice.
+
+    Parent identity is normally synced to child_profiles.parentDisplayName.
+    Older profiles fall back to the parent's users document.
+    """
+    if profile_data is None:
+        profile_snapshot = (
+            db.collection("child_profiles").document(profile_id).get()
+        )
+        profile_data = profile_snapshot.to_dict() or {}
+
+    name = profile_data.get("parentDisplayName")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+
+    parent_uid = profile_data.get("parentId")
+    if isinstance(parent_uid, str) and parent_uid:
+        parent_account = (
+            db.collection("users").document(parent_uid).get().to_dict() or {}
+        )
+        name = (
+            parent_account.get("fullName")
+            or parent_account.get("displayName")
+            or parent_account.get("name")
+        )
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+
+    return "Your parent"
+
+
+def _decision_notification_content(
+    data: dict[str, Any],
+    parent_name: str,
+) -> tuple[str, str]:
+    """Build concise, parent-identifiable child access decision notices."""
+    approved = data.get("status") in (
+        "approved_pending_activation",
+        "active",
+    )
+    app_name = str(data.get("appName") or "App").strip() or "App"
+    parent_name = parent_name.strip() if parent_name.strip() else "Your parent"
+    decision = "Approved" if approved else "Denied"
+
+    title = f"{parent_name} · App Access Request {decision}"
+
+    if not approved:
+        body = f"Your request to use {app_name} has been denied."
+        return title, body
+
+    body_parts: list[str] = [
+        f"Your request to use {app_name} has been approved."
+    ]
+
+    minutes = data.get("approvedMinutes")
+    if (
+        isinstance(minutes, int)
+        and not isinstance(minutes, bool)
+        and minutes > 0
+    ):
+        duration = f"{minutes} minute{'s' if minutes != 1 else ''}"
+        body_parts.append(f"{duration} granted.")
+
+    expires_at = data.get("expiresAt")
+    if isinstance(expires_at, dt.datetime):
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        expiry_time = (
+            expires_at.astimezone(PHT).strftime("%I:%M %p").lstrip("0")
+        )
+        body_parts.append(f"Access expires at {expiry_time}.")
+
+    return title, " ".join(body_parts)
+
+
+def _notify_decision(
+    db: Any,
+    profile_id: str,
+    child_uid: str,
+    request_id: str,
+) -> None:
+    """Send an immediate app access decision notification to the child."""
+    profile_snapshot = (
+        db.collection("child_profiles").document(profile_id).get()
+    )
+    profile_data = profile_snapshot.to_dict() or {}
+    parent_name = _resolve_parent_display_name(
+        db,
+        profile_id,
+        profile_data,
+    )
+
+    ref = (
+        db.collection("child_profiles")
+        .document(profile_id)
+        .collection("access_requests")
+        .document(request_id)
+    )
+
+    if not _claim_field(
+        db,
+        ref,
+        "decisionNotificationState",
+    ):
         return
+
     data = ref.get().to_dict() or {}
-    approved = data.get("status") in ("approved_pending_activation", "active")
-    app_name = data.get("appName", "App")
+    title, body = _decision_notification_content(data, parent_name)
+
     status = _deliver(
-        db, child_uid,
-        title="App access approved" if approved else "App access declined",
-        body=(f"{app_name}: {data.get('approvedMinutes')} minutes approved"
-              if approved else f"{app_name} was declined"),
-        event_id="decision_" + request_id, profile_id=profile_id)
-    ref.update({"decisionNotificationState": "pending" if status == "no_token" else status})
+        db,
+        child_uid,
+        title=title,
+        body=body,
+        event_id="decision_" + request_id,
+        profile_id=profile_id,
+        channel_id=CHILD_CHAT_CHANNEL,
+    )
+
+    ref.update({
+        "decisionNotificationState": (
+            "pending" if status == "no_token" else status
+        )
+    })
 
 
 def activate_grant(*, child_uid: str, profile_id: str,
@@ -531,15 +647,38 @@ def sweep_chat_notifications(*, max_profiles: int = 200) -> dict[str, int]:
                                       "pending" if status == "no_token" else status})
                 if status == "sent":
                     result["sent"] += 1
-            if data.get("decisionNotificationState") == "pending" and claim(req.reference, "decisionNotificationState"):
+            if (
+                data.get("decisionNotificationState") == "pending"
+                and claim(req.reference, "decisionNotificationState")
+            ):
                 result["claimed"] += 1
-                status_name = data.get("status")
-                title = "App access approved" if status_name in ("approved_pending_activation", "active") else "App access declined"
-                body = f"{data.get('appName', 'App')}: {data.get('approvedMinutes')} minutes approved" if status_name in ("approved_pending_activation", "active") else f"{data.get('appName', 'App')} was declined"
-                status = _deliver(db, child_uid, title=title, body=body,
-                                  event_id="decision_" + req.id, profile_id=profile_doc.id)
-                req.reference.update({"decisionNotificationState":
-                                      "pending" if status == "no_token" else status})
+
+                parent_name = _resolve_parent_display_name(
+                    db,
+                    profile_doc.id,
+                    profile,
+                )
+                title, body = _decision_notification_content(
+                    data,
+                    parent_name,
+                )
+
+                status = _deliver(
+                    db,
+                    child_uid,
+                    title=title,
+                    body=body,
+                    event_id="decision_" + req.id,
+                    profile_id=profile_doc.id,
+                    channel_id=CHILD_CHAT_CHANNEL,
+                )
+
+                req.reference.update({
+                    "decisionNotificationState": (
+                        "pending" if status == "no_token" else status
+                    )
+                })
+
                 if status == "sent":
                     result["sent"] += 1
     return result
